@@ -1,0 +1,11 @@
+# kind:name — var/fn from the registration harvest, manual from docs/re/builds/manual.json
+manual:vr_device_global          # R1: qword holding the engine VR device pointer
+var:gfx_strAPI
+var:vr_iUsingSinglePassStereo
+var:vr_bSinglePrepareRendering
+var:vr_bMaskHiddenArea
+var:vr_fWorldScale
+var:vr_strAPI
+fn:vrGetDeviceName
+fn:vrGetDeviceAPI
+fn:prjIsVRActive

@@ -14,3 +14,15 @@
 So stereo-aware shader selection still exists in every backend's draw path. Which backend is which,
 and whether instance doubling or viewport broadcast happens, still needs the Ghidra decompile and a
 RenderDoc capture with the cvar forced (requires the Proton prefix, i.e. a first launch).
+
+## Runtime evidence: engine Vulkan device (payload `vk_observe`, Sam4.exe, 2026-10-23)
+`vkCreateInstance` api 1.0: VK_KHR_surface, VK_KHR_win32_surface, VK_EXT_swapchain_colorspace,
+VK_EXT_debug_utils, VK_KHR_get_surface_capabilities2, VK_KHR_get_physical_device_properties2.
+`vkCreateDevice`, two queues (family 0 graphics, family 1 transfer), extensions: swapchain,
+get_memory_requirements2, dedicated_allocation, image_format_list, maintenance2,
+EXT_pipeline_creation_feedback, EXT_hdr_metadata, **KHR_fragment_shading_rate**,
+**KHR_create_renderpass2**, **KHR_multiview**, EXT_memory_budget, EXT_pipeline_creation_cache_control.
+pNext features: pipeline-creation-cache-control (1000297000), fragment-shading-rate (1000226003).
+No `VkPhysicalDeviceMultiviewFeatures` in the chain in flat mode, so the multiview feature itself is not
+enabled; our device redirect must add it. A second api-1.3 instance (surface_maintenance1) is created by
+another component in the process.
