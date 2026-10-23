@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.24)
+project(ss4smvr LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+option(SS4SMVR_TESTS "Build portable host-side unit tests instead of Windows targets" OFF)
+set(OPENXR_SOURCE "" CACHE PATH "Local OpenXR-SDK checkout (pinned 75c53b6, OpenXR 1.1.53)")
+set(MINHOOK_SOURCE "" CACHE PATH "Local MinHook checkout (pinned c3fcafd, v1.3.4)")
+set(VULKAN_HEADERS_ROOT "/usr/include" CACHE PATH "Directory containing vulkan/ and vk_video/ headers")
+
+if(SS4SMVR_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+  return()
+endif()
+
+if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Windows targets must build for x86-64 (use cmake/mingw-w64-x86_64.cmake)")
+endif()
+
+# Stage only the Vulkan headers so the cross compiler never sees the rest of the host /usr/include.
+set(VK_STAGE ${CMAKE_BINARY_DIR}/vkheaders)
+file(COPY ${VULKAN_HEADERS_ROOT}/vulkan ${VULKAN_HEADERS_ROOT}/vk_video DESTINATION ${VK_STAGE})
+
+set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_LOADER ON CACHE BOOL "" FORCE)
+set(DYNAMIC_LOADER ON CACHE BOOL "" FORCE)
+set(BUILD_WITH_SYSTEM_JSONCPP OFF CACHE BOOL "" FORCE)
+include(FetchContent)
+if(OPENXR_SOURCE)
+  add_subdirectory(${OPENXR_SOURCE} ${CMAKE_BINARY_DIR}/openxr EXCLUDE_FROM_ALL)
+else()
+  FetchContent_Declare(openxr BINARY_DIR ${CMAKE_BINARY_DIR}/openxr
+    GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git GIT_TAG 75c53b6e853dc12c7b3c771edc9c9c841b15faaa)
+  FetchContent_MakeAvailable(openxr)
+endif()
+target_link_options(openxr_loader PRIVATE -static -static-libgcc -static-libstdc++)
+
+add_executable(vk_xr_probe src/probe/vk_xr_probe.cpp)
+target_include_directories(vk_xr_probe PRIVATE src ${VK_STAGE})
+target_compile_definitions(vk_xr_probe PRIVATE VK_NO_PROTOTYPES XR_USE_GRAPHICS_API_VULKAN WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(vk_xr_probe PRIVATE openxr_loader)
+target_link_options(vk_xr_probe PRIVATE -static -static-libgcc -static-libstdc++)

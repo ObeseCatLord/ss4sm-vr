@@ -7,6 +7,6 @@
 - [~] R1 device seam: outcome B established; full slot semantics in progress (`docs/re/R1_device_seam.md`)
 - [~] R2 stereo path: stereo shader selection live in all three backends (static); runtime capture pending (`docs/re/R2_stereo_path.md`)
 - [ ] R3 live VR gameplay
-- [ ] R4 content mounting
-- [ ] R5 graphics interop probe
-- [ ] First flat launch of each game (creates Proton prefixes)
+- [~] R4 content mounting: unsigned workshop .gro mount in Unrestricted (`docs/re/R4_content.md`)
+- [x] R5 graphics interop: PASS on Proton + simulated Monado (`docs/re/R5_graphics_interop.md`)
+- [x] First flat launch of each game (prefixes 257420, 1792250 on GE-Proton11-9); SS4 on Vulkan verified
