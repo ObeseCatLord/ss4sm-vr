@@ -5,7 +5,7 @@
 - [x] Fingerprints for Sam4, Sam4_Unrestricted, SamSM, SamSM_Unrestricted (`docs/re/builds/fingerprints.json`)
 - [x] Registration-table harvest (`tools/harvest_symbols.py`): ~1490 cvars, ~3900–3950 script functions per exe
 - [~] R1 device seam: outcome B established; full slot semantics in progress (`docs/re/R1_device_seam.md`)
-- [ ] R2 stereo path
+- [~] R2 stereo path: stereo shader selection live in all three backends (static); runtime capture pending (`docs/re/R2_stereo_path.md`)
 - [ ] R3 live VR gameplay
 - [ ] R4 content mounting
 - [ ] R5 graphics interop probe
