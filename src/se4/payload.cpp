@@ -1,7 +1,7 @@
 // ss4smvr.dll entry: verifies the build, then waits for the game's own modules to load before acting.
 #include "se4/build.hpp"
 #include "se4/log.hpp"
-#include "vk/vk_observe.hpp"
+#include "vk/vk_layer.hpp"
 #include <windows.h>
 #include <winternl.h>
 #include <MinHook.h>
@@ -32,7 +32,7 @@ void startObserver();
 VOID CALLBACK onDll(ULONG reason, const DllNotificationData* d, PVOID) {
     if (reason != 1) return;  // LDR_DLL_NOTIFICATION_REASON_LOADED
     if (nameIs(d->BaseDllName, L"vulkan-1.dll")) {
-        vk_observe::onVulkanLoaded(d->DllBase);
+        vk_layer::onVulkanLoaded(d->DllBase);
         startObserver();
     }
 }
@@ -88,7 +88,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     auto reg = reinterpret_cast<RegisterFn>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrRegisterDllNotification"));
     if (!(skip & 2) && (!reg || reg(0, onDll, nullptr, &g_cookie) != 0)) VRLOG("LdrRegisterDllNotification unavailable");
     VRLOG("attach: notification registered");
-    if (HMODULE vk = GetModuleHandleW(L"vulkan-1.dll")) vk_observe::onVulkanLoaded(vk);
+    if (HMODULE vk = GetModuleHandleW(L"vulkan-1.dll")) vk_layer::onVulkanLoaded(vk);
     VRLOG("attach: done");
 }
 

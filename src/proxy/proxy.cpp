@@ -27,7 +27,7 @@ void loadPayload(HMODULE self) {
     if (!slash || (slash - path) + 24 >= MAX_PATH) return;
     wcscpy(slash + 1, L"ss4smvr\\ss4smvr.dll");
     if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) return;
-    g_payload = LoadLibraryW(path);
+    g_payload = LoadLibraryExW(path, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);  // resolve openxr_loader.dll next to it
     if (!g_payload) return;
     using Attach = void (*)(HMODULE);
     if (auto attach = reinterpret_cast<Attach>(GetProcAddress(g_payload, "ss4smvr_attach"))) attach(self);
