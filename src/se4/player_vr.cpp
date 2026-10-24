@@ -137,6 +137,69 @@ unsigned findVrdOffset(const uint8_t* fn) {
     return 0;
 }
 
+// `mov rax, global; mov rcx,[rax]; test rcx,rcx; jz zero; mov rax,[rcx]; jmp [rax+slot]; zero: xor eax,eax; ret`
+// near the image: calls the device slot with the caller's own arguments and stack, or returns 0 without a device.
+uint8_t* nullCheckThunk(void* nearTo, void** global, uint32_t slot) {
+    uint8_t* thunk = se4::patch::allocNear(nearTo, 64);
+    if (!thunk) return nullptr;
+    static const uint8_t body[] = {
+        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,  // mov rax, imm64 (global)
+        0x48, 0x8B, 0x08,                    // mov rcx, [rax]
+        0x48, 0x85, 0xC9,                    // test rcx, rcx
+        0x74, 0x09,                          // jz zero
+        0x48, 0x8B, 0x01,                    // mov rax, [rcx]
+        0xFF, 0xA0, 0, 0, 0, 0,              // jmp [rax+slot]
+        0x31, 0xC0,                          // zero: xor eax, eax
+        0xC3,                                // ret
+    };
+    memcpy(thunk, body, sizeof body);
+    memcpy(thunk + 2, &global, 8);
+    memcpy(thunk + 23, &slot, 4);
+    FlushInstructionCache(GetCurrentProcess(), thunk, sizeof body);
+    return thunk;
+}
+
+// 0x14043aac0 (R9 s5) is a forwarder `mov rcx,[rip+global]; mov rax,[rcx]; jmp [rax+0x1d8]` run every tick for
+// every player with vrd, including remote VR players on a desktop peer without a device. Its entry becomes a
+// jump to the null-checking thunk. Found by exact bytes; must be unique in .text.
+bool patchSlot1d8Forwarder(void** global) {
+    HMODULE exe = GetModuleHandleW(nullptr);
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(exe);
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(exe) + dos->e_lfanew);
+    auto* sec = IMAGE_FIRST_SECTION(nt);
+    uint8_t* hit = nullptr;
+    int n = 0;
+    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec) {
+        if (memcmp(sec->Name, ".text", 6)) continue;
+        uint8_t* t = reinterpret_cast<uint8_t*>(exe) + sec->VirtualAddress;
+        for (size_t k = 0; k + 17 <= sec->Misc.VirtualSize; ++k) {
+            uint8_t* p = t + k;
+            if (p[0] != 0x48 || p[1] != 0x8B || p[2] != 0x0D || p[7] != 0x48 || p[8] != 0x8B || p[9] != 0x01 ||
+                p[10] != 0x48 || p[11] != 0xFF || p[12] != 0xA0 || rel32(p + 13) != 0x1d8)
+                continue;
+            if (p + 7 + rel32(p + 3) != reinterpret_cast<uint8_t*>(global)) continue;
+            hit = p;
+            ++n;
+        }
+    }
+    if (n != 1) {
+        VRLOG("player_vr: slot 0x1d8 forwarder: found %d, expected 1 - not patched", n);
+        return false;
+    }
+    uint8_t* thunk = nullCheckThunk(hit, global, 0x1d8);
+    intptr_t rel = thunk ? thunk - (hit + 5) : 0;
+    if (!thunk || rel != int32_t(rel)) return false;
+    DWORD old;
+    if (!VirtualProtect(hit, 5, PAGE_EXECUTE_READWRITE, &old)) return false;
+    hit[0] = 0xE9;
+    int32_t r = int32_t(rel);
+    memcpy(hit + 1, &r, 4);
+    VirtualProtect(hit, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), hit, 5);
+    VRLOG("player_vr: slot 0x1d8 forwarder %p goes through null-checking thunk %p", static_cast<void*>(hit), static_cast<void*>(thunk));
+    return true;
+}
+
 // vrd_init calls device slot 0x208 twice as `mov rcx,[rip+global]; mov rax|rdx,[rcx]; call [rax|rdx+0x208]`
 // (16 bytes) with no null check: it runs for every VR player, including remote VR players on a machine
 // whose device global is NULL (R3 s7.2). Each site becomes `call thunk` + NOPs; the thunk returns 0 when
@@ -158,24 +221,11 @@ bool patchSlot208(uint8_t* fn, void** global) {
         VRLOG("player_vr: vrd_init slot 0x208 sites: found %d, expected 2 - not patched", n);
         return false;
     }
-    uint8_t* thunk = se4::patch::allocNear(fn, 64);
+    uint8_t* thunk = nullCheckThunk(fn, global, 0x208);
     if (!thunk) {
         VRLOG("player_vr: no executable memory near the image - slot 0x208 not patched");
         return false;
     }
-    static const uint8_t body[] = {
-        0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0,  // mov rax, imm64 (global)
-        0x48, 0x8B, 0x08,                    // mov rcx, [rax]
-        0x48, 0x85, 0xC9,                    // test rcx, rcx
-        0x74, 0x09,                          // jz zero
-        0x48, 0x8B, 0x01,                    // mov rax, [rcx]
-        0xFF, 0xA0, 0x08, 0x02, 0x00, 0x00,  // jmp [rax+0x208]
-        0x31, 0xC0,                          // zero: xor eax, eax
-        0xC3,                                // ret
-    };
-    memcpy(thunk, body, sizeof body);
-    memcpy(thunk + 2, &global, 8);
-    FlushInstructionCache(GetCurrentProcess(), thunk, sizeof body);
     for (uint8_t* p : sites) {
         DWORD old;
         if (!VirtualProtect(p, 16, PAGE_EXECUTE_READWRITE, &old)) return false;
@@ -220,6 +270,7 @@ bool install(bool localVr) {
     // Guards first: they must be in place before any player can have VR data. A desktop peer needs them too,
     // because remote VR players get a CPlayerVRData on every machine (psd_bIsPlayingInVR replicates).
     bool ok = patchSlot208(init, global);
+    ok &= patchSlot1d8Forwarder(global);
     ok &= hook(ctrl, reinterpret_cast<void*>(hookedCtrlWorld), reinterpret_cast<void**>(&realCtrlWorld), "controller placement");
     ok &= hook(cavr, reinterpret_cast<void*>(hookedCavr), reinterpret_cast<void**>(&realCavr), "ClientActionVR");
     ok &= hook(init, reinterpret_cast<void*>(hookedVrdInit), reinterpret_cast<void**>(&realVrdInit), "vrd_init");

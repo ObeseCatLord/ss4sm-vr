@@ -105,3 +105,12 @@
   - Member offsets now come from the engine's reflection records per build (`tools/members.txt` →
     `tools/harvest_members.py` → `docs/re/builds/members.json` → `Build::off`).
   - Lab checks: steering sign, the heading axis logged at first drive, and that the hands stay on the grips.
+- Gate R9 done (`docs/re/R9_body_ik.md`). The engine's VR body system (room-scale legs, head/hand adjusters,
+  VR hand models) is live code with no content in SS4 or SM, so full-body IK has to come from the mod.
+  - Planned approach: a mod-owned motion handler registered last on the player model's animation queue
+    (0x140bf6b20; called by 0x140bad5b0 after the blend). It writes parent-relative bone quaternions solved by
+    `core/body_ik.hpp` from the vrd poses, on every machine.
+  - Local first-person body: hook the hide-the-viewer setter 0x140ca3280 and use the `FirstPersonAvatar` tag
+    the way the engine does.
+  - New guard, done: the slot 0x1d8 forwarder (Sam4 0x14043aac0, SM 0x14043ac40), which runs every tick for
+    every player with vrd, now goes through the null-checking thunk.
