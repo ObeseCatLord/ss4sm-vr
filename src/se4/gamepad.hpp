@@ -6,4 +6,6 @@ namespace gamepad {
 void publishFromXr();  // after xr::input().sync(), on the frame thread
 bool active();
 void logStats();
+// The hand whose wheel is held: 0 left, 1 right, -1 both (or none).
+int wheelHand();
 }

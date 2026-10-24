@@ -118,8 +118,15 @@ static_assert(XINPUT_GAMEPAD_LEFT_SHOULDER == core::controls::PadLB && XINPUT_GA
               XINPUT_GAMEPAD_DPAD_DOWN == core::controls::PadDpadDown, "XInput bits must match");
 core::controls::Mapper g_mapper;
 
+int wheelHand() {
+    if (!g_mapper.wheelHeld) return -1;
+    return g_mapper.wheelSel[0] && g_mapper.wheelSel[1] ? -1 : g_mapper.wheelSel[1] ? 1 : 0;
+}
+
 void publishFromXr() {
     using namespace core::controls;
+    if (const int h = gadgets::takeBuzz(); h >= 0 && xr::runtime().running())
+        xr::input().vibrate(xr::runtime().session(), h, 0.6f, 0.15f);  // a gadget throw refused: no target
     Frame f;
     for (int h = 0; h < 2; ++h) {
         const auto& x = xr::input().hand(h);

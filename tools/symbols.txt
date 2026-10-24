@@ -97,3 +97,10 @@ manual:gadget_holder_ready       # R12: GadgetHolder ready-to-use test; the in-h
 manual:giveall_gadgets_script    # lab: cheats-menu handler holding the give-all flags global (GACF_GADGETS 4)
 manual:weapons_restore           # R12: weapons remembered before a gadget; the mod reads their offsets for the put-away
 manual:select_weapons_net        # R3: wheel dual commit (net call); the mod puts a gadget away by selecting the remembered weapons
+manual:aoe_target_check          # R12: targeting target check used by the launch activation (too close / invalid)
+manual:crosshair_show            # R8 addendum: crosshair show predicate; the mod NOPs its vrd test
+var:hud_bShowCrosshair
+var:prj_iGameOptionCrosshair
+manual:wheel_render              # R16: weapon wheel element render (vt+0x80); identifies the wheel element
+manual:wheel_dummy_command       # R16: the wheel's dummy menu screen (vt+0x138); identifies it as top screen
+manual:hud_element_render        # R16: per-element HUD render; the mod re-anchors the wheel to a hand panel

@@ -107,6 +107,13 @@ struct Held {
     int xrHand = 1;
 } g_held;
 volatile LONG g_triggerTaken[2];
+volatile LONG g_buzz;  // 1 + XR hand to pulse once (present thread)
+// The targeting mode of the gadget in the hand (its last step) and the native target check the launch
+// activation runs (0 = invalid or too close; R12 s8.2).
+uint8_t* g_targetHolder;
+uint8_t* g_targetMode;
+using CheckFn = int(__cdecl*)(uint8_t* mode);
+CheckFn targetCheck;
 
 bool holderUp() { return g_held.holder && GetTickCount64() - g_held.seen < 250; }
 
@@ -145,6 +152,15 @@ void inHand(uint8_t* holder, uint8_t* player) {
     f.hand = pose(hs.grip), f.other = pose(os.grip), f.head = pose(v.head);
     f.trigger = hs.active ? hs.trigger : 0.0f;
     if (g_held.act.update(f, now)) {
+        if (g_held.act.use() == core::gadget::Use::Throw && g_targetHolder == holder && g_targetMode && targetCheck &&
+            !(at<int32_t>(g_targetMode, 0x30) && targetCheck(g_targetMode))) {
+            // No valid target under the aiming hand (too close, nothing in range): the launch activation would refuse
+            // it after the throw animation. Keep holding it; a buzz on the aiming hand says why.
+            g_held.act.begin(core::gadget::Use::Throw);
+            InterlockedExchange(&g_buzz, 1 + (1 - g_held.xrHand));
+            VRLOG("gadgets: throw without a valid target - kept in the hand");
+            return;
+        }
         VRLOG("gadgets: %s -> use", core::gadget::name(g_held.act.use()));
         hud(player, kHudQuickUse);  // holder up, not quick use: the holder's own use (R12 s7), through the network call
     }
@@ -172,6 +188,7 @@ void hookedTargeting(uint8_t* mode, void* arg) {
     t_targeting = mode;
     realTargeting(mode, arg);
     t_targeting = prev;
+    if (uint8_t* holder = at<uint8_t*>(mode, kModeWeapon); holder && holder == g_held.holder) g_targetHolder = holder, g_targetMode = mode;
 }
 float* hookedView(uint8_t* player, float* out, void* arg, int mode) {
     float* r = realView(player, out, arg, mode);
@@ -230,9 +247,21 @@ void applyHandVelocity(uint8_t* mode) {
 }
 
 uintptr_t hookedActivate(uint8_t* mode) {
+    // The activation re-runs the targeting (targeting vt+0x248) before its check: steer that pass by the aiming
+    // hand too, or it judges (and launches along) the head's target.
+    uint8_t* holder = mode ? at<uint8_t*>(mode, kModeWeapon) : nullptr;
+    uint8_t* const prev = t_targeting;
+    if (g_aimHand && holder && holder == g_targetHolder && g_targetMode) t_targeting = g_targetMode;
     const uintptr_t r = realActivate(mode);
-    if (uint8_t* holder = mode ? at<uint8_t*>(mode, kModeWeapon) : nullptr; holder && localOwner(holder))
-        VRLOG("gadgets: launch activation (speed %.2f, lifetime %.2f)", at<float>(mode, 0x3c), at<float>(mode, 0x40));
+    t_targeting = prev;
+    if (!holder || !localOwner(holder)) return r;
+    if (!(r & 0xff)) {
+        // Refused (target too close / invalid): the holder goes back to idle (0x140776af0) and can be thrown again.
+        VRLOG("gadgets: launch activation refused (target too close or invalid) - throw again");
+        if (holder == g_held.holder) g_held.act.begin(g_held.act.use());
+        return r;
+    }
+    VRLOG("gadgets: launch activation (speed %.2f, lifetime %.2f)", at<float>(mode, 0x3c), at<float>(mode, 0x40));
     if (g_throwVelocity) applyHandVelocity(mode);
     return r;
 }
@@ -317,6 +346,7 @@ void onTick(uint8_t* player) {
     aWas = a, bWas = b;
 }
 
+int takeBuzz() { return int(InterlockedExchange(&g_buzz, 0)) - 1; }
 bool triggerTaken(int hand) { return (hand == 0 || hand == 1) && g_triggerTaken[hand] != 0; }
 
 bool install() {
@@ -328,6 +358,7 @@ bool install() {
     const auto& b = se4::build();
     handleEntity = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
     holderReady = reinterpret_cast<ReadyFn>(b.at<void>(se4::gen::gadget_holder_ready));
+    targetCheck = reinterpret_cast<CheckFn>(b.at<void>(se4::gen::aoe_target_check));
     if (!handleEntity || !b.off(se4::gen::CWeaponEntity_en_henOwner) || !b.off(se4::gen::CGadgetHolderWeaponEntity_en_pgipUsedGadget) ||
         !b.off(se4::gen::CGadgetItemParams_gip_bgutBotUsageType)) {
         VRLOG("gadgets: build lacks gadget symbols - not installed");

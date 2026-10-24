@@ -11,6 +11,8 @@ uint8_t* allocNear(void* target, size_t size);
 uint8_t* nearJump(void* imageAddress, void* fn);
 // Calls (E8 rel32) within [fn, fn+len) whose target begins with the bytes of `mov eax,1; ret`.
 int findReturnOneCalls(uint8_t* fn, size_t len, uint8_t** out, int max);
+// Overwrite code bytes after checking that `expect` (same length) is there. False if it is not.
+bool writeCode(uint8_t* site, const uint8_t* expect, const uint8_t* bytes, size_t n);
 // Retarget an E8 rel32 call site. Returns false if the site is not an E8 or the target is out of reach.
 bool retargetCall(uint8_t* site, void* newTarget);
 }  // namespace se4::patch

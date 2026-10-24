@@ -79,7 +79,12 @@
   "gadget_holder_ready": "0x140775ab0",
   "giveall_gadgets_script": "0x140842e90",
   "weapons_restore": "0x140490bc0",
-  "select_weapons_net": "0x140471450"
+  "select_weapons_net": "0x140471450",
+  "aoe_target_check": "0x1409112d0",
+  "crosshair_show": "0x1404947c0",
+  "wheel_render": "0x1401298c0",
+  "wheel_dummy_command": "0x1401339c0",
+  "hud_element_render": "0x1400d6920"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -161,7 +166,12 @@
   "gadget_holder_ready": "0x1407781e0",
   "giveall_gadgets_script": "0x1408455c0",
   "weapons_restore": "0x1404932f0",
-  "select_weapons_net": "0x140473b80"
+  "select_weapons_net": "0x140473b80",
+  "aoe_target_check": "0x140913a00",
+  "crosshair_show": "0x140496ef0",
+  "wheel_render": "0x14012c210",
+  "wheel_dummy_command": "0x140136310",
+  "hud_element_render": "0x1400d9270"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -243,7 +253,12 @@
   "gadget_holder_ready": "0x140775370",
   "giveall_gadgets_script": "0x140842400",
   "weapons_restore": "0x1404912b0",
-  "select_weapons_net": "0x140471aa0"
+  "select_weapons_net": "0x140471aa0",
+  "aoe_target_check": "0x140911980",
+  "crosshair_show": "0x140494eb0",
+  "wheel_render": "0x14012a260",
+  "wheel_dummy_command": "0x140134390",
+  "hud_element_render": "0x1400d6a00"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -325,6 +340,11 @@
   "gadget_holder_ready": "0x140777a90",
   "giveall_gadgets_script": "0x140844b20",
   "weapons_restore": "0x1404939d0",
-  "select_weapons_net": "0x1404741c0"
+  "select_weapons_net": "0x1404741c0",
+  "aoe_target_check": "0x1409140a0",
+  "crosshair_show": "0x1404975d0",
+  "wheel_render": "0x14012cba0",
+  "wheel_dummy_command": "0x140136cd0",
+  "hud_element_render": "0x1400d9340"
  }
 }

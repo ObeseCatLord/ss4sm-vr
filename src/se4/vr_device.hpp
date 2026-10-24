@@ -15,6 +15,11 @@ bool hookShutdown();
 bool hookViewport();
 // Device-local head placement (quaternion xyzw + position in engine units), as slot 0x080 returns it.
 void headPlacement(float out[7]);
+// The eye the engine is rendering now (device +0x18: 1 left, 2 right, 3 scope, 0 none).
+int currentEye();
+// Eye-in-head pose of eye 1/2 (quaternion xyzw + position in engine units), as slot 0x078 inverts it. False when
+// the views are not valid.
+bool eyeInHead(int eye, float out[7]);
 // Sends the main loop's desktop Render to RenderVR while the device is installed (R10).
 bool hookRender();
 // Periodic diagnostics: per-slot call counts since the last report.

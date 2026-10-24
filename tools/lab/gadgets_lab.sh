@@ -17,7 +17,14 @@ for i in $(seq 1 "$N"); do
   "$HERE/capture.sh" Monado "$OUT-g$i-held.png" 50 >/dev/null 2>&1
   case "$use" in
     "aimed throw"|toss)
-      for z in 0.15 0.0 -0.15 -0.3 -0.45 -0.6 -0.75 -0.9; do $ID $H $LH rpos=0.25,1.45,$z >/dev/null; done ;;
+      $ID $H $LH lrot=0,-0.35,0 $R0 >/dev/null; sleep 1.5  # aim at the ground ahead
+      for z in 0.15 0.0 -0.15 -0.3 -0.45 -0.6 -0.75 -0.9; do $ID $H $LH lrot=0,-0.35,0 rpos=0.25,1.45,$z >/dev/null; done
+      sleep 2.5
+      if tail -5 "$L" | grep -q "without a valid target\|activation refused"; then  # too close: aim farther, throw again
+        echo "[$i]   refused near target, aiming farther"
+        $ID $H $LH lrot=0,0.05,0 $R0 >/dev/null; sleep 1.5
+        for z in 0.15 0.0 -0.15 -0.3 -0.45 -0.6 -0.75 -0.9; do $ID $H $LH lrot=0,0.05,0 rpos=0.25,1.45,$z >/dev/null; done
+      fi ;;
     "inject (arm or body)")
       if [ $((i % 2)) = 1 ]; then $ID $H $LH rpos=-0.17,1.3,-0.09 >/dev/null  # needle on the left forearm
       else $ID $H $LH rpos=0.15,1.0,0.05 rrot=1.5708,0,0 >/dev/null; fi; sleep 2 ;;  # needle into the right hip
@@ -30,7 +37,7 @@ for i in $(seq 1 "$N"); do
   esac
   sleep 0.5; "$HERE/capture.sh" Monado "$OUT-g$i-used.png" 50 >/dev/null 2>&1
   $ID $H $LH $R0 >/dev/null; sleep 3
-  grep -E "gadgets: (.* -> use|holder use|launch|  ready)" "$L" | tail -4 | sed "s/^/[$i]   /"
+  grep -E "gadgets: (.* -> use|holder use|launch|throw without)" "$L" | tail -5 | sed "s/^/[$i]   /"
   # next gadget: wheel held (left trackpad press), right A
   $ID $H $LH $R0 lforce=1 >/dev/null; sleep 0.5; $ID $H $LH $R0 lforce=1 ra=1 >/dev/null; sleep 0.3
   $ID $H $LH $R0 lforce=1 >/dev/null; sleep 0.3; $ID $H $LH $R0 >/dev/null; sleep 1.5

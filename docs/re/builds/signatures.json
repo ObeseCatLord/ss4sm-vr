@@ -414,5 +414,36 @@
   "src": "0x140471450",
   "len": 48,
   "_note": "weapon wheel dual commit (player, idxRight, idxLeft): net call + 0x140493b70 (R3 s6)"
+ },
+ "aoe_target_check": {
+  "call_of": "gadget_launch_activate",
+  "index": 4,
+  "limit": 256,
+  "_note": "targeting mode target check (mode) -> int: 0 = invalid / too close (the activation then shows ETRSMessages.GadgetTargetTooClose); 5th direct call of the launch activation (R12 s8.2)"
+ },
+ "crosshair_show": {
+  "src": "0x1404947c0",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140494eb0",
+   "len": 64
+  },
+  "_note": "crosshair show predicate (only reader of hud_bShowCrosshair): returns 0 for any player with vrd (+0xa0 cmp [rbx+vrd],0; jne) (R8 addendum A1)"
+ },
+ "wheel_render": {
+  "src": "0x1401298c0",
+  "len": 48,
+  "_note": "CWeaponSelectionWheelHudElement vt+0x80 render (also reads the selection sticks) (R16 s2.2); identifies the wheel element by its vtable slot"
+ },
+ "wheel_dummy_command": {
+  "src": "0x1401339c0",
+  "len": 32,
+  "_note": "CMSDummyWeaponSelectionController vt+0x138 OnCommand: the menu screen the wheel pushes; identifies it as the top screen (R16 s1.1)"
+ },
+ "hud_element_render": {
+  "src": "0x1400d6920",
+  "len": 48,
+  "_note": "per-HUD-element render (ctx, element): ctx[7] &vr, ctx[8] &anchor P7; VR model = anchor * params(+0x18 quat, +0x28 pos) * stretch(+0x34); params = element+0x18 (R16 s2.1)"
  }
 }

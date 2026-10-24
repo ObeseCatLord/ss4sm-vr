@@ -2,6 +2,7 @@
 // so `this` is the first parameter (RCX) and MSVC's hidden struct-return pointer is the second (RDX).
 // Floats travel in the XMM register of their argument position. See docs/re/R1_vtable.md.
 #include "se4/vr_device.hpp"
+#include "se4/wheel_panel.hpp"
 #include "up/integrate.hpp"
 #include "se4/scope.hpp"
 #include "core/math.hpp"
@@ -546,8 +547,18 @@ int hookedRender(void* pi, void* dp, int inVR) {
         static LONG once;
         if (!InterlockedExchange(&once, 1)) VRLOG("vrdev: main loop renders through RenderVR");
         auto renderVR = reinterpret_cast<RenderFn>(se4::build().at<void>(se4::gen::viewport_render_vr));
-        menuPointer(pi);
-        return renderVR(pi, dp, 0);
+        // The weapon wheel's menu screen asks for the cinema screen: keep the world in stereo for those frames and
+        // draw the wheel on a hand panel instead (src/se4/wheel_panel.cpp); the menu pointer stays out of it.
+        if (!wheel_panel::wheelOpen(pi)) {
+            menuPointer(pi);
+            return renderVR(pi, dp, 0);
+        }
+        auto* immersive = se4::build().at<int32_t>(se4::gen::vr_bForceImmersiveMode);
+        const int32_t saved = immersive ? *immersive : 0;
+        if (immersive) *immersive = 1;
+        const int r = renderVR(pi, dp, 0);
+        if (immersive) *immersive = saved;
+        return r;
     }
     return realRender(pi, dp, inVR);
 }
@@ -596,6 +607,15 @@ bool install() {
     return true;
 }
 
+int currentEye() { return g_installed ? field<int32_t>(0x18) : 0; }
+bool eyeInHead(int eye, float out[7]) {
+    const auto& v = xr::runtime().views();
+    if (!(eye == 1 || eye == 2) || !v.valid) return false;
+    core::Pose p = toPose(v.inView[eye - 1].pose);
+    p.p = p.p * (1.0f / worldScale());
+    out[0] = p.q.x, out[1] = p.q.y, out[2] = p.q.z, out[3] = p.q.w, out[4] = p.p.x, out[5] = p.p.y, out[6] = p.p.z;
+    return true;
+}
 bool installed() { return g_installed; }
 
 void headPlacement(float out[7]) { sHead(&g_obj, out); }

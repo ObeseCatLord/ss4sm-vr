@@ -75,7 +75,7 @@ add_custom_command(OUTPUT ${SHADER_OUT}/scope.comp.inc
 add_custom_target(shaders DEPENDS ${SHADER_OUT}/motion.comp.inc ${SHADER_OUT}/scope.comp.inc)
 
 # Payload (Bin/x64/ss4smvr/ss4smvr.dll)
-add_library(ss4smvr SHARED src/se4/payload.cpp src/se4/log.cpp src/se4/build.cpp src/se4/cvars.cpp src/se4/procaddr.cpp src/se4/gamepad.cpp src/se4/focus.cpp src/se4/vr_device.cpp src/se4/player_vr.cpp src/se4/options.cpp src/se4/patch.cpp src/se4/crosshair.cpp src/se4/vehicles.cpp src/se4/body.cpp src/se4/melee.cpp src/se4/scope.cpp src/se4/hands.cpp src/se4/arms.cpp src/se4/gadgets.cpp
+add_library(ss4smvr SHARED src/se4/payload.cpp src/se4/log.cpp src/se4/build.cpp src/se4/cvars.cpp src/se4/procaddr.cpp src/se4/gamepad.cpp src/se4/focus.cpp src/se4/vr_device.cpp src/se4/player_vr.cpp src/se4/options.cpp src/se4/patch.cpp src/se4/crosshair.cpp src/se4/vehicles.cpp src/se4/body.cpp src/se4/melee.cpp src/se4/scope.cpp src/se4/hands.cpp src/se4/arms.cpp src/se4/gadgets.cpp src/se4/wheel_panel.cpp
   src/vk/vk_layer.cpp src/vk/queue_lock.cpp src/vk/eye_images.cpp src/vk/foveation.cpp src/vk/scope_layer.cpp src/xr/runtime.cpp src/xr/input.cpp
   src/up/upscaler.cpp src/up/ngx_shim.cpp src/up/integrate.cpp)
 set_target_properties(ss4smvr PROPERTIES PREFIX "")

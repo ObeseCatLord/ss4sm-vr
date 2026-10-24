@@ -21,4 +21,6 @@ bool install();
 void onTick(uint8_t* player);
 // Present thread: the gadget in this XR hand (0 left, 1 right) takes its trigger.
 bool triggerTaken(int hand);
+// Present thread: an XR hand (0/1) to pulse once (a throw refused for lack of a target), or -1.
+int takeBuzz();
 }  // namespace gadgets

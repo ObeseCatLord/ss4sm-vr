@@ -303,3 +303,125 @@ not yet signature-verified in `docs/re/builds/signatures.json`, and the Unrestri
    0x140799eb0 / 0x14077d650 and the unclassified barrel callers are unknown.
 5. Render-thread vs simulation-thread for HUD rendering (needed for C: the wrapper must not write gameplay state).
 6. Which vrd button indices drive 0x14043dcb0 (use path) on our device mapping.
+
+## R8 addendum: crosshair not drawn in VR (2026-10-24)
+
+Static analysis only (disassembly of Sam4 616154 and SamSM 628492, the existing `lab/r8a.c`/`r8b.c`/`r8d.c`/
+`r8e.c` decompiles, and the lab logs of the 2026-10-24 Pompeii run). The game was not run. Symptom: the five F
+redirects install (log lines at t=0.122..0.124), the local player has vrd (`CPlayerVRData ... (local 1)`), the
+weapon wheel renders, but no crosshair is drawn anywhere.
+
+### A1. Cause: the show predicate hides the crosshair for any player with vrd (high confidence)
+The show predicate **0x1404947c0** (SM **0x140494eb0**) is the only reader of `hud_bShowCrosshair`. After the alive,
+net-flag, bot-view, use-state and terminal checks it tests three player pointers and returns 0 if any is set:
+```
+Sam4 0x140494844  48 83 BB 50 21 00 00 00  0F 85 ..       cmp qword [rbx+0x2150],0 ; jne ret0
+     0x140494852  48 83 BB 58 21 00 00 00  0F 85 ..       cmp qword [rbx+0x2158],0 ; jne ret0
+     0x140494860  48 83 BB C8 25 00 00 00  0F 85 AF 00 00 00   cmp qword [rbx+0x25c8],0 ; jne 0x14049491d (xor eax,eax; ret)
+SamSM 0x140494f50 48 83 BB D0 25 00 00 00  0F 85 AF 00 00 00   same test on +0x25d0
+```
+`+0x25c8` (SM `+0x25d0`) is the vrd pointer (R3; the mod's own log: `vrd offset 0x25c8`). So **the vanilla engine never
+draws the HUD crosshair for a VR player**. In VR the weapon laser sight (0x1402e0390) replaces it. Section 1 of this
+document listed this predicate as "rider/weapon checks" and missed the vrd test.
+
+The predicate has exactly two callers (`callers.py`), and both are in the crosshair element:
+| caller | Sam4 | SamSM | gates |
+|---|---|---|---|
+| render 0x140120b60, no-weapon/ride branch | 0x1401211b0 | 0x140121b92 | the whole quad and its outline (the F site 0x1401211e8 is inside this `if`) |
+| ring draw 0x140121410 (called for every held weapon) | 0x140121aa0 | 0x1401224a0 | crosshair texture or nine-slice dispersion box and outline (the F site 0x1401218d4 runs before, but its result is only drawn inside this `if`) |
+
+Only the zero-damage supplement (0x140121ec0) and the lock-on fade (`cp_ptxLockOnCrosshair`) are drawn outside the
+gate, and they are rarely visible. This explains why nothing appears at the screen centre or at the target, and why
+the F redirects alone change nothing visible. The F redirects themselves are correct, see A3.
+
+The other early-outs were checked and none is VR-specific:
+* render: `en_ulPlayerPuppetFlags` (+0xfa8) bit 13, set only by two event handlers (0x1405b1687, 0x1405ea6fd, event
+  class 0x142289fd0) and cleared every frame by the render; the weapon-wheel bit `+0x269c` bit 0 (hidden while the
+  wheel is open, as intended); `+0x2568` (0x14049c010, two writers outside VR code); no right weapon and no ride;
+  empty `cp_aptxCrosshairs`.
+* predicate: `+0x7a4` (`en_pnfNetFlags`) bit 25, 0x14047edb0 (bot view type), 0x140480470 (use/terminal state),
+  0x140153340 (game-mode object vt+0xa0), `+0x2150`/`+0x2158` (both written together by 0x140464fb0, plus a few non-VR
+  writers; not reflected).
+* weapon `vt+0x7e8` ("weapon wants a crosshair"): 28 weapon vtables use the return-1 stub. Overrides:
+  0x140052890 returns 0 (4 vtables, crosshair-less weapons); **0x140764550** (AssaultRifle 0x141a8ef80, Pistol
+  0x141abfd38 and 0x141a8c5b0) returns 0 when `en_fAimRatio` (+0x410) ≥ 1.0 and the owner is not in third person
+  (`vt+0xdf0`); 0x140766850 (AutoShotgun) and 0x1407bfed0 (Sniper) return 0 while zoomed; 0x140788ed0 and
+  0x1407a1d90 are weapon-specific. None tests `+0x1f0` or vrd. Runtime check: if the two-handed grip ever drives
+  `en_fAimRatio` to 1, rifles and pistols hide the crosshair while aimed (the shipped design).
+* element visibility (vt+0x70 0x1400db1c0, mode at params+0x10, `hud_bDrawHUD`-style global 0x142247288) and the HUD
+  loop (0x1400d7be0 → 0x1400d6920) are the same for every element, so they pass if the wheel renders. `hud_bShowCrosshair`
+  is 1 (not in `cvarShowDiffs` in `Sam4.log`, and `SafeMode.cfg` sets 1).
+
+### A2. Second issue (after A1): no eye offset, so the crosshair has no correct depth (medium-high)
+The lab run is **two-pass** (`vr_iUsingSinglePassStereo` = 0, `observe ... singlePass=0`): the view, HUD included, is
+rendered once per eye with `device+0x18` = eye (EYE_TARGETS). In that mode:
+* The HUD loop 0x1400d7be0 takes its VR branch (`device+0x08` = 1 on the immersive path, R10 §3) and places most
+  elements on a lazily head-following 3D panel (`hep_qvVRPlacement` params+0x18, `hep_fVRStretch` +0x34, panel quat
+  `hud+0x90`). The crosshair element ignores that: it calls 0x140b94200 (reset to a plain pixel ortho of the current
+  drawport) at 0x140120db7 and draws in eye-image pixels. This is what we want, but it means the native depth has no
+  effect. In two-pass the 2D flush 0x140c6c070 takes the mono branch (0x140b6b3a0 = 0 because `device+0x18` ≠ 0)
+  and writes the same matrix row for both "eyes" at cb+0x40. The stereo depth at cb+0x58 therefore cannot create
+  disparity, assuming the shader shifts by the row difference (inferred; the shader was not read).
+* Position: the projection is already per eye (0x140478a80 → device slot 0x70 for `device+0x18`). The view is
+  `player vt+0xdf8` (call **0x140120c42**, SM **0x140121660**, bytes `FF 90 F8 0D 00 00`, the only such call in the
+  first 0x1000 bytes of render), which returns the **centre head** placement (P7: quat xyzw, then pos at +0x10).
+  Both eyes therefore project the target from the same point. That puts the crosshair at the right direction but at
+  infinite depth: about 1.8° of wrong vergence at 2 m, so near targets look doubled.
+
+### A3. The mod's redirect logic is correct (high)
+* Aim writer sites: `mov rcx, rsi` (the player) directly precedes both calls (0x1404a3a20, 0x1404a3e03). Polarity is
+  right: `test eax,eax; jne` after 0x1404a3a23 selects the camera ray on non-zero, so 0 → `+0xf3c` = barrel. After
+  0x1404a3e06, 0 → target = blocked origin with distance 0.
+* Crosshair sites: `test eax,eax; jne 0x140121220` after 0x1401211e8 skips the projection on non-zero, and the ring
+  recentres when non-zero. `hudGate` ignores RCX, which is right because RCX is not the player there.
+* `findReturnOneCalls(crosshair_render, 0x1000)` covers 0x1401211e8 and 0x1401218d4 (the ring function starts at
+  +0x8b0). Minor: `hudGate` also answers 0 when the HUD shows a spectated player, and `g_localVrd` is never
+  cleared on level change (pointer compare only).
+
+### A4. Fix plan
+1. **Enable the predicate for VR players (required).** At install, inside `crosshair::install`, after the existing
+   checks, locate the show predicate by a new signature `crosshair_show` (64-byte sig at Sam4 **0x1404947c0**, unique in
+   Sam4, SamSM, Sam4_Unrestricted 0x140496ef0 and SamSM_Unrestricted 0x1404975d0; SM alt **0x140494eb0**; `port_check`
+   mnemonic ratio 1.000). At function **+0xa0** (Sam4 0x140494860, SM 0x140494f50, both Unrestricted builds too) verify
+   the 14 bytes `48 83 BB xx 25 00 00 00 0F 85 AF 00 00 00` with xx = `C8` (Sam4) or `D0` (SM). Then replace the 6-byte `jne` at
+   +0xa8 (Sam4 **0x140494868**, SM **0x140494f58**) with `66 0F 1F 44 00 00`. Needs a small `patch::writeCode` helper
+   (VirtualProtect + FlushInstructionCache); patch.hpp has none yet. Effect: only players with vrd change, and
+   the predicate's only callers are the two crosshair gates. Install it only together with the F redirects (option
+   `native_crosshair`). Without the F redirects the crosshair would show at the screen centre, which is wrong for hand aim.
+   Do not patch the hidden-F stub, and do not null `player+0x25c8` around the call: other threads read vrd.
+2. **Per-eye view (required for depth).** Redirect the view call at render 0x140120c42 / SM 0x140121660:
+   overwrite `FF 90 F8 0D 00 00` with `E8 rel32` + `90` to a near thunk `crosshairView(player, P7* out, int flag)`.
+   The thunk calls `(*player)[0xdf8/8](player, out, flag)`, then, if `device+0x18` ∈ {1,2} and the player is the local
+   VR player, composes `out = out ∘ eyeInHead(eye)`: `out.pos += rotate(out.q, e.p)`, `out.q = out.q · e.q`, where
+   `e` = the same pose the mod's slot 0x078 inverts (`toPose(v.inView[eye-1].pose)`, translation ÷ `worldScale()`).
+   Use exactly that pose so the crosshair matches the world eye views. The projection is already per eye through slot
+   0x070, so each eye projects the hit point `+0x2188` and the disparity comes out right. Leave
+   `0x140c6c040(dp, max(D,0.5))` alone in two-pass (A2). If a runtime capture still shows an extra shift, force it to
+   1.0 by redirecting the two depth-setter calls in render/ring (0x1401212a7 and the one in 0x140121410), as section 8 B
+   says. The dispersion-ring distances use `vt+0x340` modes 0/1 and are unaffected.
+3. **Single-pass (only if `vr_iUsingSinglePassStereo` is ever enabled).** One HUD pass with `device+0x18` = 0:
+   0x140478a80 falls back to the player FOV, so hook it (SM 0x1404790b0) during the crosshair render so that it
+   returns a centre-eye HMD projection, and keep the native depth, which the single-pass flush turns into
+   disparity. Not needed for the current lab configuration.
+4. **Behind-the-eye guard (polish).** 0x141152ae0 returns a visibility flag that the crosshair ignores. If the barrel
+   points backwards, the point projects mirrored. Wrap crosshair vt+0x80 (vtable 0x1415ff2f0 / SM 0x1415e1c70, slot
+   0x80) and skip the original call when `+0x2188` is behind the current eye. Do not write player state from that
+   wrapper.
+5. **Laser.** `prj_bRenderVRLaserSight` (0x142247fec, SM 0x142228c3c) is 1 by default and the mod never clears it. Set
+   it to 0 through `se4/cvars` when `native_crosshair` is on (PLAN: no lasers; section 8 E assumed it was off).
+6. **Diagnostics for the next lab run:** log once per level the show-predicate result for the local player, `device+0x18`
+   during the crosshair render, `+0x2188`/`+0x2194`, and the projected pixel of each eye.
+
+| item | Sam4 616154 | SamSM 628492 |
+|---|---|---|
+| show predicate (new sig `crosshair_show`) | 0x1404947c0 | 0x140494eb0 |
+| vrd test / `jne` to NOP | 0x140494860 / **0x140494868** | 0x140494f50 / **0x140494f58** |
+| predicate callers (gates) | 0x1401211b0, 0x140121aa0 | 0x140121b92, 0x1401224a0 |
+| view call to redirect (`FF 90 F8 0D 00 00`) | **0x140120c42** | **0x140121660** |
+| player projection (per eye in two-pass) | 0x140478a80 | 0x1404790b0 |
+| 2D reset in render | 0x140120db7 → 0x140b94200 | 0x1401217d5 → 0x140b94860 |
+| laser cvar | 0x142247fec | 0x142228c3c |
+
+Confidence: A1 high, because the unconditional vrd test in the predicate shows statically that no crosshair can be
+drawn for a VR player. A2 medium-high: the two-pass per-eye HUD and the per-eye projection come from code, the
+2D shader's use of cb+0x58 is inferred. A3 high.

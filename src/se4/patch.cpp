@@ -51,6 +51,15 @@ int findReturnOneCalls(uint8_t* fn, size_t len, uint8_t** out, int max) {
     return n;
 }
 
+bool writeCode(uint8_t* site, const uint8_t* expect, const uint8_t* bytes, size_t n) {
+    if (!site || memcmp(site, expect, n)) return false;
+    DWORD old;
+    if (!VirtualProtect(site, n, PAGE_EXECUTE_READWRITE, &old)) return false;
+    memcpy(site, bytes, n);
+    VirtualProtect(site, n, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, n);
+    return true;
+}
 bool retargetCall(uint8_t* site, void* newTarget) {
     if (site[0] != 0xE8) return false;
     intptr_t rel = static_cast<uint8_t*>(newTarget) - (site + 5);
