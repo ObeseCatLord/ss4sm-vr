@@ -16,6 +16,8 @@ enum Button : uint32_t {
     BtnTrackpadPress = 1u << 6,  // Index trackpad force / Vive+WMR trackpad click
 };
 
+enum class ControllerKind { Touch, Index, Vive, WMR, Simple, Unknown };
+
 struct HandState {
     bool active = false;          // controller present and pose valid
     XrPosef aim{}, grip{};        // in the runtime's LOCAL space
@@ -26,6 +28,7 @@ struct HandState {
     uint32_t buttons = 0;
     uint32_t pressed = 0, released = 0;  // edges since the previous sync
     XrPath profile = XR_NULL_PATH;
+    ControllerKind kind = ControllerKind::Unknown;  // from the current interaction profile
 };
 
 class Input {

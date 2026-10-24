@@ -3,6 +3,7 @@
 #include "se4/procaddr.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
+#include "core/vr_controls.hpp"
 #include <xinput.h>
 #include <cmath>
 #include <cstring>
@@ -94,30 +95,42 @@ void logStats() {
           InterlockedExchange(&g_pollsOther, 0), g_pad.wButtons, g_pad.sThumbLX, g_pad.sThumbLY, g_pad.bRightTrigger);
 }
 
+// Layout and the native weapon wheel's hand selection: core/vr_controls.hpp.
+static_assert(int(xr::ControllerKind::Index) == int(core::controls::Kind::Index) &&
+              int(xr::ControllerKind::Unknown) == int(core::controls::Kind::Unknown), "controller kinds must match");
+static_assert(uint32_t(xr::BtnPrimary) == core::controls::Primary && uint32_t(xr::BtnSecondary) == core::controls::Secondary &&
+              uint32_t(xr::BtnStickClick) == core::controls::StickClick && uint32_t(xr::BtnMenu) == core::controls::Menu &&
+              uint32_t(xr::BtnTrackpadPress) == core::controls::TrackpadPress, "button bits must match");
+static_assert(XINPUT_GAMEPAD_LEFT_SHOULDER == core::controls::PadLB && XINPUT_GAMEPAD_Y == core::controls::PadY &&
+              XINPUT_GAMEPAD_START == core::controls::PadStart, "XInput bits must match");
+core::controls::Mapper g_mapper;
+
 void publishFromXr() {
-    const auto& L = xr::input().hand(0);
-    const auto& R = xr::input().hand(1);
+    using namespace core::controls;
+    Frame f;
+    for (int h = 0; h < 2; ++h) {
+        const auto& x = xr::input().hand(h);
+        Hand& o = f.hand[h];
+        o.active = x.active;
+        o.trigger = x.trigger, o.squeeze = x.squeeze;
+        o.sx = x.stick.x, o.sy = x.stick.y;
+        o.buttons = x.buttons;
+        o.pos = {x.grip.position.x, x.grip.position.y, x.grip.position.z};
+    }
+    // Kind from the right hand (both hands share a profile in practice), else the left.
+    auto k = xr::input().hand(1).kind != xr::ControllerKind::Unknown ? xr::input().hand(1).kind : xr::input().hand(0).kind;
+    f.kind = Kind(int(k));
+    const auto& v = xr::runtime().views();
+    if (v.valid) f.head = {v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w};
+    const Pad m = g_mapper.update(f);
     XINPUT_GAMEPAD p{};
-    // Baseline layout over the game's default gamepad bindings (DefaultGamepadBindings.lua):
-    // LS move, RS-x turn, RT plcmdFire, LT plcmdAltFire (left weapon when dual wielding),
-    // A plcmdY+ (jump), B plcmdY- (crouch), X plcmdReload, Y plcmdGadgetQuickUse, LB weapon wheel,
-    // RB toggle dual wielding, LS click sprint, RS click use, Start menu.
-    p.sThumbLX = axis(L.stick.x);
-    p.sThumbLY = axis(L.stick.y);
-    p.sThumbRX = axis(R.stick.x);
-    p.bRightTrigger = trig(R.trigger);
-    p.bLeftTrigger = trig(L.trigger);
-    WORD b = 0;
-    if (R.buttons & xr::BtnPrimary) b |= XINPUT_GAMEPAD_A;
-    if (R.buttons & xr::BtnSecondary) b |= XINPUT_GAMEPAD_B;
-    if (L.buttons & xr::BtnPrimary) b |= XINPUT_GAMEPAD_X;
-    if (L.buttons & xr::BtnSecondary) b |= XINPUT_GAMEPAD_START;
-    if (L.buttons & xr::BtnStickClick) b |= XINPUT_GAMEPAD_LEFT_THUMB;
-    if (R.buttons & xr::BtnStickClick) b |= XINPUT_GAMEPAD_RIGHT_THUMB;
-    if (L.buttons & xr::BtnTrackpadPress) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
-    if (R.buttons & xr::BtnTrackpadPress) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
-    if (L.buttons & xr::BtnMenu || R.buttons & xr::BtnMenu) b |= XINPUT_GAMEPAD_START;
-    p.wButtons = b;
+    p.sThumbLX = axis(m.lx);
+    p.sThumbLY = axis(m.ly);
+    p.sThumbRX = axis(m.rx);
+    p.sThumbRY = g_mapper.wheelHeld ? axis(m.ry) : 0;  // pitch comes from the head outside the wheel
+    p.bRightTrigger = trig(m.rt);
+    p.bLeftTrigger = trig(m.lt);
+    p.wButtons = m.buttons;
     AcquireSRWLockExclusive(&g_lock);
     if (memcmp(&p, &g_pad, sizeof p)) {
         g_pad = p;

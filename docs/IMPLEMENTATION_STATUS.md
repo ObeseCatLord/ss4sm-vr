@@ -45,3 +45,21 @@
   full-body IK, 64-byte networked pose packet, grab-to-steer, ported SS2 two-hand/grenade/motion/comfort.
 - Installer with receipt (`tools/install.py`); VR opt-in switch; virtual pad only with an XR runtime.
 - Pending hardware/runtime checks: see `docs/USER_VR_TEST.md`. Gate R3 (live VR gameplay) in progress.
+
+## Offline progress, continued (2026-10-23)
+- Gate R3 done (`docs/re/R3_vr_gameplay.md`). The engine's VR player layer (`CPlayerVRData`) is dormant but
+  callable.
+- `src/se4/player_vr.cpp` turns it on for the local VR user:
+  - Forces `SetPlayingInVR(1)` at the local-user binding.
+  - Guards three unguarded engine paths: the vrd_init slot 0x208 thunk, the controller placement for a
+    NULL vrd, and `ClientActionVR` for a player without VR data.
+  - Reads the player→vrd offset from the running build (SS4 0x25c8, SM 0x25d0).
+  - Expected result: hand-placed weapons, shots from the muzzle and a head-tracked camera. Not yet run.
+- Fixed a latent input bug. The device used to set +0xb3c on a trigger press, which switches the engine to a
+  "VRController" input device SS4/SM do not have. It now forces `vr_bVRControllerExclusiveInput` instead,
+  restored at shutdown.
+- Controls: `core/vr_controls.hpp` gives a per-profile layout (Index, Touch, Vive, WMR, simple) on the virtual
+  gamepad. Holding the wheel button turns hand movement into native weapon-wheel selection for each hand.
+  Host-tested (`controls_checks`).
+- Still to do for the wheel: drive the gadget ring (syscmdUp/Down) from the controllers, and present the wheel
+  on the HUD layer near the hand.

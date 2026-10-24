@@ -202,7 +202,14 @@ void Input::sync(XrSession session, XrSpace space, XrTime time) {
         XrInteractionProfileState ps{XR_TYPE_INTERACTION_PROFILE_STATE};
         if (XR_SUCCEEDED(xrGetCurrentInteractionProfile(session, handPath_[h], &ps)) && ps.interactionProfile != s.profile) {
             s.profile = ps.interactionProfile;
-            VRLOG("input: %s hand profile %s", h ? "right" : "left", profileName(instance_, h));
+            const char* name = profileName(instance_, h);
+            s.kind = strstr(name, "oculus/touch") ? ControllerKind::Touch
+                     : strstr(name, "valve/index") ? ControllerKind::Index
+                     : strstr(name, "htc/vive")    ? ControllerKind::Vive
+                     : strstr(name, "microsoft/motion") ? ControllerKind::WMR
+                     : strstr(name, "khr/simple")  ? ControllerKind::Simple
+                                                   : ControllerKind::Unknown;
+            VRLOG("input: %s hand profile %s", h ? "right" : "left", name);
         }
     }
 }

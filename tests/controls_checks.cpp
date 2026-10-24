@@ -1,0 +1,91 @@
+// VR controller -> virtual gamepad mapping checks (core/vr_controls.hpp).
+#undef NDEBUG
+#include "core/vr_controls.hpp"
+#include <cassert>
+#include <cmath>
+
+using namespace core;
+using namespace core::controls;
+
+static Frame idle(Kind k) {
+    Frame f;
+    f.kind = k;
+    for (auto& h : f.hand) h.active = true;
+    f.hand[0].pos = {-0.2f, 1.0f, -0.3f};
+    f.hand[1].pos = {0.2f, 1.0f, -0.3f};
+    return f;
+}
+
+int main() {
+    // Index: buttons, triggers and sticks pass through
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.hand[1].trigger = 0.7f;
+        f.hand[0].sx = 0.5f;
+        f.hand[1].buttons = Primary | StickClick;
+        f.hand[0].buttons = Primary;
+        Pad p = m.update(f);
+        assert(p.rt == 0.7f && p.lx == 0.5f);
+        assert(p.buttons == (PadA | PadRightThumb | PadX));
+        // grip with hysteresis: on above 0.4, still on at 0.3, off below 0.24
+        f.hand[1].buttons = f.hand[0].buttons = 0;
+        f.hand[0].squeeze = 0.45f;
+        assert(m.update(f).buttons == PadY);
+        f.hand[0].squeeze = 0.3f;
+        assert(m.update(f).buttons == PadY);
+        f.hand[0].squeeze = 0.2f;
+        assert(m.update(f).buttons == 0);
+    }
+    // Touch: a resting squeeze (0.5) is not a grip; Y holds the wheel
+    {
+        Mapper m;
+        Frame f = idle(Kind::Touch);
+        f.hand[0].squeeze = 0.5f;
+        f.hand[0].buttons = Secondary;
+        assert(m.update(f).buttons == PadLB);
+    }
+    // Wheel: hand displacement relative to the opening pose becomes the stick, in the head's yaw frame
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.head = yaw(Pi / 2);  // facing -X (yaw +90 deg about +Y turns -Z towards -X)
+        f.hand[0].buttons = TrackpadPress;
+        Pad p = m.update(f);
+        assert(p.buttons & PadLB);
+        assert(p.rx == 0 && p.ry == 0 && p.lx == 0 && p.ly == 0);  // opening does not select
+        // right hand moves 4 cm up and 4 cm to the user's right (user's right = world -Z when facing -X)
+        f.hand[1].pos = f.hand[1].pos + Vec3{0, 0.04f, -0.04f};
+        p = m.update(f);
+        assert(std::fabs(p.rx - 0.5f) < 1e-3f && std::fabs(p.ry - 0.5f) < 1e-3f);
+        // a large move saturates at length 1
+        f.hand[1].pos = f.hand[1].pos + Vec3{0, 0.5f, 0};
+        p = m.update(f);
+        assert(std::fabs(std::sqrt(p.rx * p.rx + p.ry * p.ry) - 1) < 1e-3f);
+        // jitter inside the dead zone selects nothing for the left hand
+        f.hand[0].pos = f.hand[0].pos + Vec3{0.005f, 0, 0};
+        p = m.update(f);
+        assert(p.lx == 0 && p.ly == 0);
+        // a stick pushed further than the hand wins
+        f.hand[0].sx = 0, f.hand[0].sy = -0.9f;
+        p = m.update(f);
+        assert(p.ly == -0.9f);
+        // releasing the wheel button returns to plain sticks; reopening re-anchors
+        f.hand[0].buttons = 0;
+        f.hand[0].sy = 0;
+        p = m.update(f);
+        assert(!(p.buttons & PadLB) && p.rx == 0 && p.ry == 0);
+        f.hand[0].buttons = TrackpadPress;
+        p = m.update(f);
+        assert(p.rx == 0 && p.ry == 0);
+    }
+    // Vive: trackpad press is not also reported as a stick click (sprint)
+    {
+        Mapper m;
+        Frame f = idle(Kind::Vive);
+        f.hand[0].buttons = TrackpadPress | StickClick;
+        Pad p = m.update(f);
+        assert(p.buttons == PadLB);
+    }
+    return 0;
+}
