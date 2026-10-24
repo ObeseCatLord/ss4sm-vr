@@ -168,7 +168,11 @@ tests/  portable unit tests + symbol-table consistency over 4 exes
 ### Phase 3: Weapons
 **Work:**
 - **Dual wield:** native `plcmdToggleDualWielding`, per-hand fire and muzzle, and `plcmdWeaponSelectMod` for the off-hand weapon.
-- **Weapon wheel:** a hand-anchored 3D WheelRing of native weapon models.
+- **Weapon wheel (user request: reuse the game's built-in wheel):** drive and present the native weapon
+  wheel (`plcmdShowWeaponWheel`, native slow-mo, native wheel UI/icons and the `CVRWeaponSelection*`
+  remnants) in VR, anchored to the hand, with hand direction feeding the native wheel's selection input.
+  A custom 3D WheelRing is only a fallback if the native wheel cannot be driven.
+- **Previous wheel idea (fallback):** a hand-anchored 3D WheelRing of native weapon models.
   - Select by pointing or wrist twist, with a haptic tick per sector.
   - The pick is applied through native `plcmdWeaponSlot*` / wheel commands, so it is multiplayer-safe; native slow-mo is optional, via `plcmdShowWeaponWheel`.
   - Use the native `CVRWeaponSelectionWheelInfo` if R3 shows it is live.
@@ -224,7 +228,8 @@ tests/  portable unit tests + symbol-table consistency over 4 exes
 
 ### Phase 6: Gadgets
 **Work:**
-- An off-hand gadget wheel through native `plcmdGadgetSelection`.
+- An off-hand gadget wheel reusing the game's built-in gadget selection wheel (`plcmdGadgetSelection`),
+  presented in VR the same way as the native weapon wheel.
 - The native gadget model is held in the hand (`GadgetHolder.ep`, `*_Arms`/`*_Item`).
 - Throwables (BlackHole, NerveGas, Decoy, ClusterBomb, MiniNuke): grip velocity at release, solved with `grenade_throw.hpp`, goes into the native targeting mode and then the native launch mode.
 - **Gate R6:** if the launch accepts an initial velocity, pass the velocity directly.

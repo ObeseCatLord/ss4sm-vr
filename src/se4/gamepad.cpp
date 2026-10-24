@@ -22,6 +22,7 @@ DWORD g_packet;
 // Connected (neutral) from the start: the engine enumerates gamepads early, before the XR session exists.
 bool g_active = true;
 LONG g_polled;
+volatile LONG g_polls, g_pollsOther;
 
 SHORT axis(float v) {
     v = v < -1 ? -1 : v > 1 ? 1 : v;
@@ -30,7 +31,11 @@ SHORT axis(float v) {
 BYTE trig(float v) { return BYTE(std::lround((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0f)); }
 
 DWORD WINAPI hookGetState(DWORD user, XINPUT_STATE* st) {
-    if (user != 0 || !g_active) return realGetState ? realGetState(user, st) : ERROR_DEVICE_NOT_CONNECTED;
+    if (user != 0 || !g_active) {
+        InterlockedIncrement(&g_pollsOther);
+        return realGetState ? realGetState(user, st) : ERROR_DEVICE_NOT_CONNECTED;
+    }
+    InterlockedIncrement(&g_polls);
     if (!InterlockedExchange(&g_polled, 1)) VRLOG("gamepad: first game poll of user 0");
     AcquireSRWLockShared(&g_lock);
     st->dwPacketNumber = g_packet;
@@ -82,6 +87,11 @@ FARPROC interceptProc(HMODULE, const char* name, FARPROC real) {
 }
 
 bool active() { return g_active; }
+
+void logStats() {
+    VRLOG("gamepad: polls user0 %ld other %ld, buttons %04x LX %d LY %d RT %u", InterlockedExchange(&g_polls, 0),
+          InterlockedExchange(&g_pollsOther, 0), g_pad.wButtons, g_pad.sThumbLX, g_pad.sThumbLY, g_pad.bRightTrigger);
+}
 
 void publishFromXr() {
     const auto& L = xr::input().hand(0);

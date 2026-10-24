@@ -12,9 +12,9 @@ bool setIndex(gen::Sym s, int32_t value) {
 }
 
 void applyVrFramePacing() {
-    setIndex(gen::gfx_iMaxFPSActive, 0);      // 0 = unlimited for the active cap
-    setIndex(gen::gfx_iMaxFPSInactive, 1000); // 0 would mean 1 fps here, not unlimited
-    setIndex(gen::men_iMaxAllowedFPS, 0);
+    // Raise caps instead of zeroing them: 0 is not "unlimited" for every cap (gfx_iMaxFPSInactive 0
+    // gives 1 fps, and zeroed caps left the post-load chapter screen unable to continue).
+    setIndex(gen::gfx_iMaxFPSInactive, 1000);
     setIndex(gen::gfx_iWaitVSyncs, 0);
 }
 }  // namespace se4

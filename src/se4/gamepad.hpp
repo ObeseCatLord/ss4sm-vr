@@ -5,4 +5,5 @@
 namespace gamepad {
 void publishFromXr();  // after xr::input().sync(), on the frame thread
 bool active();
+void logStats();
 }

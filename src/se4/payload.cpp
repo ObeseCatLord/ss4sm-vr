@@ -5,6 +5,7 @@
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/procaddr.hpp"
+#include "se4/focus.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -65,6 +66,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         return;
     }
     if (!(skip & 2)) se4::installProcAddressHook();
+    if (!(skip & 4)) focus::install();
 }
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {

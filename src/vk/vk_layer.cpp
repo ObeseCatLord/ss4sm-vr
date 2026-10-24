@@ -14,6 +14,7 @@
 #include "xr/runtime.hpp"
 #include "xr/input.hpp"
 #include "se4/gamepad.hpp"
+#include "se4/focus.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <intrin.h>
@@ -50,6 +51,14 @@ struct GameVk {
     VkQueue xrQueue = VK_NULL_HANDLE;  // family graphicsFamily, index 0
     bool xrInstance = false, xrDevice = false;
 } g;
+
+HWND g_gameWnd;
+PFN_vkCreateWin32SurfaceKHR realCreateWin32Surface;
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateWin32Surface(VkInstance i, const VkWin32SurfaceCreateInfoKHR* ci, const VkAllocationCallbacks* a,
+                                                       VkSurfaceKHR* out) {
+    if (!g_gameWnd) g_gameWnd = ci->hwnd;
+    return realCreateWin32Surface(i, ci, a, out);
+}
 
 struct SwapchainInfo {
     VkFormat format;
@@ -274,6 +283,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         vkq::Guard lock;
         return realQueuePresent(q, pi);
     }
+    focus::enable(g_gameWnd);
     if (!m.ready) {
         m.ready = setupMirror(sw);
         if (!m.ready) {
@@ -405,6 +415,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
               fs.predictedDisplayPeriod / 1e6);
         windowStart = fs.predictedDisplayTime;
         windowFrames = 0;
+        gamepad::logStats();
     }
     return result;
 }
@@ -433,6 +444,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGIPA(VkInstance inst, const char* n
     if (name) {
         if (!strcmp(name, "vkCreateInstance")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateInstance);
         if (!strcmp(name, "vkCreateDevice")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateDevice);
+        if (!strcmp(name, "vkCreateWin32SurfaceKHR") && inst) {
+            realCreateWin32Surface = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(realGIPA(inst, name));
+            return realCreateWin32Surface ? reinterpret_cast<PFN_vkVoidFunction>(hookCreateWin32Surface) : nullptr;
+        }
         if (!strcmp(name, "vkGetDeviceProcAddr")) {
             if (!realGDPA) realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(realGIPA(inst, name));
             return realGDPA ? reinterpret_cast<PFN_vkVoidFunction>(hookGDPA) : nullptr;
