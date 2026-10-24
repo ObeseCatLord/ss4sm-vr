@@ -7,6 +7,7 @@
 // - Milestone "mirror": each presented game image is blitted into a world-locked quad layer.
 #include "vk/vk_layer.hpp"
 #include "se4/build.hpp"
+#include "se4/cvars.hpp"
 #include "se4/log.hpp"
 #include "vk/queue_lock.hpp"
 #include "xr/runtime.hpp"
@@ -157,6 +158,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realGetDeviceQueue = DFN(vkGetDeviceQueue);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
+    else se4::applyVrFramePacing();
     return r;
 }
 
