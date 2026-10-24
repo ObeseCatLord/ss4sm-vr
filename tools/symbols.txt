@@ -31,3 +31,6 @@ manual:vrd_init                  # R3: CPlayerVRData init; two unguarded device 
 manual:vrd_controller_world      # R3: CPlayerVRData controller world placement (vrd, P7* out, role)
 manual:client_action_vr          # R3: ClientActionVR net stub + apply (writes the player's vrd unguarded)
 manual:client_action             # R3: desktop ClientAction net stub + apply (player vt+0x1298)
+manual:aim_writer                # R8: player aim/target writer; 2 calls to the shared return-1 predicate gate the barrel ray
+manual:crosshair_render          # R8: CWeaponCrosshairHudElement render; 2 predicate calls gate the projected crosshair
+manual:object_holder_render      # R8: CObjectHolderHudElement render; 1 predicate call gates the gadget aim indicator

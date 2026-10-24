@@ -20,7 +20,10 @@
   "client_action_vr": "0x140470310",
   "set_playing_in_vr": "0x140bdc6f0",
   "client_action": "0x140470080",
-  "send_vr_action": "0x14048b730"
+  "send_vr_action": "0x14048b730",
+  "aim_writer": "0x1404a3670",
+  "crosshair_render": "0x140120b60",
+  "object_holder_render": "0x1401015d0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -43,7 +46,10 @@
   "bind_local_user_psd": "0x14006a2d0",
   "set_playing_in_vr": "0x140bdf2d0",
   "client_action": "0x1404727b0",
-  "send_vr_action": "0x14048de60"
+  "send_vr_action": "0x14048de60",
+  "aim_writer": "0x1404a5da0",
+  "object_holder_render": "0x140103f20",
+  "crosshair_render": "0x1401234b0"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -66,7 +72,10 @@
   "set_playing_in_vr": "0x140bdce60",
   "vrd_controller_world": "0x14043ba20",
   "client_action": "0x1404706b0",
-  "send_vr_action": "0x14048bd50"
+  "send_vr_action": "0x14048bd50",
+  "aim_writer": "0x1404a3c50",
+  "object_holder_render": "0x140101ef0",
+  "crosshair_render": "0x140121570"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -89,6 +98,9 @@
   "set_playing_in_vr": "0x140bdfa30",
   "vrd_controller_world": "0x14043e140",
   "client_action": "0x140472dd0",
-  "send_vr_action": "0x14048e470"
+  "send_vr_action": "0x14048e470",
+  "aim_writer": "0x1404a6370",
+  "object_holder_render": "0x140104830",
+  "crosshair_render": "0x140123eb0"
  }
 }

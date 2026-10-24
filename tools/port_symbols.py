@@ -41,8 +41,14 @@ for name, s in [(k, v) for k, v in sigs.items() if 'call_of' not in v] + [(k, v)
                 print('FAIL', name, b, file=sys.stderr)
         continue
     code, mask = signature(src, int(s['src'], 16), s['len'])
+    # 'alt': {build, src, len} - a second signature taken from another build, for builds whose code differs
+    # from Sam4's (e.g. Siberian Mayhem); its source address must be established in that build's gate notes.
+    alt = s.get('alt')
+    alt_sig = signature(imgs[alt['build']], int(alt['src'], 16), alt['len']) if alt else None
     for b, img in imgs.items():
         hits = find(img, code, mask)
+        if len(hits) != 1 and alt_sig:
+            hits = find(img, *alt_sig)
         if len(hits) == 1:
             manual.setdefault(b, {})[name] = hex(hits[0])
         else:

@@ -87,5 +87,25 @@
   "src": "0x14048b730",
   "len": 64,
   "_note": "native ClientActionVR sender (player), builds args from vrd (R3 s4)"
+ },
+ "aim_writer": {
+  "src": "0x1404a3670",
+  "len": 64,
+  "_note": "player aim/target writer (R8 s4); its calls to the shared return-1 stub gate the barrel ray (R8 s8 A)"
+ },
+ "crosshair_render": {
+  "src": "0x140120b60",
+  "len": 32,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140121570",
+   "len": 32
+  },
+  "_note": "CWeaponCrosshairHudElement vt+0x80 render (R8 s1; SM = slot 0x80 of vtable 0x1415e1c70)"
+ },
+ "object_holder_render": {
+  "src": "0x1401015d0",
+  "len": 64,
+  "_note": "CObjectHolderHudElement vt+0x80 render (R8 s1)"
  }
 }

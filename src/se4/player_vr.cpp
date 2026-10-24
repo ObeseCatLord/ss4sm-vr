@@ -6,6 +6,7 @@
 #include "se4/cvars.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
+#include "se4/patch.hpp"
 #include "se4/vr_device.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -134,19 +135,6 @@ unsigned findVrdOffset(const uint8_t* fn) {
     return 0;
 }
 
-// Executable memory within +-2 GB of `target` for rel32 calls from the image.
-uint8_t* allocNear(void* target, size_t size) {
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-    uintptr_t gran = si.dwAllocationGranularity;
-    uintptr_t start = (reinterpret_cast<uintptr_t>(target) & ~(gran - 1));
-    for (uintptr_t a = start - gran; a > start - 0x7ff00000ull; a -= gran) {
-        void* p = VirtualAlloc(reinterpret_cast<void*>(a), size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-        if (p) return static_cast<uint8_t*>(p);
-    }
-    return nullptr;
-}
-
 // vrd_init calls device slot 0x208 twice as `mov rcx,[rip+global]; mov rax|rdx,[rcx]; call [rax|rdx+0x208]`
 // (16 bytes) with no null check: it runs for every VR player, including remote VR players on a machine
 // whose device global is NULL (R3 s7.2). Each site becomes `call thunk` + NOPs; the thunk returns 0 when
@@ -168,7 +156,7 @@ bool patchSlot208(uint8_t* fn, void** global) {
         VRLOG("player_vr: vrd_init slot 0x208 sites: found %d, expected 2 - not patched", n);
         return false;
     }
-    uint8_t* thunk = allocNear(fn, 64);
+    uint8_t* thunk = se4::patch::allocNear(fn, 64);
     if (!thunk) {
         VRLOG("player_vr: no executable memory near the image - slot 0x208 not patched");
         return false;

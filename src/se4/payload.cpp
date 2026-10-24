@@ -8,6 +8,7 @@
 #include "se4/focus.hpp"
 #include "se4/vr_device.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/crosshair.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
@@ -90,7 +91,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         vrdev::hookShutdown();
         vrdev::hookViewport();
     }
-    if (!(skip & 0x10)) player_vr::install(true);
+    if (!(skip & 0x10) && player_vr::install(true) && !(skip & 0x20)) crosshair::install();
 }
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {
