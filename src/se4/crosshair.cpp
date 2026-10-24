@@ -28,7 +28,8 @@ using ViewFn = float*(__cdecl*)(uint8_t* player, float* out, int flag);
 float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
     float* r = reinterpret_cast<ViewFn>((*reinterpret_cast<void***>(player))[0xdf8 / 8])(player, out, flag);
     static ULONGLONG last;
-    if (GetTickCount64() - last > 3000) {
+    static const bool diag = se4::options::get("crosshair_log", 0) != 0;
+    if (diag && GetTickCount64() - last > 3000) {
         last = GetTickCount64();
         auto* show = se4::build().at<int32_t>(se4::gen::hud_bShowCrosshair);
         auto* opt = se4::build().at<int32_t>(se4::gen::prj_iGameOptionCrosshair);

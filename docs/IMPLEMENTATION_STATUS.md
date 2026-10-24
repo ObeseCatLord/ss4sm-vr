@@ -292,10 +292,9 @@
     (immersive forced for those frames); while it is open the HUD keeps its 3D branch and the wheel is drawn on a
     panel in front of the opening hand (both trackpads: between the hands). The world blur/tint post-process is
     skipped (user request; `wheel_blur=1` restores it).
-  - **Weapon visuals vs aim (open, important):** the barrel (shooting attachment) is exactly along the controller
-    -Z, 0.88 m ahead of the hand, but the visible first-person gun is held in the flat-screen animation pose
-    (pitched about 55-60 deg up from the controller). SS4 has no VR weapon models; the arms model's R_Weapon pose
-    needs correcting so the gun lines up with the controller and the barrel.
+  - Weapon placement checked: the weapon root equals the controller pose (identity rotation, offset ~0.1 m from
+    the weapon's own vt+0x768 offset) and the barrel lies along its -Z; the visible hand sits at the controller.
+    (A gun below eye level looks "pitched up" on screen only through perspective.)
   - Gadgets: throws need the native target check (too close / invalid: kept in hand, aiming hand buzzes); the
     activation's own targeting pass is steered by the aiming hand; refused activations re-arm. SM: injection,
     tosses and a Nerve Gas launch verified; Mini Nuke refused when aimed 2 m ahead (native too-close check).

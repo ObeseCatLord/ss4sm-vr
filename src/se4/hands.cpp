@@ -188,25 +188,6 @@ void hookedStep(uint8_t* weapon, void* arg) {
     uint8_t* player = weapon ? localOwner(weapon) : nullptr;
     uint8_t* params = player ? at<uint8_t*>(weapon, kParams) : nullptr;
     if (player) gadgets::onTick(player);  // once per tick (it keeps its own tick stamp)
-    // Diagnostic (every 3 s, local right weapon): the barrel's orientation in the controller's frame, i.e. the
-    // rotation from the engine controller placement to the weapon's shooting attachment.
-    if (params && player && at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon))) {
-        static ULONGLONG lastBarrel;
-        if (GetTickCount64() - lastBarrel > 3000) {
-            lastBarrel = GetTickCount64();
-            static void* emptyIdent;
-            static bool interned;
-            if (!interned) g_identCtor(&emptyIdent, ""), interned = true;
-            float b7[7] = {}, c7[7] = {};
-            barrelPlacement(weapon, b7, barrelCtx(), emptyIdent, 0, 0, 1);
-            player_vr::controllerWorld(player_vr::localVrd(), 0, c7);
-            const core::Quat rel = core::multiply(core::inverse(core::normalize({c7[0], c7[1], c7[2], c7[3]})), core::normalize({b7[0], b7[1], b7[2], b7[3]}));
-            const core::Vec3 f = core::rotate(rel, {0, 0, -1});
-            const core::Vec3 d = core::rotate(core::inverse(core::normalize({c7[0], c7[1], c7[2], c7[3]})), {b7[4] - c7[4], b7[5] - c7[5], b7[6] - c7[6]});
-            VRLOG("hands: barrel in the controller frame: forward %.2f %.2f %.2f, offset %.3f %.3f %.3f (rel q %.3f %.3f %.3f %.3f)", f.x, f.y,
-                  f.z, d.x, d.y, d.z, rel.x, rel.y, rel.z, rel.w);
-        }
-    }
     static uint8_t* lastProbed;
     if (g_probe && params && weapon != lastProbed) {
         lastProbed = weapon;
