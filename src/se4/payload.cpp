@@ -11,6 +11,7 @@
 #include "se4/crosshair.hpp"
 #include "se4/vehicles.hpp"
 #include "se4/body.hpp"
+#include "se4/melee.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
@@ -98,6 +99,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         if (!(skip & 0x20)) crosshair::install();
         if (!(skip & 0x40)) vehicles::install();
         if (!(skip & 0x80)) body::install();
+        if (!(skip & 0x100)) melee::install();
     }
 }
 

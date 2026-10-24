@@ -49,3 +49,13 @@ manual:mh_register               # R9: register a motion handler on a renderable
 manual:mh_base_ctor              # R9: CMotionHandler base ctor (base vtable read from its lea)
 manual:vrd_tick                  # R9: CPlayerVRData per-tick step
 manual:vr_ctrl_model_pose         # lab: per-hand VR controller model pose; guarded against a NULL model
+var:vr_fMinSwingToHitSpeed       # R12: swing speed threshold for VR melee hits
+manual:knife_step                # R12: CMacheteWeaponEntity step
+manual:knife_swing_test          # R12: canned swing arc (skipped for VR owners)
+manual:segment_cast              # R12: SegmentCast(res, world, from, to, CName, CName)
+manual:cast_result_ctor          # R12: cast result ctor
+manual:cast_result_dtor          # R12: cast result member dtor (+0xa8)
+manual:damage_ctor               # R12: CDamage ctor
+manual:weapon_params             # R12: weapon params getter
+manual:ref_release               # refcounted object Release(obj, owner slot)
+var:cht_bGiveAll                 # lab: give all weapons (lab_giveall option)

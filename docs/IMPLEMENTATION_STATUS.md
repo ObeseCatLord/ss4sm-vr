@@ -181,3 +181,15 @@
   - Siberian Mayhem reaches its menu in stereo.
   - The pad is polled, and A passes the loading screen's Continue.
   - New goals: picture-in-picture scopes (R14) and separate hands with finger tracking (R15).
+- Physical melee, knife (`src/se4/melee.cpp`, R12):
+  - For VR owners the knife's canned arc is skipped. After each knife step the hand's blade is swept with the
+    native segment cast.
+  - Hits above `vr_fMinSwingToHitSpeed` apply `CDamage` exactly like the knife's swing test, once per target per
+    0.35 s. The engine counts damage only on the authority.
+  - Lab: the shotgun swings with no crash. The knife hit check is still pending: in VR the weapon-slot keys don't
+    reach the game, so the knife needs the wheel or the pad.
+- Lab: the lab Monado compositor can wedge after many sessions (no window, no session). `stop_lab.sh` and a
+  restart fix it. One transient Vulkan "cannot create main swap-chain" failure fell back to D3D12 and stopped
+  the game. NGX extensions are now added only when an upscaler is selected.
+- R13 done: CNMScriptRPC raw byte channel for the mod handshake and poses; upscaler insertion before post FX
+  at 0x140c89010 on the HDR canvas; motion vectors to be synthesized per eye from depth.

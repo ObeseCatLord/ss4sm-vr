@@ -262,7 +262,7 @@ bool isNvidia(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice 
 }  // namespace
 
 void instanceExtensions(const char** names, uint32_t& count, uint32_t max) {
-    if (se4::options::get("upscaler", -1) == 0 || !ngx::load()) return;
+    if (se4::options::get("upscaler", 0) == 0 || !ngx::load()) return;
     auto req = reinterpret_cast<decltype(&NVSDK_NGX_VULKAN_RequiredExtensions)>(ngx::sym("NVSDK_NGX_VULKAN_RequiredExtensions"));
     unsigned int ic = 0, dc = 0;
     const char **ie = nullptr, **de = nullptr;
@@ -271,7 +271,7 @@ void instanceExtensions(const char** names, uint32_t& count, uint32_t max) {
 }
 
 void deviceExtensions(VkInstance, VkPhysicalDevice, const char** names, uint32_t& count, uint32_t max) {
-    if (se4::options::get("upscaler", -1) == 0 || !ngx::load()) return;
+    if (se4::options::get("upscaler", 0) == 0 || !ngx::load()) return;
     auto req = reinterpret_cast<decltype(&NVSDK_NGX_VULKAN_RequiredExtensions)>(ngx::sym("NVSDK_NGX_VULKAN_RequiredExtensions"));
     unsigned int ic = 0, dc = 0;
     const char **ie = nullptr, **de = nullptr;

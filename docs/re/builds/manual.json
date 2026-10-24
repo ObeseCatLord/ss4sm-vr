@@ -37,7 +37,14 @@
   "bpf_ctor": "0x1400766c0",
   "mh_register": "0x140bf6b20",
   "mh_base_ctor": "0x140c25cb0",
-  "vr_ctrl_model_pose": "0x140722f30"
+  "vr_ctrl_model_pose": "0x140722f30",
+  "knife_swing_test": "0x14078f3b0",
+  "knife_step": "0x140790230",
+  "segment_cast": "0x1401a4f70",
+  "cast_result_ctor": "0x1401a3f80",
+  "cast_result_dtor": "0x140c4ab20",
+  "weapon_params": "0x14025c410",
+  "damage_ctor": "0x140175d80"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -77,7 +84,14 @@
   "bpf_ctor": "0x140079010",
   "mh_register": "0x140bf9700",
   "mh_base_ctor": "0x140c28890",
-  "vr_ctrl_model_pose": "0x140725660"
+  "vr_ctrl_model_pose": "0x140725660",
+  "knife_swing_test": "0x140791ae0",
+  "knife_step": "0x140792960",
+  "segment_cast": "0x1401a79f0",
+  "cast_result_ctor": "0x1401a6a00",
+  "cast_result_dtor": "0x140c4d700",
+  "weapon_params": "0x14025ead0",
+  "damage_ctor": "0x140178730"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -117,7 +131,14 @@
   "bpf_ctor": "0x1400769c0",
   "mh_register": "0x140bf7420",
   "mh_base_ctor": "0x140c263e0",
-  "vr_ctrl_model_pose": "0x140722690"
+  "vr_ctrl_model_pose": "0x140722690",
+  "knife_step": "0x14078fb70",
+  "segment_cast": "0x1401a5b50",
+  "cast_result_ctor": "0x1401a4b60",
+  "cast_result_dtor": "0x140c4b0f0",
+  "knife_swing_test": "0x14078ec80",
+  "weapon_params": "0x14025c060",
+  "damage_ctor": "0x140176990"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -157,6 +178,13 @@
   "bpf_ctor": "0x140079300",
   "mh_register": "0x140bf9ff0",
   "mh_base_ctor": "0x140c28fb0",
-  "vr_ctrl_model_pose": "0x140724db0"
+  "vr_ctrl_model_pose": "0x140724db0",
+  "knife_step": "0x140792290",
+  "segment_cast": "0x1401a85c0",
+  "cast_result_ctor": "0x1401a75d0",
+  "cast_result_dtor": "0x140c4dcc0",
+  "knife_swing_test": "0x1407913a0",
+  "weapon_params": "0x14025e710",
+  "damage_ctor": "0x140179330"
  }
 }

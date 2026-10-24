@@ -180,5 +180,42 @@
   "src": "0x140722f30",
   "len": 64,
   "_note": "per-hand VR controller model pose/draw (hand obj, drawport, ?, ?, alt): reads the model at +0x70/+0x78 without a null check (lab crash 2026-10-24)"
+ },
+ "knife_step": {
+  "src": "0x140790230",
+  "len": 64,
+  "_note": "CMacheteWeaponEntity step vt+0x208 (weapon, stepArg) (R12 s2.1)"
+ },
+ "segment_cast": {
+  "src": "0x1401a4f70",
+  "len": 64,
+  "_note": "SegmentCast(res, world, from*, to*, CName, CName) (R12 s5)"
+ },
+ "cast_result_ctor": {
+  "src": "0x1401a3f80",
+  "len": 64,
+  "_note": "cast result ctor (0x1f0 bytes; +0x98 radius, +0x00 ignored owner handle) (R12 s5)"
+ },
+ "cast_result_dtor": {
+  "src": "0x140c4ab20",
+  "len": 48,
+  "_note": "cast result member dtor at result+0xa8 (R12 s2.1 swing test tail)"
+ },
+ "knife_swing_test": {
+  "call_of": "knife_step",
+  "index": 5,
+  "limit": 768,
+  "_note": "CMacheteWeaponEntity swing test (weapon, stepArg): 6th direct call of the knife step in all builds (R12 s2.1)"
+ },
+ "weapon_params": {
+  "call_of": "knife_swing_test",
+  "index": 0,
+  "_note": "weapon params getter (weapon, ref*) -> params; release the ref (R12 s2.1)"
+ },
+ "damage_ctor": {
+  "call_of": "knife_swing_test",
+  "index": 16,
+  "limit": 4096,
+  "_note": "CDamage ctor: 17th direct call of the knife swing test (R12 s3)"
  }
 }
