@@ -17,6 +17,12 @@ import capstone
 md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
 
 
+def harvested(build, name):
+    """VA of a registered script function (docs/re/builds/<build>.json), e.g. 'CPlayerVRData::GetHeadPlacement'."""
+    f = json.load(open(ROOT / f'docs/re/builds/{build}.json'))['functions'].get(name)
+    return (f['va'] if isinstance(f, dict) else f) if f else None
+
+
 def nth_call(img, va, index, limit=0x200):
     o = img.off(va)
     calls = [i.operands_str if False else int(i.op_str, 16) for i in md.disasm(img.data[o:o + limit], va)
@@ -27,7 +33,7 @@ def nth_call(img, va, index, limit=0x200):
 for name, s in [(k, v) for k, v in sigs.items() if 'call_of' not in v] + [(k, v) for k, v in sigs.items() if 'call_of' in v]:
     if 'call_of' in s:
         for b, img in imgs.items():
-            base = manual.get(b, {}).get(s['call_of'])
+            base = manual.get(b, {}).get(s['call_of']) or harvested(b, s['call_of'])
             t = nth_call(img, int(base, 16), s['index']) if base else None
             if t: manual.setdefault(b, {})[name] = hex(t)
             else:

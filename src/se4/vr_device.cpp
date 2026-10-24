@@ -5,7 +5,9 @@
 #include "core/math.hpp"
 #include "core/stereo.hpp"
 #include "se4/build.hpp"
+#include "se4/cvars.hpp"
 #include "se4/log.hpp"
+#include "se4/player_vr.hpp"
 #include "vk/eye_images.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
@@ -249,7 +251,8 @@ void setButtonLocked(int role, int button, float v) {
     unsigned consumed = f & 4;
     f = (now ? 2u : 0u) | (now && !was ? 1u : 0u) | (!now && was ? 8u : 0u) | (now ? consumed : 0u);
     g_btn.value[role][button] = v;
-    if (now && (button == 0 || button == 1)) field<int32_t>(0xb3c) = 1;  // VR controllers in use
+    // Never set device+0xb3c ("VR controllers in use"): the game loop then switches the active input device
+    // to "VRController", which SS4/SM do not have, and the virtual gamepad stops driving the player.
 }
 void sSetButton(Object*, int role, int button, float v) {
     NOTE(0x0d8);
@@ -391,6 +394,7 @@ void hookedShutdown() {
         VRLOG("vrdev: engine device shutdown - detaching our device");
         *global = nullptr;
         g_installed = false;
+        se4::restoreOverrides();
     }
     realShutdown();
 }
@@ -411,11 +415,17 @@ bool install() {
     field<int32_t>(0x20) = field<int32_t>(0x50) = field<int32_t>(0x80) = 1;
     *global = &g_obj;
     g_installed = true;
+    player_vr::onDeviceInstalled();
     VRLOG("vrdev: COpenXRDevice installed at %p (global %p)", static_cast<void*>(&g_obj), static_cast<void*>(global));
     return true;
 }
 
 bool installed() { return g_installed; }
+
+// Stick axes (buttons 2/3) feed the engine's own VR turning (0x14044e880, anchor yaw) and VR movement
+// (0x140442f80). Locomotion stays on the virtual gamepad until a runtime test shows whether pad turning
+// already rotates the VR anchor; reporting both would turn twice (R3 follow-up).
+constexpr bool kNativeStickLocomotion = false;
 
 void updateFromInput() {
     if (!g_installed) return;
@@ -423,7 +433,8 @@ void updateFromInput() {
     for (int role = 0; role < 2; ++role) {
         const auto& h = xr::input().hand(role == 0 ? 1 : 0);
         const uint32_t b = h.buttons;
-        const float v[kButtons] = {h.trigger, h.squeeze, h.stick.x, h.stick.y,
+        const float sx = kNativeStickLocomotion ? h.stick.x : 0.f, sy = kNativeStickLocomotion ? h.stick.y : 0.f;
+        const float v[kButtons] = {h.trigger, h.squeeze, sx, sy,
                                    (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
                                    (b & (xr::BtnStickClick | xr::BtnTrackpadPress)) ? 1.f : 0.f,
                                    (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f, 0.f, 0.f};

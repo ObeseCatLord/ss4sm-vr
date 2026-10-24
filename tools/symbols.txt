@@ -24,3 +24,9 @@ manual:holder_get                # holder -> texture wrapper
 manual:holder_ctor               # 0x90-byte holder ctor
 manual:ref_addref                # refcounted object AddRef(obj, owner slot)
 var:vr_fRenderingPixelRatio
+var:vr_bVRControllerExclusiveInput   # R3: makes the VR-controllers-in-use check (0x140050860) true without a VRController input device
+manual:set_playing_in_vr         # R3: native CPlayerSimulationData::SetPlayingInVR(psd, int)
+manual:bind_local_user_psd       # R3: binds the local user to its psd; calls set_playing_in_vr(psd, 0)
+manual:vrd_init                  # R3: CPlayerVRData init; two unguarded device slot 0x208 calls
+manual:vrd_controller_world      # R3: CPlayerVRData controller world placement (vrd, P7* out, role)
+manual:client_action_vr          # R3: ClientActionVR net stub + apply (writes the player's vrd unguarded)

@@ -288,3 +288,46 @@ replicated poses (section 4).
 * Class of the melee-swing consumer (vtable 0x141abc9a8). Unnamed globals: 0x142285e64..6c (anchor offset),
   0x142248598 (wheel hold time), 0x1422738e8 (VR fire-delay override).
 * Runtime confirmation that PlayerPuppet params +0x950 is non-null in SS4.
+
+## 10. Follow-up: what the mod does with this (static, not yet run)
+
+Implemented in `src/se4/player_vr.cpp` (installed when VR is enabled; debug-skip bit 0x10 disables it):
+
+* **VR player enable.** Detour on `set_playing_in_vr`. The value is forced to 1 only when the call returns to
+  `bind_local_user_psd`'s own call site (found at runtime as the single `call rel32` to the setter; it is the
+  12th direct call in all four builds) and our device is installed. Ported addresses: Sam4 0x140bdc6f0,
+  Sam4_Unrestricted 0x140bdf2d0, SamSM 0x140bdce60, SamSM_Unrestricted 0x140bdfa30. The call-order port
+  agrees with an independent 272-byte signature in every build. psd+0x98/+0x9c are the same in all builds.
+* **Player → vrd offset differs per game:** SS4 `player+0x25c8`, **SM `player+0x25d0`** (from the
+  `ClientActionVR` apply: `mov rcx,[rsi+disp32]` before the store to vrd+0x32c). The mod reads it from the
+  running build's code rather than assuming SS4's value.
+* **Guards:** `vrd_init`'s two slot 0x208 calls (16 bytes each, identical shape in all builds: Sam4
+  0x14043e87e/0x14043e8ac, SM 0x14043e9ce/0x14043e9fc) become `call thunk` + NOPs. The thunk returns 0
+  when the device global is NULL and otherwise tail-jumps to the slot. `vrd_controller_world` returns an
+  all-zero placement for a NULL vrd, which makes the hand-ray caller 0x1401d8430 return. `ClientActionVR` is
+  dropped for a player without vrd. The player can only get VR data after every guard is in place.
+* **Input mode, and a bug this found:** the game loop (0x140058800, and 0x1400528a0) switches the active
+  input device to the one named "VRController" whenever `device+0xb3c` ≠ 0. SS4/SM register no input device
+  of that name; `CVRController` in .rdata is a metadata class, not an input device. The lookup
+  (0x1412e0aa0) then returns −1. The device used to set +0xb3c on the first trigger or grip press, which
+  would have dropped the virtual gamepad. It now never sets +0xb3c. Instead
+  `vr_bVRControllerExclusiveInput` (only reader: 0x140050860) is forced to 1, so controller placement comes
+  from device slot 0xb8 instead of emulated hands. It is restored when the engine shuts the device down
+  (`cvars::restoreOverrides`).
+* **Locomotion stays on the virtual gamepad.** The live local sender (controller vt+0x40 0x1404135c0, the
+  "FPSControls" path) reads only plcmd axes. It never reads vrd, so pad movement and look still drive
+  `ClientAction`. The native VR turn (0x14044e880) and VR move (0x140442f80) read the device stick (button
+  table indices 2/3, per-hand fields vrd+0x14/+0xe4). The device reports those axes as 0 for now
+  (`kNativeStickLocomotion`) to avoid turning twice. The anchor update 0x14043f180 follows the player body
+  placement, so pad turning probably carries the anchor along. Not proven: check at runtime.
+* `0x1401d8430` is the **native VR menu pointer**. It casts the hand ray onto the 2D screen quad and sends
+  mouse move and press events to the viewport (vt+0x78 with 1/3/4/6/7) from buttons 0/1 (`0x1401dec10`).
+  It is a candidate for Phase 8 menu interaction.
+
+Runtime checks (headset or lab), in order:
+1. The log shows `player_vr: vrd offset 0x25c8|0x25d0`, both slot 0x208 sites patched, and, on level start,
+   `local user psd … marked as playing in VR` then `CPlayerVRData … (local 1)`.
+2. The camera follows HMD position and rotation in the level. Weapons follow the right controller. Firing
+   works.
+3. Turn with the right stick and check whether the view yaw changes once (pad) or twice.
+4. Check that the ini is unchanged after a clean exit (`vr_bVRControllerExclusiveInput`, FPS caps).
