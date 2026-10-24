@@ -20,6 +20,7 @@
 #include <vector>
 
 namespace vk_layer {
+void onGameVulkan();
 namespace {
 
 PFN_vkGetInstanceProcAddr realGIPA;
@@ -83,7 +84,9 @@ DWORD g_redirectThread;
 
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci, const VkAllocationCallbacks* a, VkInstance* out) {
     void* ret = __builtin_return_address(0);
+    if (!realCreateInstance) realCreateInstance = reinterpret_cast<PFN_vkCreateInstance>(realGIPA(nullptr, "vkCreateInstance"));
     if (g_redirectThread == GetCurrentThreadId() || g.instance || !callerInGame(ret)) return realCreateInstance(ci, a, out);
+    onGameVulkan();
     VRLOG("vk: game vkCreateInstance (%u extensions)", ci->enabledExtensionCount);
     auto& rt = xr::runtime();
     if (!rt.active() && !rt.initialize()) {
@@ -104,6 +107,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks* a, VkDevice* out) {
+    if (!realCreateDevice) realCreateDevice = reinterpret_cast<PFN_vkCreateDevice>(realGIPA(g.instance, "vkCreateDevice"));
+    if (!realGDPA) realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(realGIPA(g.instance, "vkGetDeviceProcAddr"));
     if (g_redirectThread == GetCurrentThreadId() || g.device || !g.xrInstance) {
         VkResult r = realCreateDevice(pd, ci, a, out);
         if (r == VK_SUCCESS && !g.device && g.instance) g.device = *out, g.physical = pd;
@@ -194,10 +199,11 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateSwapchain(VkDevice d, const VkSwapchain
 // ---- mirror milestone ----
 bool setupMirror(const SwapchainInfo& sw) {
     auto& rt = xr::runtime();
-    const int64_t prefer[] = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
-    int64_t fmt = rt.pickColorFormat(prefer, 4);
+    int64_t twin = sw.format == VK_FORMAT_R8G8B8A8_UNORM ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_B8G8R8A8_SRGB;
+    const int64_t prefer[] = {twin, VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB};
+    int64_t fmt = rt.pickColorFormat(prefer, 3);
     if (!rt.createSwapchain(m.sc, fmt, sw.extent.width, sw.extent.height, 1,
-                            XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT))
+                            XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT))
         return false;
     VkCommandPoolCreateInfo pci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     pci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -260,6 +266,12 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         if (it != g_swapchains.end()) sw = it->second;
     }
     if (!rt.running() || sw.images.empty() || m.failed || q != g.xrQueue) {
+        static unsigned reported;
+        unsigned why = (!rt.running()) | (sw.images.empty() << 1) | (m.failed << 2) | ((q != g.xrQueue) << 3);
+        if ((why & ~reported) && rt.running()) {
+            reported |= why;
+            VRLOG("mirror: passthrough present (reason mask %u, queue %p xrQueue %p)", why, (void*)q, (void*)g.xrQueue);
+        }
         vkq::Guard lock;
         return realQueuePresent(q, pi);
     }
@@ -273,6 +285,10 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         }
     }
 
+    static int traceFrames = 6;
+    bool trace = traceFrames > 0 && traceFrames--;
+#define TRACE(...) do { if (trace) VRLOG(__VA_ARGS__); } while (0)
+    TRACE("mirror: present begin, waitFrame");
     XrFrameState fs;
     if (!rt.waitBeginFrame(fs)) {
         vkq::Guard lock;
@@ -286,9 +302,11 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         }
     }
 
+    TRACE("mirror: frame begun (shouldRender %d), acquire", fs.shouldRender);
     VkImage src = sw.images[pi->pImageIndices[0]];
     uint32_t idx = 0;
     bool haveImage = rt.acquire(m.sc, idx);
+    TRACE("mirror: acquired %d idx %u, submit", haveImage, idx);
     VkSemaphore waitOn = VK_NULL_HANDLE;
     VkResult result;
     {
@@ -308,11 +326,20 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
             imageBarrier(cb, dst, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-            VkImageBlit blit{};
-            blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            blit.srcOffsets[1] = {int32_t(sw.extent.width), int32_t(sw.extent.height), 1};
-            blit.dstOffsets[1] = {int32_t(m.sc.width), int32_t(m.sc.height), 1};
-            DFN(vkCmdBlitImage)(cb, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+            if (sw.extent.width == m.sc.width && sw.extent.height == m.sc.height) {
+                // Raw copy: the game writes sRGB-encoded values into a UNORM swapchain; the XR swapchain is
+                // the matching _SRGB format, so bytes must not be re-encoded (a blit would brighten them).
+                VkImageCopy c{};
+                c.srcSubresource = c.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                c.extent = {sw.extent.width, sw.extent.height, 1};
+                DFN(vkCmdCopyImage)(cb, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+            } else {
+                VkImageBlit blit{};
+                blit.srcSubresource = blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                blit.srcOffsets[1] = {int32_t(sw.extent.width), int32_t(sw.extent.height), 1};
+                blit.dstOffsets[1] = {int32_t(m.sc.width), int32_t(m.sc.height), 1};
+                DFN(vkCmdBlitImage)(cb, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+            }
             imageBarrier(cb, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
             imageBarrier(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -335,9 +362,12 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         VkPresentInfoKHR p = *pi;
         p.waitSemaphoreCount = 1;
         p.pWaitSemaphores = &waitOn;
+        TRACE("mirror: blit done, present");
         result = realQueuePresent(q, &p);
     }
+    TRACE("mirror: presented %d, release", int(result));
     if (haveImage) rt.release(m.sc);
+    TRACE("mirror: endFrame");
 
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     quad.space = rt.localSpace();
@@ -348,7 +378,14 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     float w = 3.2f;
     quad.size = {w, w * float(m.sc.height) / float(m.sc.width)};
     const XrCompositionLayerBaseHeader* layers[] = {reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
-    rt.endFrame(fs, layers, (haveImage && m.placed) ? 1 : 0);
+    bool ended = rt.endFrame(fs, layers, (haveImage && m.placed) ? 1 : 0);
+    static uint32_t frames, imaged, submitted;
+    ++frames;
+    imaged += haveImage;
+    submitted += ended && haveImage && m.placed && fs.shouldRender;
+    if (frames % 600 == 1)
+        VRLOG("mirror: frames %u imaged %u submitted %u placed %d shouldRender %d period %.2f ms", frames, imaged, submitted, m.placed,
+              fs.shouldRender, fs.predictedDisplayPeriod / 1e6);
     return result;
 }
 
@@ -376,35 +413,57 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGIPA(VkInstance inst, const char* n
     if (name) {
         if (!strcmp(name, "vkCreateInstance")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateInstance);
         if (!strcmp(name, "vkCreateDevice")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateDevice);
-        if (!strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(hookGDPA);
+        if (!strcmp(name, "vkGetDeviceProcAddr")) {
+            if (!realGDPA) realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(realGIPA(inst, name));
+            return realGDPA ? reinterpret_cast<PFN_vkVoidFunction>(hookGDPA) : nullptr;
+        }
         if (inst && inst == g.instance && g.xrDevice)
             if (auto o = deviceOverride(name)) return o;
     }
     return realGIPA(inst, name);
 }
 
-template <class T> bool hook(HMODULE mod, const char* name, void* detour, T* orig) {
-    void* target = reinterpret_cast<void*>(GetProcAddress(mod, name));
-    if (!target) {
-        VRLOG("vk: export %s missing", name);
-        return false;
+// The engine loads vulkan-1.dll dynamically and resolves entry points with GetProcAddress. Hooking
+// GetProcAddress (installed once at attach) lets us hand back wrappers without patching vulkan-1.dll or
+// doing anything under the loader lock. Calls from outside the game module are untouched.
+using GetProcAddressFn = FARPROC(WINAPI*)(HMODULE, LPCSTR);
+GetProcAddressFn realGetProcAddress;
+
+FARPROC WINAPI hookGetProcAddress(HMODULE mod, LPCSTR name) {
+    FARPROC real = realGetProcAddress(mod, name);
+    if (!real || reinterpret_cast<uintptr_t>(name) < 0x10000 || !callerInGame(__builtin_return_address(0))) return real;
+    if (name[0] != 'v' || name[1] != 'k' || mod != GetModuleHandleW(L"vulkan-1.dll")) return real;
+    if (!strcmp(name, "vkGetInstanceProcAddr")) {
+        realGIPA = reinterpret_cast<PFN_vkGetInstanceProcAddr>(real);
+        return reinterpret_cast<FARPROC>(hookGIPA);
     }
-    if (MH_CreateHook(target, detour, reinterpret_cast<void**>(orig)) != MH_OK || MH_EnableHook(target) != MH_OK) {
-        VRLOG("vk: hook %s failed", name);
-        return false;
+    if (!strcmp(name, "vkCreateInstance")) {
+        realCreateInstance = reinterpret_cast<PFN_vkCreateInstance>(real);
+        return reinterpret_cast<FARPROC>(hookCreateInstance);
     }
-    return true;
+    if (!strcmp(name, "vkCreateDevice")) {
+        realCreateDevice = reinterpret_cast<PFN_vkCreateDevice>(real);
+        return reinterpret_cast<FARPROC>(hookCreateDevice);
+    }
+    if (!strcmp(name, "vkGetDeviceProcAddr")) {
+        realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(real);
+        return reinterpret_cast<FARPROC>(hookGDPA);
+    }
+    VRLOG("vk: game resolved %s by export (not intercepted)", name);
+    return real;
 }
 }  // namespace
 
-void onVulkanLoaded(void* module) {
+bool install() {
     vkq::initLock();
-    auto mod = static_cast<HMODULE>(module);
-    bool ok = hook(mod, "vkGetInstanceProcAddr", reinterpret_cast<void*>(hookGIPA), &realGIPA) &&
-              hook(mod, "vkCreateInstance", reinterpret_cast<void*>(hookCreateInstance), &realCreateInstance) &&
-              hook(mod, "vkCreateDevice", reinterpret_cast<void*>(hookCreateDevice), &realCreateDevice) &&
-              hook(mod, "vkGetDeviceProcAddr", reinterpret_cast<void*>(hookGDPA), &realGDPA);
-    VRLOG("vk: hooks %s", ok ? "installed" : "incomplete");
+    void* target = reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetProcAddress"));
+    if (!target || MH_CreateHook(target, reinterpret_cast<void*>(hookGetProcAddress), reinterpret_cast<void**>(&realGetProcAddress)) != MH_OK ||
+        MH_EnableHook(target) != MH_OK) {
+        VRLOG("vk: GetProcAddress hook FAILED");
+        return false;
+    }
+    VRLOG("vk: GetProcAddress hook installed");
+    return true;
 }
 
 }  // namespace vk_layer

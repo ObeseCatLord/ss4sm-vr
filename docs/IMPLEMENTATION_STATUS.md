@@ -17,6 +17,8 @@
 - [x] XR session on the game's graphics queue (family 0/0), queue access serialised with the runtime
 - [x] Milestone "mirror": presented game image blitted into a world-locked quad layer
       (simulated Monado, `docs/evidence/2026-10-23_mirror_quad_monado_sim.png`)
-- [ ] Same on Siberian Mayhem; on real Beyond/Monado; on SteamVR
+- [x] Same on Siberian Mayhem (private display, `docs/evidence/2026-10-23_sm_mirror_private_display.png`)
+- [ ] On real Beyond/Monado; on SteamVR
+- [ ] Frame pacing: game limiter + xrWaitFrame gives ~20 fps in menus
 - [ ] Device seam (`COpenXRDevice` at the VR device global) — needs R1 slot semantics
 - [ ] Engine stereo rendering into the projection layer (R2)
