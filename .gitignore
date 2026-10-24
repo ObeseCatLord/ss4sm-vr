@@ -1,4 +1,4 @@
-build*/
+/build*/
 lab/
 *.pyc
 __pycache__/

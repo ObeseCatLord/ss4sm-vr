@@ -1,0 +1,91 @@
+{
+ "_comment": "Functions ported from Sam4.exe to the other builds by tools/sigscan.py (unique wildcarded signature). Source evidence in docs/re/R1_vtable.md.",
+ "vr_device_shutdown": {
+  "src": "0x140b6af00",
+  "len": 85
+ },
+ "cstring_ctor": {
+  "src": "0x1410bfac0",
+  "len": 48
+ },
+ "viewport_mouse_event": {
+  "src": "0x140053140",
+  "len": 96
+ },
+ "engine_alloc": {
+  "call_of": "viewport_render_vr",
+  "index": 1,
+  "_note": "FUN(size, tag) allocator: 2nd direct call in viewport_render_vr"
+ },
+ "vr_viewer_ctor": {
+  "call_of": "viewport_render_vr",
+  "index": 2,
+  "_note": "3rd direct call in viewport_render_vr"
+ },
+ "viewport_render_vr": {
+  "src": "0x1400552e0",
+  "len": 92
+ },
+ "vr_eye_render": {
+  "src": "0x1401dc520",
+  "len": 64
+ },
+ "holder_create": {
+  "call_of": "vr_eye_render",
+  "index": 3,
+  "_note": "render-target holder (re)create: (holder, gfx, w, h, fmt=2, 0, flags, 0); flag 4 = double width"
+ },
+ "holder_get": {
+  "call_of": "vr_eye_render",
+  "index": 4,
+  "_note": "holder -> texture wrapper; device eye RT = *(wrapper+8)"
+ },
+ "holder_ctor": {
+  "call_of": "vr_viewer_ctor",
+  "index": 2,
+  "_note": "0x90-byte render-target holder ctor"
+ },
+ "ref_addref": {
+  "call_of": "vr_viewer_ctor",
+  "index": 3
+ },
+ "ref_release": {
+  "call_of": "vr_viewer_ctor",
+  "index": 4
+ },
+ "set_playing_in_vr": {
+  "call_of": "bind_local_user_psd",
+  "index": 11,
+  "_note": "native CPlayerSimulationData::SetPlayingInVR(psd, int): 12th direct call of bind_local_user_psd, the only native caller (passes 0) (R3 s1)"
+ },
+ "bind_local_user_psd": {
+  "src": "0x140067980",
+  "len": 40,
+  "_note": "binds the local user to its psd; only native caller of set_playing_in_vr, passes 0 (R3 s1)"
+ },
+ "vrd_init": {
+  "src": "0x14043e330",
+  "len": 64,
+  "_note": "CPlayerVRData init (vrd, player); two unguarded device slot 0x208 calls (R3 s7)"
+ },
+ "vrd_controller_world": {
+  "call_of": "CPlayerVRData::GetControllerPlacementLeft",
+  "index": 1,
+  "_note": "CPlayerVRData controller world placement (vrd, P7* out, role): 2nd direct call of the script wrapper (R3 s2)"
+ },
+ "client_action_vr": {
+  "src": "0x140470310",
+  "len": 64,
+  "_note": "ClientActionVR net stub + apply; writes player+0x25c8 unguarded (R3 s4)"
+ },
+ "client_action": {
+  "src": "0x140470080",
+  "len": 64,
+  "_note": "desktop ClientAction net stub + apply (player vt+0x1298) (R3 s4)"
+ },
+ "send_vr_action": {
+  "src": "0x14048b730",
+  "len": 64,
+  "_note": "native ClientActionVR sender (player), builds args from vrd (R3 s4)"
+ }
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "file": "Sam4.exe",
+    "sha256": "fb7aed12171ec128f8479dcb598ed5ac95d5ef6c77930fa1fbfea86a86a390c2",
+    "time_date_stamp": 1652107777,
+    "size_of_image": 46440448,
+    "text_crc32": 4034685369,
+    "build_string": "Sam4_dev; SeriousSam4-Windows-Final; 616154 2022-05-09 16:48:34 @builder28; Windows-x64-Static-Final-Default",
+    "build": 616154
+  },
+  {
+    "file": "Sam4_Unrestricted.exe",
+    "sha256": "b551257faee4dc98bbd14b172cee13f0e19f0bdf2b42a452ccad931e95725dda",
+    "time_date_stamp": 1652107776,
+    "size_of_image": 46440448,
+    "text_crc32": 796860836,
+    "build_string": "Sam4_dev; SeriousSam4-Windows-Final; 616154 2022-05-09 16:48:34 @builder28; Windows-x64-Static-Final-Unrestricted",
+    "build": 616154
+  },
+  {
+    "file": "SamSM.exe",
+    "sha256": "9a31b661c4afa3b5c3f55d48ba29e28a51dc260f842ac7ef50ff2c0c5a54f379",
+    "time_date_stamp": 1674520716,
+    "size_of_image": 46596096,
+    "text_crc32": 1381097837,
+    "build_string": "Sam4_dev; SeriousSamSM-Windows-Final; 628492 2023-01-24 00:55:19 @builderx08; Windows-x64-Static-Final-Default",
+    "build": 628492
+  },
+  {
+    "file": "SamSM_Unrestricted.exe",
+    "sha256": "8a654780bd352b58d5ce6c8a78223d323c58c39644c8c0375668a7ad33c1c78b",
+    "time_date_stamp": 1674521050,
+    "size_of_image": 46592000,
+    "text_crc32": 279811190,
+    "build_string": "Sam4_dev; SeriousSamSM-Windows-Final; 628492 2023-01-24 00:55:19 @builderx08; Windows-x64-Static-Final-Unrestricted",
+    "build": 628492
+  }
+]
