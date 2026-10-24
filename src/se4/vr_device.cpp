@@ -270,6 +270,20 @@ SRWLOCK g_btnLock = SRWLOCK_INIT;
 
 float sButton(Object*, int role, int button, unsigned* flags) {
     NOTE(0x0d0);
+    {
+        // Lab: which engine code reads which controller button (once per role/button/caller).
+        static struct { int role, button; void* caller; } seen[64];
+        static volatile LONG n;
+        void* caller = __builtin_return_address(0);
+        bool known = false;
+        for (LONG i = 0; i < n && i < 64; ++i)
+            if (seen[i].role == role && seen[i].button == button && seen[i].caller == caller) known = true;
+        if (!known && n < 64) {
+            LONG i = InterlockedIncrement(&n) - 1;
+            if (i < 64) seen[i] = {role, button, caller};
+            VRLOG("vrdev: button read role %d button %d from %p", role, button, caller);
+        }
+    }
     if (role < 0 || role > 2 || button < 0 || button >= kButtons) {
         if (flags) *flags = 0;
         return 0;
@@ -592,17 +606,20 @@ void headPlacement(float out[7]) { sHead(&g_obj, out); }
 
 void updateFromInput() {
     if (!g_installed) return;
+    // Without native_vr_action the virtual pad carries every command. The engine's VR player code reads all ten
+    // buttons of both controllers in a level (0x14043acd5) and acted on them as well (it opened Netricsa from the
+    // grip and pad press, lab 2026-10-24), so only the trigger (movie skip, VR pointer) and back are reported then.
+    const bool all = player_vr::nativeVrAction();
     AcquireSRWLockExclusive(&g_btnLock);
     for (int role = 0; role < 2; ++role) {
         const auto& h = xr::input().hand(role == 0 ? 1 : 0);
         const uint32_t b = h.buttons;
         const float sx = player_vr::nativeTurn() ? h.stick.x : 0.f, sy = 0.f;
-        const float v[kButtons] = {h.trigger, h.squeeze, sx, sy,
-                                   (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
-                                   // The trackpad press is the weapon wheel on the virtual pad; as engine button 6 the
-                                   // engine opened Netricsa on it (lab 2026-10-24).
-                                   (b & xr::BtnStickClick) ? 1.f : 0.f,
-                                   (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f, 0.f, 0.f};
+        const float back = (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f;
+        float v[kButtons] = {h.trigger, h.squeeze, sx, sy, (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
+                             (b & xr::BtnStickClick) ? 1.f : 0.f, back, 0.f, 0.f};
+        if (!all)
+            for (int i = 1; i < 7; ++i) v[i] = (i == 2 && sx != 0.f) ? sx : 0.f;  // native_turn still needs stick x
         for (int i = 0; i < kButtons; ++i) setButtonLocked(role, i, v[i]);
     }
     ReleaseSRWLockExclusive(&g_btnLock);

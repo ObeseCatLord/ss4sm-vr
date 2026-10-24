@@ -84,3 +84,6 @@ manual:hide_controller  # R15
 manual:hide_right_ctrl_script  # R15: right CVRController offset read from its add rcx, imm32
 manual:hide_left_ctrl_script   # R15: left CVRController offset
 manual:entity_time               # R15: entity time getter used for the two-hand grip lerp stamp
+manual:gadget_launch_activate    # R12: gadget launch mode activation; the mod sets direction/speed from the hand
+manual:gadget_launch             # R12: gadget projectile spawn from the launch mode fields
+manual:gadget_launch_event       # R12: launch mode Throw/Fire event handler

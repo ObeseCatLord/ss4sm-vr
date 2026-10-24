@@ -348,5 +348,21 @@
   "index": 25,
   "limit": 4608,
   "_note": "entity simulation time (entity, out) -> &out; the weapon step stamps grip changes with it (+0x288) (R15 s4.2); 26th direct call of the weapon step"
+ },
+ "gadget_launch_activate": {
+  "src": "0x140a6f3e0",
+  "len": 48,
+  "_note": "CLaunchGadgetProjectile weapon mode activation (vt+0x50): copies the targeting quat to +0x20, start +0x30, speed +0x3c, lifetime +0x40 (R12 s8)"
+ },
+ "gadget_launch_event": {
+  "src": "0x140a6f820",
+  "len": 32,
+  "_note": "launch mode anim event handler (vt+0x180): Throw/Fire -> gadget_launch (R12 s8.3)"
+ },
+ "gadget_launch": {
+  "call_of": "gadget_launch_event",
+  "index": 0,
+  "limit": 96,
+  "_note": "CLaunchGadgetProjectile spawn (mode) from the Throw/Fire anim event, authority only; reads mode +0x20 quat, +0x3c speed, +0x40 lifetime (R12 s8.3)"
  }
 }

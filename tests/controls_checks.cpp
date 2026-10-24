@@ -28,13 +28,20 @@ int main() {
         Pad p = m.update(f);
         assert(p.rt == 0.7f && p.lx == 0.5f);
         assert(p.buttons == (PadA | PadRightThumb | PadX));
-        // grip with hysteresis: on above 0.4, still on at 0.3, off below 0.24
+        // the left squeeze is the gadget, issued as a HUD command (src/se4/gadgets.cpp), never a pad button
         f.hand[1].buttons = f.hand[0].buttons = 0;
-        f.hand[0].squeeze = 0.45f;
-        assert(m.update(f).buttons == PadY);
-        f.hand[0].squeeze = 0.3f;
-        assert(m.update(f).buttons == PadY);
-        f.hand[0].squeeze = 0.2f;
+        f.hand[0].squeeze = 1.0f;
+        assert(m.update(f).buttons == 0);
+    }
+    // Vive: the right grip crouches, with hysteresis: on above 0.5, still on at 0.35, off below 0.3
+    {
+        Mapper m;
+        Frame f = idle(Kind::Vive);
+        f.hand[1].squeeze = 0.55f;
+        assert(m.update(f).buttons == PadB);
+        f.hand[1].squeeze = 0.35f;
+        assert(m.update(f).buttons == PadB);
+        f.hand[1].squeeze = 0.25f;
         assert(m.update(f).buttons == 0);
     }
     // Touch: a resting squeeze (0.5) is not a grip; Y holds the wheel
@@ -79,15 +86,15 @@ int main() {
         p = m.update(f);
         assert(p.rx == 0 && p.ry == 0);
     }
-    // Wheel held: right face buttons cycle the gadget ring instead of jump/crouch
+    // Wheel held: the right face buttons are taken by the gadget ring (HUD commands), so no jump/crouch
     {
         Mapper m;
         Frame f = idle(Kind::Index);
         f.hand[0].buttons = TrackpadPress;
         f.hand[1].buttons = Primary;
-        assert(m.update(f).buttons == (PadLB | PadDpadUp));
+        assert(m.update(f).buttons == PadLB);
         f.hand[1].buttons = Secondary;
-        assert(m.update(f).buttons == (PadLB | PadDpadDown));
+        assert(m.update(f).buttons == PadLB);
         f.hand[0].buttons = 0;
         assert(m.update(f).buttons == PadB);
     }

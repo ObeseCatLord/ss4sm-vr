@@ -150,6 +150,7 @@ void publishFromXr() {
     p.wButtons = vehicles::driving() ? WORD(m.buttons & ~XINPUT_GAMEPAD_Y) : m.buttons;
     AcquireSRWLockExclusive(&g_lock);
     if (memcmp(&p, &g_pad, sizeof p)) {
+        if (p.wButtons != g_pad.wButtons) VRLOG("gamepad: buttons %04x", p.wButtons);
         g_pad = p;
         ++g_packet;
     }

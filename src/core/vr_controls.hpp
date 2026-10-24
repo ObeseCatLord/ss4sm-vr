@@ -2,7 +2,7 @@
 // VR controllers -> virtual gamepad. Every action reaches the game through its own gamepad bindings
 // (DefaultGamepadBindings.lua, GBL_STANDARD), so commands stay native and multiplayer-safe:
 //   LS move, RS look, RT plcmdFire, LT plcmdAltFire (left weapon when dual wielding), A plcmdY+ (jump),
-//   B plcmdY- (crouch), X plcmdReload, Y plcmdGadgetQuickUse, LB plcmdShowWeaponWheel (hold: native wheel,
+//   B plcmdY- (crouch), X plcmdReload, LB plcmdShowWeaponWheel (hold: native wheel,
 //   tap: previous weapon), RB plcmdToggleDualWielding, LS click plcmdToggleSprint, RS click plcmdUse,
 //   Start menu.
 // The native weapon wheel (R3 s6) selects with the right stick for the primary hand and the left stick for
@@ -11,6 +11,8 @@
 // stick is pushed further. While the wheel is held, the right hand's two face buttons (Index/Touch A, B)
 // become D-pad up/down, which cycle the wheel's gadget ring (syscmdUp/Down; the gamepad mapping of those
 // system commands is assumed to be the D-pad, runtime check pending) instead of jumping/crouching.
+// The gadget (left grip) does not go through the pad: src/se4/gadgets.cpp issues the player's quick-use HUD command
+// directly, because pad Y's meaning depends on the saved gamepad layout.
 // Per-profile layout (semantic action -> button):
 //   Valve Index: wheel L trackpad press, dual-wield R trackpad press, jump R A, crouch R B, reload L A,
 //                menu L B, gadget L grip, use R stick click, sprint L stick click.
@@ -95,7 +97,6 @@ struct Mapper {
             if (on(L, Secondary) || on(L, Menu) || on(R, Menu)) b |= PadStart;
             if (on(L, StickClick)) b |= PadLeftThumb;
             if (on(R, StickClick)) b |= PadRightThumb;
-            if (grip[0]) b |= PadY;
             break;
         case Kind::Touch:
             wheel = on(L, Secondary);
@@ -105,7 +106,6 @@ struct Mapper {
             if (on(L, Menu)) b |= PadStart;
             if (on(L, StickClick)) b |= PadLeftThumb;
             if (on(R, StickClick)) b |= PadRightThumb;
-            if (grip[0]) b |= PadY;
             break;
         case Kind::Vive:
             wheel = on(L, TrackpadPress);
@@ -113,7 +113,6 @@ struct Mapper {
             if (grip[1]) b |= PadB;
             if (on(R, Menu)) b |= PadRightThumb;
             if (on(L, Menu)) b |= PadStart;
-            if (grip[0]) b |= PadY;
             break;
         case Kind::WMR:
             wheel = on(L, TrackpadPress);
@@ -123,18 +122,14 @@ struct Mapper {
             if (on(L, Menu)) b |= PadStart;
             if (on(L, StickClick)) b |= PadLeftThumb;
             if (on(R, StickClick)) b |= PadRightThumb;
-            if (grip[0]) b |= PadY;
             break;
         case Kind::Simple:
         case Kind::Unknown:
             if (on(L, Menu) || on(R, Menu)) b |= PadStart;
             break;
         }
-        if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch)) {
-            b &= uint16_t(~(PadA | PadB));
-            if (on(R, Primary)) b |= PadDpadUp;
-            if (on(R, Secondary)) b |= PadDpadDown;
-        }
+        if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch))
+            b &= uint16_t(~(PadA | PadB));  // A/B cycle the gadget ring (src/se4/gadgets.cpp), not jump/crouch
         if (wheel) {
             b |= PadLB;
             if (!wheelHeld) {

@@ -15,6 +15,7 @@
 #include "se4/scope.hpp"
 #include "se4/hands.hpp"
 #include "se4/arms.hpp"
+#include "se4/gadgets.hpp"
 #include "up/integrate.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
@@ -108,6 +109,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         if (!(skip & 0x200)) scope::install();
         if (!(skip & 0x800)) arms::install();
         if (!(skip & 0x400)) hands::install();
+        if (!(skip & 0x1000)) gadgets::install();
     }
 }
 

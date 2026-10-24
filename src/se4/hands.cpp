@@ -5,6 +5,7 @@
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
 #include "se4/arms.hpp"
+#include "se4/gadgets.hpp"
 #include "xr/input.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -186,6 +187,12 @@ void hookedStep(uint8_t* weapon, void* arg) {
     }
     uint8_t* player = weapon ? localOwner(weapon) : nullptr;
     uint8_t* params = player ? at<uint8_t*>(weapon, kParams) : nullptr;
+    if (player) {
+        static ULONGLONG lastTick;
+        const ULONGLONG now = GetTickCount64();
+        if (now != lastTick) gadgets::onTick(player);  // once per tick, whichever local weapon steps first
+        lastTick = now;
+    }
     static uint8_t* lastProbed;
     if (g_probe && params && weapon != lastProbed) {
         lastProbed = weapon;

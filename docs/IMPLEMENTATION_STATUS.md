@@ -273,3 +273,16 @@
     left, so u is flipped for rays from its −Z side.
   - **Siberian Mayhem Refinery:** the free left hand, two-hand grip (the pistol counts as two-handable: foregrip
     0.16 m) and the crossbow's PiP scope all work. Fire bits are at +0x2340 and the player spawns after 46 s.
+- Gadgets (`src/se4/gadgets.cpp`, R12):
+  - Pad buttons depend on the player's saved layout: pad Y opened Netricsa in the lab profile.
+    - The left squeeze now issues the player's own quick-use HUD command (OnHudCommand(1, 0xc), the path
+      plcmdGadgetQuickUse takes).
+    - While the weapon wheel is held, right A/B cycle the gadget ring (HUD 0xd/0xe) instead of D-pad buttons.
+    - Lab: the medkit was used.
+  - The device no longer reports buttons 1–6 to the engine unless `native_vr_action` is on. The VR player code read
+    them in levels and acted on them too.
+  - Throwables:
+    - Direction and speed come from the holding hand (pointing, or a throwing motion × throw_gain), written into the
+      launch mode just before the native spawn 0x140a6f5a0 (ported to all builds through its anim-event handler).
+    - Still open: a throwable launch is not yet seen in the lab. The inventory's second gadget never reached the
+      launch.
