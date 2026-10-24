@@ -16,9 +16,12 @@
 #include "se4/gamepad.hpp"
 #include "se4/focus.hpp"
 #include "se4/vr_device.hpp"
+#include "vk/eye_images.hpp"
+#include "core/math.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <intrin.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <mutex>
@@ -43,6 +46,8 @@ PFN_vkDeviceWaitIdle realDeviceWaitIdle;
 PFN_vkCreateSwapchainKHR realCreateSwapchain;
 PFN_vkGetSwapchainImagesKHR realGetSwapchainImages;
 PFN_vkGetDeviceQueue realGetDeviceQueue;
+PFN_vkCreateImage realCreateImage;
+PFN_vkDestroyImage realDestroyImage;
 
 struct GameVk {
     VkInstance instance = VK_NULL_HANDLE;
@@ -162,6 +167,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realCreateSwapchain = DFN(vkCreateSwapchainKHR);
     realGetSwapchainImages = DFN(vkGetSwapchainImagesKHR);
     realGetDeviceQueue = DFN(vkGetDeviceQueue);
+    realCreateImage = DFN(vkCreateImage);
+    realDestroyImage = DFN(vkDestroyImage);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
     else se4::applyVrFramePacing();
@@ -205,6 +212,17 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateSwapchain(VkDevice d, const VkSwapchain
     return r;
 }
 
+// ---- engine image tracking (eye render targets) ----
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateImage(VkDevice d, const VkImageCreateInfo* ci, const VkAllocationCallbacks* a, VkImage* out) {
+    VkResult r = realCreateImage(d, ci, a, out);
+    if (r == VK_SUCCESS) eyes::onImageCreated(*out, *ci);
+    return r;
+}
+VKAPI_ATTR void VKAPI_CALL hookDestroyImage(VkDevice d, VkImage img, const VkAllocationCallbacks* a) {
+    eyes::onImageDestroyed(img);
+    realDestroyImage(d, img, a);
+}
+
 // ---- mirror milestone ----
 bool setupMirror(const SwapchainInfo& sw) {
     auto& rt = xr::runtime();
@@ -230,6 +248,43 @@ bool setupMirror(const SwapchainInfo& sw) {
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         DFN(vkCreateSemaphore)(g.device, &si, nullptr, &m.done[i]);
     }
+    return true;
+}
+
+// ---- stereo projection from the engine's eye render targets ----
+struct Projection {
+    xr::Swapchain sc;
+    VkFormat srcFormat = VK_FORMAT_UNDEFINED;
+    uint32_t w = 0, h = 0;
+    bool blit = false;  // format conversion needed (float/other -> sRGB)
+    bool failed = false;
+} pj;
+
+bool isUnorm8(VkFormat f) { return f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORMAT_B8G8R8A8_UNORM || f == VK_FORMAT_A2B10G10R10_UNORM_PACK32; }
+
+bool setupProjection(const eyes::Frame& f) {
+    if (pj.sc.handle && pj.srcFormat == f.format && pj.w == f.width && pj.h == f.height) return true;
+    if (pj.sc.handle) {
+        vkq::Guard g;
+        xrDestroySwapchain(pj.sc.handle);
+        pj.sc = {};
+    }
+    auto& rt = xr::runtime();
+    // 8-bit UNORM targets hold sRGB-encoded values: copy raw into the _SRGB twin. sRGB targets copy as is.
+    // Anything else (e.g. float HDR) is blitted, which converts.
+    int64_t twin = f.format == VK_FORMAT_B8G8R8A8_UNORM ? VK_FORMAT_B8G8R8A8_SRGB
+                 : f.format == VK_FORMAT_R8G8B8A8_UNORM ? VK_FORMAT_R8G8B8A8_SRGB : int64_t(f.format);
+    const int64_t prefer[] = {twin, VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB};
+    int64_t fmt = rt.pickColorFormat(prefer, 3);
+    pj.blit = fmt != twin;
+    if (!rt.createSwapchain(pj.sc, fmt, f.width, f.height, 2, XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT |
+                                                                 XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT)) {
+        pj.failed = true;
+        return false;
+    }
+    pj.srcFormat = f.format, pj.w = f.width, pj.h = f.height;
+    VRLOG("stereo: projection swapchain %ux%u x2, engine format %d -> %lld (%s)", f.width, f.height, int(f.format), (long long)fmt,
+          pj.blit ? "blit" : "copy");
     return true;
 }
 
@@ -327,9 +382,13 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
             }
         }
     }
+    eyes::Frame ef = eyes::take();
+    bool stereo = ef.ready && !pj.failed && fs.shouldRender && rt.views().valid && setupProjection(ef);
+    uint32_t pidx = 0;
+    if (stereo) stereo = rt.acquire(pj.sc, pidx);
     VkImage src = sw.images[pi->pImageIndices[0]];
     uint32_t idx = 0;
-    bool haveImage = rt.acquire(m.sc, idx);
+    bool haveImage = !stereo && rt.acquire(m.sc, idx);
     TRACE("mirror: acquired %d idx %u, submit", haveImage, idx);
     VkSemaphore waitOn = VK_NULL_HANDLE;
     VkResult result;
@@ -369,6 +428,40 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
             imageBarrier(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
         }
+        if (stereo) {
+            VkImage dst = pj.sc.images[pidx];
+            VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.image = dst;
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 2};
+            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            DFN(vkCmdPipelineBarrier)(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+            for (uint32_t e = 0; e < 2; ++e) {
+                // The engine leaves submitted eye textures in TRANSFER_SRC_OPTIMAL in its Vulkan mode
+                // (gfx vt+0x288 transition before SubmitEye, same contract as OpenVR's Vulkan submit).
+                if (pj.blit) {
+                    VkImageBlit bl{};
+                    bl.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, e, 1};
+                    bl.srcOffsets[1] = bl.dstOffsets[1] = {int32_t(pj.w), int32_t(pj.h), 1};
+                    DFN(vkCmdBlitImage)(cb, ef.image[e], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl,
+                                        VK_FILTER_NEAREST);
+                } else {
+                    VkImageCopy c{};
+                    c.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                    c.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, e, 1};
+                    c.extent = {pj.w, pj.h, 1};
+                    DFN(vkCmdCopyImage)(cb, ef.image[e], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+                }
+            }
+            b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            b.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            DFN(vkCmdPipelineBarrier)(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+        }
         DFN(vkEndCommandBuffer)(cb);
         std::vector<VkPipelineStageFlags> stages(pi->waitSemaphoreCount, VK_PIPELINE_STAGE_TRANSFER_BIT);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -391,7 +484,36 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     }
     TRACE("mirror: presented %d, release", int(result));
     if (haveImage) rt.release(m.sc);
+    if (stereo) rt.release(pj.sc);
     TRACE("mirror: endFrame");
+
+    // Projection layer: the engine rendered each eye with that eye's horizontal FOV and the vertical FOV
+    // shared by both eyes (device slot 0x070), at the head/eye poses it read this frame.
+    XrCompositionLayerProjectionView pv[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
+    XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    if (stereo) {
+        const auto& v = rt.views();
+        float up = std::max(v.fov[0].angleUp, v.fov[1].angleUp), down = std::min(v.fov[0].angleDown, v.fov[1].angleDown);
+        for (int e = 0; e < 2; ++e) {
+            core::Pose head{{v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w},
+                            {v.head.position.x, v.head.position.y, v.head.position.z}};
+            const XrPosef& ev = v.inView[e].pose;
+            core::Pose eye = core::compose(head, {{ev.orientation.x, ev.orientation.y, ev.orientation.z, ev.orientation.w},
+                                                  {ev.position.x, ev.position.y, ev.position.z}});
+            pv[e].pose.orientation = {eye.q.x, eye.q.y, eye.q.z, eye.q.w};
+            pv[e].pose.position = {eye.p.x, eye.p.y, eye.p.z};
+            pv[e].fov = {v.fov[e].angleLeft, v.fov[e].angleRight, up, down};
+            pv[e].subImage.swapchain = pj.sc.handle;
+            pv[e].subImage.imageArrayIndex = uint32_t(e);
+            pv[e].subImage.imageRect = {{0, 0}, {int32_t(pj.w), int32_t(pj.h)}};
+        }
+        proj.space = rt.playSpace();
+        proj.viewCount = 2;
+        proj.views = pv;
+        static bool announced;
+        if (!announced) VRLOG("stereo: submitting engine-rendered eyes as the projection layer");
+        announced = true;
+    }
 
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     quad.space = rt.localSpace();
@@ -401,8 +523,9 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     quad.pose = m.pose;
     float w = 3.2f;
     quad.size = {w, w * float(m.sc.height) / float(m.sc.width)};
-    const XrCompositionLayerBaseHeader* layers[] = {reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
-    bool ended = rt.endFrame(fs, layers, (haveImage && m.placed) ? 1 : 0);
+    const XrCompositionLayerBaseHeader* layers[] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
+                                                           : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
+    bool ended = rt.endFrame(fs, layers, (stereo || (haveImage && m.placed)) ? 1 : 0);
     static uint32_t frames, imaged, submitted;
     ++frames;
     imaged += haveImage;
@@ -432,6 +555,8 @@ PFN_vkVoidFunction deviceOverride(const char* name) {
     if (!strcmp(name, "vkQueueWaitIdle")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueueWaitIdle);
     if (!strcmp(name, "vkDeviceWaitIdle")) return reinterpret_cast<PFN_vkVoidFunction>(hookDeviceWaitIdle);
     if (!strcmp(name, "vkCreateSwapchainKHR")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateSwapchain);
+    if (!strcmp(name, "vkCreateImage")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateImage);
+    if (!strcmp(name, "vkDestroyImage")) return reinterpret_cast<PFN_vkVoidFunction>(hookDestroyImage);
     if (!strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(hookGDPA);
     return nullptr;
 }

@@ -19,3 +19,8 @@ manual:viewport_mouse_event      # viewport vtable slot 0x78: mouse events (read
 manual:engine_alloc              # engine allocator (size, tag)
 manual:vr_viewer_ctor            # VR viewer object ctor (0x138 bytes)
 manual:viewport_render_vr        # viewport vtable slot 0x58: lazily creates the viewer, renders VR view
+manual:holder_create             # render-target holder (re)create
+manual:holder_get                # holder -> texture wrapper
+manual:holder_ctor               # 0x90-byte holder ctor
+manual:ref_addref                # refcounted object AddRef(obj, owner slot)
+var:vr_fRenderingPixelRatio

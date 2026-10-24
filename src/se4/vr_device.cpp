@@ -5,6 +5,7 @@
 #include "core/math.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
+#include "vk/eye_images.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
@@ -84,9 +85,66 @@ void sSetGfx(Object* self, void* native) {
     self->gfxNative = native;
     VRLOG("vrdev: graphics device handles %p", native);
 }
-void sSubmit(Object*, int, void*, void*) { NOTE(0x018); }
+void sSubmit(Object*, int eye, void*, void*) {
+    NOTE(0x018);
+    eyes::submitted(eye);
+}
 void sPhase2(Object*) { NOTE(0x020); }
-void* sEyeRT(Object*, void*, int) { NOTE(0x028); return nullptr; }  // probe: no eye targets yet
+// Eye render targets are engine render-target holders created exactly like the VR viewer's own
+// (engine_alloc(0x90) + holder ctor + AddRef) and (re)created with holder_create(holder, gfx, w, h,
+// 2, 0, 0, 0), the call the engine uses for its single-pass target minus the double-width flag.
+// The slot returns *(holder_get(holder) + 8), the same object the engine renders into (R1 0x028).
+using HolderCreateFn = int(__cdecl*)(void* holder, void* gfx, int w, int h, int fmt, int p6, unsigned flags, int p8);
+using HolderGetFn = void*(__cdecl*)(void* holder);
+using HolderCtorFn = void*(__cdecl*)(void* mem);
+using AddRefFn = void(__cdecl*)(void* obj, void* owner);
+using AllocFn2 = void*(__cdecl*)(size_t size, uintptr_t tag);
+struct EyeTarget {
+    void* holder = nullptr;
+    int w = 0, h = 0;
+};
+EyeTarget g_eye[2];
+
+void eyeSize(int& w, int& h) {
+    const auto& v = xr::runtime().views();
+    w = int(v.recommendedWidth ? v.recommendedWidth : 1344);
+    h = int(v.recommendedHeight ? v.recommendedHeight : 1512);
+    if (auto* ratio = se4::build().at<float>(se4::gen::vr_fRenderingPixelRatio); ratio && *ratio > 0.25f && *ratio < 4.0f) {
+        w = int(w * *ratio + 0.5f);
+        h = int(h * *ratio + 0.5f);
+    }
+}
+
+void* sEyeRT(Object*, void* gfx, int eye) {
+    NOTE(0x028);
+    if (eye != 1 && eye != 2) return nullptr;
+    const auto& b = se4::build();
+    auto alloc = reinterpret_cast<AllocFn2>(b.at<void>(se4::gen::engine_alloc));
+    auto ctor = reinterpret_cast<HolderCtorFn>(b.at<void>(se4::gen::holder_ctor));
+    auto addref = reinterpret_cast<AddRefFn>(b.at<void>(se4::gen::ref_addref));
+    auto create = reinterpret_cast<HolderCreateFn>(b.at<void>(se4::gen::holder_create));
+    auto get = reinterpret_cast<HolderGetFn>(b.at<void>(se4::gen::holder_get));
+    if (!alloc || !ctor || !addref || !create || !get) return nullptr;
+    EyeTarget& t = g_eye[eye - 1];
+    if (!t.holder) {
+        void* mem = alloc(0x90, 0);
+        if (!mem) return nullptr;
+        t.holder = ctor(mem);
+        addref(t.holder, &t.holder);
+        VRLOG("vrdev: eye %d render-target holder %p", eye, t.holder);
+    }
+    int w, h;
+    eyeSize(w, h);
+    if (w != t.w || h != t.h) {
+        eyes::beginCapture(eye, uint32_t(w), uint32_t(h));
+        int id = create(t.holder, gfx, w, h, 2, 0, 0, 0);
+        eyes::endCapture();
+        t.w = w, t.h = h;
+        VRLOG("vrdev: eye %d render target %dx%d (engine id %d)", eye, w, h, id);
+    }
+    void* wrapper = get(t.holder);
+    return wrapper ? *reinterpret_cast<void**>(static_cast<uint8_t*>(wrapper) + 8) : nullptr;
+}
 void sBeginFrame(Object*) { NOTE(0x030); }
 void sPhase1(Object*) { NOTE(0x038); }
 void sPhase3(Object*, void*) { NOTE(0x040); }

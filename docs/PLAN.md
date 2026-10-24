@@ -284,6 +284,15 @@ tests/  portable unit tests + symbol-table consistency over 4 exes
 - An optional `.gro`, only if R4 passed.
 - `USER_VR_TEST.md` and `MIXED_DESKTOP_VR.md`.
 
+## Performance test matrix (user request 2026-10-23: Vulkan everywhere, measure what is best)
+Vulkan is the default and only shipped path unless measurements show otherwise. When the headset is free,
+run the same scripted Pompeii scene (fixed route, `+level`, simulated or real Monado) and record GPU
+timestamps, CPU frame time and dropped frames for:
+- flat baseline: Vulkan vs D3D11 vs D3D12 (stock game, no mod) at the eye resolution;
+- VR: two-pass vs engine single-pass (double-wide) stereo, render scale 0.8/1.0/1.2, VRS foveation on/off,
+  mirror on/off; Monado/Beyond vs SteamVR.
+Results go in `docs/PERF.md`; the default configuration follows the numbers.
+
 ## Test lab and verification
 **Lab:**
 - An isolated prefix copy for each run, plus SS2's Monado simulated pose and input drivers and `runtime_lab.py`.
