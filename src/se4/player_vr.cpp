@@ -206,7 +206,7 @@ bool nativeVrAction() { return g_nativeAction; }
 bool nativeTurn() { return g_nativeTurn; }
 void* localVrd() { return g_localVrd; }
 
-bool install() {
+bool install(bool localVr) {
     const auto& b = se4::build();
     auto* setter = b.at<uint8_t>(se4::gen::set_playing_in_vr);
     auto* bind = b.at<uint8_t>(se4::gen::bind_local_user_psd);
@@ -220,18 +220,21 @@ bool install() {
     }
     g_vrdOff = findVrdOffset(cavr);
     g_bindRet = findCallRet(bind, 0x200, setter);
-    VRLOG("player_vr: vrd offset 0x%x, local-user setter call returns to %p", g_vrdOff, static_cast<void*>(g_bindRet));
+    VRLOG("player_vr: vrd offset 0x%x, local-user setter call returns to %p (%s)", g_vrdOff,
+          static_cast<void*>(g_bindRet), localVr ? "VR player" : "desktop peer guards only");
     if (!g_vrdOff || !g_bindRet) return false;
-    // Guards first: they must be in place before any player can have VR data.
+    // Guards first: they must be in place before any player can have VR data. A desktop peer needs them too,
+    // because remote VR players get a CPlayerVRData on every machine (psd_bIsPlayingInVR replicates).
     bool ok = patchSlot208(init, global);
     ok &= hook(ctrl, reinterpret_cast<void*>(hookedCtrlWorld), reinterpret_cast<void**>(&realCtrlWorld), "controller placement");
     ok &= hook(cavr, reinterpret_cast<void*>(hookedCavr), reinterpret_cast<void**>(&realCavr), "ClientActionVR");
     ok &= hook(init, reinterpret_cast<void*>(hookedVrdInit), reinterpret_cast<void**>(&realVrdInit), "vrd_init");
+    if (!localVr) return ok;
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
     g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;
     if (auto* ca = b.at<uint8_t>(se4::gen::client_action))
         ok &= hook(ca, reinterpret_cast<void*>(hookedCa), reinterpret_cast<void**>(&realCa), "ClientAction");
-    else ok = !g_nativeAction;
+    else ok &= !g_nativeAction;
     if (!ok) return false;  // never enable VR players without every guard
     return hook(setter, reinterpret_cast<void*>(hookedSetPlaying), reinterpret_cast<void**>(&realSetPlaying), "SetPlayingInVR");
 }

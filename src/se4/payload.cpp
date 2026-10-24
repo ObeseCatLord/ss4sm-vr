@@ -79,14 +79,18 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         VRLOG("MinHook init failed");
         return;
     }
-    if (!se4::g_vrEnabled) return;  // flat play: no hooks at all
+    if (!se4::g_vrEnabled) {
+        // Flat play: no hooks, unless this desktop player opts into guards for VR peers in multiplayer.
+        if (se4::options::get("mp_guards", 0)) player_vr::install(false);
+        return;
+    }
     if (!(skip & 2)) se4::installProcAddressHook();
     if (!(skip & 4)) focus::install();
     if (!(skip & 8)) {
         vrdev::hookShutdown();
         vrdev::hookViewport();
     }
-    if (!(skip & 0x10)) player_vr::install();
+    if (!(skip & 0x10)) player_vr::install(true);
 }
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {
