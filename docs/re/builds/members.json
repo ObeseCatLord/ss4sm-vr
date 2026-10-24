@@ -1,0 +1,50 @@
+{
+ "Sam4": {
+  "CPuppetEntity::en_henRide": "0x75c",
+  "CPuppetEntity::en_henOperator": "0x428",
+  "CVehicleEntity::en_pvsSteering": "0xc50",
+  "CVehicleEntity::en_avbBehaviors": "0xc58",
+  "CVehicleEntity::en_mhSkeletonAdjuster": "0xc68",
+  "CWheeledVehicleBehaviorParams::vbp_pwvsasSkeletonAdjusterScheme": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_idSteeringWheelBone": "0x60",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_fMaxSteeringWheelAngle": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_bUseHandlebar": "0x7c",
+  "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94"
+ },
+ "Sam4_Unrestricted": {
+  "CPuppetEntity::en_henRide": "0x75c",
+  "CPuppetEntity::en_henOperator": "0x428",
+  "CVehicleEntity::en_pvsSteering": "0xc50",
+  "CVehicleEntity::en_avbBehaviors": "0xc58",
+  "CVehicleEntity::en_mhSkeletonAdjuster": "0xc68",
+  "CWheeledVehicleBehaviorParams::vbp_pwvsasSkeletonAdjusterScheme": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_idSteeringWheelBone": "0x60",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_fMaxSteeringWheelAngle": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_bUseHandlebar": "0x7c",
+  "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94"
+ },
+ "SamSM": {
+  "CPuppetEntity::en_henRide": "0x75c",
+  "CPuppetEntity::en_henOperator": "0x428",
+  "CVehicleEntity::en_pvsSteering": "0xc58",
+  "CVehicleEntity::en_avbBehaviors": "0xc60",
+  "CVehicleEntity::en_mhSkeletonAdjuster": "0xc70",
+  "CWheeledVehicleBehaviorParams::vbp_pwvsasSkeletonAdjusterScheme": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_idSteeringWheelBone": "0x60",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_fMaxSteeringWheelAngle": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_bUseHandlebar": "0x7c",
+  "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94"
+ },
+ "SamSM_Unrestricted": {
+  "CPuppetEntity::en_henRide": "0x75c",
+  "CPuppetEntity::en_henOperator": "0x428",
+  "CVehicleEntity::en_pvsSteering": "0xc58",
+  "CVehicleEntity::en_avbBehaviors": "0xc60",
+  "CVehicleEntity::en_mhSkeletonAdjuster": "0xc70",
+  "CWheeledVehicleBehaviorParams::vbp_pwvsasSkeletonAdjusterScheme": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_idSteeringWheelBone": "0x60",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_fMaxSteeringWheelAngle": "0x68",
+  "CWheeledVehicleSkeletonAdjusterScheme::wvsas_bUseHandlebar": "0x7c",
+  "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94"
+ }
+}

@@ -92,3 +92,16 @@
   - The harvest also lists a `_svc_AppInputDeviceVRController` service in every build. A "VRController" input
     device may exist after all, contrary to the R3 follow-up. Check at runtime before relying on either
     conclusion; the device still never sets +0xb3c.
+- Gate R7 done (`docs/re/R7_vehicles.md`). Native steering is analog, so thumbstick driving already works
+  through the virtual pad's left stick. The `plcmdVehicle*` commands are dead in these builds.
+  - Grab mode (`src/se4/vehicles.cpp`, option `vehicle_grab`, default 1):
+    - Squeeze near the vehicle model's real steering bone.
+    - The hands' angle about the bone's heading axis becomes the native steer (pad LX = −steer; the stick wins
+      when deflected).
+    - The bone is posed 1:1 through the vehicle's own bone follower after the native animate step.
+    - Supported where the content has a cockpit wheel or handlebar bone plus the `Left/RightHandSteeringHandle`
+      attachments: SS4 ATV; SM SpecialATV, Crane, Snowmobile; Harvester. The chopper, tank and mechs stay
+      thumbstick-only for now.
+  - Member offsets now come from the engine's reflection records per build (`tools/members.txt` →
+    `tools/harvest_members.py` → `docs/re/builds/members.json` → `Build::off`).
+  - Lab checks: steering sign, the heading axis logged at first drive, and that the hands stay on the grips.

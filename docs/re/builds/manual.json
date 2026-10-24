@@ -25,7 +25,14 @@
   "crosshair_render": "0x140120b60",
   "object_holder_render": "0x1401015d0",
   "project_render": "0x140053b70",
-  "main_loop": "0x14003a810"
+  "main_loop": "0x14003a810",
+  "wvb_animate": "0x140a509d0",
+  "bone_world": "0x1400785d0",
+  "attach_world": "0x14024cb30",
+  "ident_ctor": "0x1410c65f0",
+  "handle_entity": "0x141112c50",
+  "follower_setrot": "0x14007a930",
+  "euler_quat": "0x1411458e0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -53,7 +60,14 @@
   "object_holder_render": "0x140103f20",
   "crosshair_render": "0x1401234b0",
   "project_render": "0x1400564c0",
-  "main_loop": "0x14003a880"
+  "main_loop": "0x14003a880",
+  "wvb_animate": "0x140a53100",
+  "bone_world": "0x14007af20",
+  "attach_world": "0x14024f1f0",
+  "handle_entity": "0x1411155a0",
+  "follower_setrot": "0x14007d280",
+  "ident_ctor": "0x1410c9180",
+  "euler_quat": "0x141148230"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -81,7 +95,14 @@
   "object_holder_render": "0x140101ef0",
   "crosshair_render": "0x140121570",
   "project_render": "0x140053bd0",
-  "main_loop": "0x14003a8b0"
+  "main_loop": "0x14003a8b0",
+  "wvb_animate": "0x140a50e30",
+  "bone_world": "0x1400788e0",
+  "attach_world": "0x14024c750",
+  "handle_entity": "0x141113500",
+  "follower_setrot": "0x14007ac10",
+  "ident_ctor": "0x1410c6da0",
+  "euler_quat": "0x1411460f0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -109,6 +130,13 @@
   "object_holder_render": "0x140104830",
   "crosshair_render": "0x140123eb0",
   "project_render": "0x140056510",
-  "main_loop": "0x14003a920"
+  "main_loop": "0x14003a920",
+  "wvb_animate": "0x140a53550",
+  "bone_world": "0x14007b220",
+  "attach_world": "0x14024ee00",
+  "handle_entity": "0x141115e40",
+  "follower_setrot": "0x14007d550",
+  "ident_ctor": "0x1410c9920",
+  "euler_quat": "0x141148a30"
  }
 }

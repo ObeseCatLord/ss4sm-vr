@@ -37,3 +37,10 @@ manual:object_holder_render      # R8: CObjectHolderHudElement render; 1 predica
 manual:project_render            # R10: CProjectInstance slot 0x50 Render(pi, dp, inVR)
 manual:main_loop                 # R10: main loop; its call [rax+0x50] at +0x25c is the desktop Render
 var:vr_bForceImmersiveMode       # R10: immersive stereo path instead of the cinema screen
+manual:wvb_animate               # R7: CWheeledVehicleBehavior animate (steering-wheel bone into the bone follower)
+manual:bone_world                # R7: bone world placement (P7* out, entity*, IDENT)
+manual:attach_world              # R7: attachment world placement (entity*, out*, IDENT)
+manual:ident_ctor                # R7: IDENT from C string
+manual:handle_entity             # R7: entity handle -> entity*
+manual:follower_setrot           # R7: CBonePathFollower set bone rotation
+manual:euler_quat                # R7: Euler -> quaternion

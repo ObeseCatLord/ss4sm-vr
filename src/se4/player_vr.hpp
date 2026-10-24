@@ -21,6 +21,8 @@ unsigned vrdOffset();
 //                       virtual pad sends no look-turn. Defaults to native_vr_action.
 bool nativeVrAction();
 bool nativeTurn();
+// World placement of a controller (engine role 0 right, 1 left) as the engine computes it for vrd.
+void controllerWorld(void* vrd, int role, float out[7]);
 // The local player's CPlayerVRData (last vrd_init with the local flag set), or nullptr.
 void* localVrd();
 }  // namespace player_vr

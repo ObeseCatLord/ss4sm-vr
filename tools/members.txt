@@ -1,0 +1,11 @@
+# Class::member offsets read from the engine's reflection records (tools/harvest_members.py -> docs/re/builds/members.json)
+CPuppetEntity::en_henRide
+CPuppetEntity::en_henOperator
+CVehicleEntity::en_pvsSteering
+CVehicleEntity::en_avbBehaviors
+CVehicleEntity::en_mhSkeletonAdjuster
+CWheeledVehicleBehaviorParams::vbp_pwvsasSkeletonAdjusterScheme
+CWheeledVehicleSkeletonAdjusterScheme::wvsas_idSteeringWheelBone
+CWheeledVehicleSkeletonAdjusterScheme::wvsas_fMaxSteeringWheelAngle
+CWheeledVehicleSkeletonAdjusterScheme::wvsas_bUseHandlebar
+CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation

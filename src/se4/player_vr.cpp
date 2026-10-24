@@ -8,6 +8,7 @@
 #include "se4/options.hpp"
 #include "se4/patch.hpp"
 #include "se4/vr_device.hpp"
+#include "se4/vehicles.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <cstdint>
@@ -84,6 +85,7 @@ bool g_nativeAction, g_nativeTurn;
 void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn, uintptr_t relMove, uintptr_t clientPos,
               uintptr_t clientH, uintptr_t henFloor, uintptr_t henMover, uintptr_t reset1, uintptr_t reset2) {
     void* vrd = player ? *reinterpret_cast<void**>(player + g_vrdOff) : nullptr;
+    if (vrd && vrd == g_localVrd && vrdev::installed()) vehicles::step(player, vrd);
     if (!g_nativeAction || !vrd || vrd != g_localVrd || !vrdev::installed()) {
         realCa(player, fire, look, lockOn, relMove, clientPos, clientH, henFloor, henMover, reset1, reset2);
         return;
@@ -190,6 +192,10 @@ bool patchSlot208(uint8_t* fn, void** global) {
 }  // namespace
 
 unsigned vrdOffset() { return g_vrdOff; }
+void controllerWorld(void* vrd, int role, float out[7]) {
+    if (realCtrlWorld && vrd) realCtrlWorld(vrd, out, role);
+    else memset(out, 0, 7 * sizeof(float));
+}
 bool nativeVrAction() { return g_nativeAction; }
 bool nativeTurn() { return g_nativeTurn; }
 void* localVrd() { return g_localVrd; }

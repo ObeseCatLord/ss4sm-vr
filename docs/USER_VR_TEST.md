@@ -24,6 +24,8 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    weapon.
 7b. Crosshair: the game's crosshair should sit where the right-hand gun points, and its spread ring should
    match the native spread. Turn it off with `native_crosshair=0` in options.txt to compare.
+7c. Vehicles (ATV): the left stick drives. Squeeze both grips on the handlebars; turning the hands should turn the
+   real bars 1:1 and steer the ATV in the same direction. Log: `vehicles: grabbed the steering wheel`.
 8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line):
    `native_vr_action=1` sends head and hands with each player action (needed for multiplayer). Turning
    then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;

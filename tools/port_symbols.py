@@ -34,7 +34,7 @@ for name, s in [(k, v) for k, v in sigs.items() if 'call_of' not in v] + [(k, v)
     if 'call_of' in s:
         for b, img in imgs.items():
             base = manual.get(b, {}).get(s['call_of']) or harvested(b, s['call_of'])
-            t = nth_call(img, int(base, 16), s['index']) if base else None
+            t = nth_call(img, int(base, 16), s['index'], s.get('limit', 0x200)) if base else None
             if t: manual.setdefault(b, {})[name] = hex(t)
             else:
                 ok = False

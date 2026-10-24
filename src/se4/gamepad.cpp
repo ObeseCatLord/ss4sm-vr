@@ -5,6 +5,7 @@
 #include "xr/runtime.hpp"
 #include "core/vr_controls.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/vehicles.hpp"
 #include <xinput.h>
 #include <cmath>
 #include <cstring>
@@ -126,14 +127,17 @@ void publishFromXr() {
     if (v.valid) f.head = {v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w};
     const Pad m = g_mapper.update(f);
     XINPUT_GAMEPAD p{};
-    p.sThumbLX = axis(m.lx);
+    // Grab steering: the hands' wheel angle is the native analog steer unless the stick is pushed (R7 s6b).
+    float grabLx;
+    p.sThumbLX = (vehicles::steerOverride(grabLx) && std::fabs(m.lx) < 0.25f) ? axis(grabLx) : axis(m.lx);
     p.sThumbLY = axis(m.ly);
     // With native_turn the engine turns the VR anchor from the device stick; the pad must not turn as well.
     p.sThumbRX = (player_vr::nativeTurn() && !g_mapper.wheelHeld) ? 0 : axis(m.rx);
     p.sThumbRY = g_mapper.wheelHeld ? axis(m.ry) : 0;  // pitch comes from the head outside the wheel
     p.bRightTrigger = trig(m.rt);
     p.bLeftTrigger = trig(m.lt);
-    p.wButtons = m.buttons;
+    // While driving, the grips grab the wheel instead of using a gadget.
+    p.wButtons = vehicles::driving() ? WORD(m.buttons & ~XINPUT_GAMEPAD_Y) : m.buttons;
     AcquireSRWLockExclusive(&g_lock);
     if (memcmp(&p, &g_pad, sizeof p)) {
         g_pad = p;

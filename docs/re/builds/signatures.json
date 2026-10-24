@@ -117,5 +117,41 @@
   "src": "0x14003a810",
   "len": 64,
   "_note": "main loop; call [rax+0x50] (Render) at +0x25c, the only caller passing inVR=0 (R10)"
+ },
+ "wvb_animate": {
+  "src": "0x140a509d0",
+  "len": 64,
+  "_note": "CWheeledVehicleBehavior animate (vt+0xa8): writes the steering-wheel bone into the vehicle bone follower (R7 s2)"
+ },
+ "bone_world": {
+  "src": "0x1400785d0",
+  "len": 64,
+  "_note": "bone world placement (P7* out, entity*, IDENT bone) (R7 s3)"
+ },
+ "attach_world": {
+  "src": "0x14024cb30",
+  "len": 64,
+  "_note": "attachment world placement (entity*, out*, IDENT attachment) (R7 s3)"
+ },
+ "ident_ctor": {
+  "src": "0x1410c65f0",
+  "len": 32,
+  "_note": "IDENT from C string (IDENT* out, const char*) (R7 s3)"
+ },
+ "handle_entity": {
+  "src": "0x141112c50",
+  "len": 64,
+  "_note": "entity handle -> entity* (R7 s3)"
+ },
+ "follower_setrot": {
+  "src": "0x14007a930",
+  "len": 64,
+  "_note": "CBonePathFollower set bone rotation (follower*, IDENT bone, quat*) (R7 s2)"
+ },
+ "euler_quat": {
+  "call_of": "wvb_animate",
+  "index": 7,
+  "_note": "Euler (H,P,B radians) -> quaternion (quat* out, float3*): 8th direct call of wvb_animate (R7 s2)",
+  "limit": 1536
  }
 }
