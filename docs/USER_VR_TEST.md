@@ -22,6 +22,8 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
 7. Weapon wheel: hold the left trackpad (Index) or Y (Touch). The native wheel opens with slow motion. Move the
    right hand up/down/left/right to highlight, then release to select. The left hand selects the second-hand
    weapon.
+7b. Crosshair: the game's crosshair should sit where the right-hand gun points, and its spread ring should
+   match the native spread. Turn it off with `native_crosshair=0` in options.txt to compare.
 8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line):
    `native_vr_action=1` sends head and hands with each player action (needed for multiplayer). Turning
    then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;

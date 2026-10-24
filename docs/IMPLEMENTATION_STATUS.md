@@ -70,3 +70,12 @@
     `prjIsVRActive` = vt[0x18](this,1); SS4 = vt[0x10](this,0)).
   - Gate R10 is in progress (`docs/re/R10_vr_render_gate.md`).
 - In progress: gates R7 (vehicles), R8 (crosshair), R9 (body IK) and R10.
+- Gate R8 done (`docs/re/R8_crosshair.md`). The game's own crosshair is now enabled for hand aim:
+  - `src/se4/crosshair.cpp` makes the five calls to a hidden always-true predicate answer 0 for the local VR
+    player.
+  - The aim ray then comes from the barrel, and the native crosshair and dispersion ring are projected onto
+    the barrel's hit point.
+  - Shots already travel along the barrel for bullets, beams and projectiles. The exception is the
+    auto-shotgun while zoomed.
+  - Still to do: per-eye correctness (R8 s8 B: projection and eye offset during the crosshair draw, once R10
+    shows which stereo path runs), and a second crosshair for dual wield (s8 C).
