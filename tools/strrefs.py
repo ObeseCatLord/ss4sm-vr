@@ -17,7 +17,7 @@ def find_strings(img, s):
     pat = s.encode() + b'\0'
     out, o = [], img.data.find(pat)
     while o >= 0:
-        if o == 0 or img.data[o - 1] == 0:
+        if o == 0 or not (0x20 <= img.data[o - 1] < 0x7f):  # string start (SE4 meta strings may follow 0xff padding)
             va = img.va(o)
             if va: out.append(va)
         o = img.data.find(pat, o + 1)
