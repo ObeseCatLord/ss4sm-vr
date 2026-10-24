@@ -224,13 +224,23 @@ void sweep(uint8_t* weapon, void* stepArg, bool generic) {
     memcpy(t.pt, pt, sizeof pt), t.t = now;
 }
 
+// Logs when a melee weapon starts stepping (after a second without), for the lab.
+void noteInHand(bool generic) {
+    static ULONGLONG last[2];
+    const ULONGLONG now = GetTickCount64();
+    if (now - last[generic] > 1000) VRLOG("melee: %s in hand", generic ? "generic melee weapon" : "knife");
+    last[generic] = now;
+}
+
 void hookedStep(uint8_t* weapon, void* stepArg) {
     realStep(weapon, stepArg);
+    noteInHand(false);
     if (!g_bullet) identFn(&g_bullet, "bullet");  // CName interned on the simulation thread, like the engine's
     sweep(weapon, stepArg, false);
 }
 void hookedGenericStep(uint8_t* weapon, void* stepArg) {
     realGenericStep(weapon, stepArg);
+    noteInHand(true);
     if (!g_bullet) identFn(&g_bullet, "bullet");
     sweep(weapon, stepArg, true);
 }

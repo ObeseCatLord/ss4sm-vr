@@ -24,3 +24,5 @@ CGenericMeleeWeaponParams::gmwp_fDamageRayRadius   # melee: generic melee weapon
 CGenericMeleeWeaponParams::gmwp_slDamage
 CGenericMeleeWeaponParams::gmwp_dtDamageType
 CGenericMeleeWeaponParams::gmwp_fSwingRadius
+CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon  # the held weapons (scope: is the scoped weapon still held)
+CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon

@@ -119,6 +119,18 @@ void hookedStep(uint8_t* mode) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 
+// The weapon pointer from the last step may already be freed by a weapon switch (lab crash 2026-10-24 in the
+// barrel placement right after the sniper was put away): only use it while the player still holds it.
+bool stillHeld(const Held& h) {
+    const auto& b = se4::build();
+    const unsigned vrdOff = player_vr::vrdOffset();
+    const size_t off = b.off(h.role ? se4::gen::CPlayerActorPuppetEntity_en_henCurrentLeftHandWeapon
+                                    : se4::gen::CPlayerActorPuppetEntity_en_henCurrentRightHandWeapon);
+    if (!off || !vrdOff || !h.player || at<void*>(h.player, vrdOff) != player_vr::localVrd()) return false;
+    const int32_t handle = at<int32_t>(h.player, off);
+    return handle && handleEntity(handle) == h.weapon;
+}
+
 core::Pose fromP7(const float* p) { return {core::normalize({p[0], p[1], p[2], p[3]}), {p[4], p[5], p[6]}}; }
 
 void setCvar(se4::gen::Sym s, int32_t v, int32_t* saved) {
@@ -138,7 +150,7 @@ void beginFrame() {
     h = g_held;
     ReleaseSRWLockShared(&g_lock);
     void* vrd = player_vr::localVrd();
-    if (!h.weapon || !vrd || !g_identReady || GetTickCount64() - h.tick > 250) {  // not stepped recently: holstered or dropped
+    if (!h.weapon || !vrd || !g_identReady || GetTickCount64() - h.tick > 250 || !stillHeld(h)) {  // holstered, dropped or switched
         g_shared.live = false;
         return;
     }
