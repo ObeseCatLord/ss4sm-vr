@@ -3,6 +3,7 @@
 // Floats travel in the XMM register of their argument position. See docs/re/R1_vtable.md.
 #include "se4/vr_device.hpp"
 #include "core/math.hpp"
+#include "core/stereo.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "vk/eye_images.hpp"
@@ -168,21 +169,14 @@ int* sMaxSize(Object* self, int* ret) {
 }
 float* sProjection(Object*, float* m, int eye, float n, float f) {
     NOTE(0x070);
-    memset(m, 0, 16 * sizeof(float));
     const auto& v = xr::runtime().views();
     if ((eye != 1 && eye != 2) || !v.valid) {
+        memset(m, 0, 16 * sizeof(float));
         m[0] = m[5] = m[10] = m[15] = 1;
         return m;
     }
-    // Horizontal extent per eye; vertical extent shared by both eyes (as the engine expects, R1 0x070).
-    const XrFovf& e = v.fov[eye - 1];
-    float l = n * std::tan(e.angleLeft), r = n * std::tan(e.angleRight);
-    float t = n * std::tan(std::max(v.fov[0].angleUp, v.fov[1].angleUp));
-    float b = n * std::tan(std::min(v.fov[0].angleDown, v.fov[1].angleDown));
-    m[0] = 2 * n / (r - l), m[2] = (r + l) / (r - l);
-    m[5] = 2 * n / (t - b), m[6] = (t + b) / (t - b);
-    m[10] = -(f + n) / (f - n), m[11] = -2 * f * n / (f - n);
-    m[14] = -1;
+    auto fov = [](const XrFovf& x) { return core::Fov{x.angleLeft, x.angleRight, x.angleUp, x.angleDown}; };
+    core::engineProjection(core::sharedVertical(fov(v.fov[eye - 1]), fov(v.fov[0]), fov(v.fov[1])), n, f, m);
     return m;
 }
 float* sEyeTransform(Object*, float* m, int eye) {
