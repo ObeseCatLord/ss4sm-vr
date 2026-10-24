@@ -9,3 +9,7 @@ var:vr_strAPI
 fn:vrGetDeviceName
 fn:vrGetDeviceAPI
 fn:prjIsVRActive
+var:gfx_iMaxFPSActive
+var:gfx_iMaxFPSInactive
+var:men_iMaxAllowedFPS
+var:gfx_iWaitVSyncs

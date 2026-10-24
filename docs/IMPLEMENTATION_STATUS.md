@@ -19,6 +19,11 @@
       (simulated Monado, `docs/evidence/2026-10-23_mirror_quad_monado_sim.png`)
 - [x] Same on Siberian Mayhem (private display, `docs/evidence/2026-10-23_sm_mirror_private_display.png`)
 - [ ] On real Beyond/Monado; on SteamVR
-- [ ] Frame pacing: game limiter + xrWaitFrame gives ~20 fps in menus
+- [x] Frame pacing root cause: the unfocused game window is capped by `gfx_iMaxFPSInactive` (default 20;
+      0 means 1 fps, not unlimited). With it at 500 plus `gfx_iMaxFPSActive 0`, `men_iMaxAllowedFPS 0`,
+      `gfx_iWaitVSyncs 0`, the mirror holds the runtime rate (60.0 fps on simulated Monado).
+      TODO: the payload must set these in memory whenever VR is active (window is usually unfocused).
+- [x] OpenXR input layer (`src/xr/input`): Index/Touch/Vive/WMR/simple profiles, aim+grip poses with
+      velocities, trigger/squeeze/stick/buttons with edges, haptics; verified with simulated Index controllers.
 - [ ] Device seam (`COpenXRDevice` at the VR device global) — needs R1 slot semantics
 - [ ] Engine stereo rendering into the projection layer (R2)

@@ -1,6 +1,7 @@
 #include "xr/runtime.hpp"
 #include "se4/log.hpp"
 #include "vk/queue_lock.hpp"
+#include "xr/input.hpp"
 #include <cstring>
 
 namespace xr {
@@ -132,6 +133,7 @@ bool Runtime::createSession(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, 
     formats_.resize(n);
     xrEnumerateSwapchainFormats(session_, n, &n, formats_.data());
     VRLOG("xr: session created on queue family %u index %u, %u swapchain formats", family, index, n);
+    input().create(instance_, session_);
     return true;
 }
 

@@ -10,6 +10,7 @@
 #include "se4/log.hpp"
 #include "vk/queue_lock.hpp"
 #include "xr/runtime.hpp"
+#include "xr/input.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <intrin.h>
@@ -303,6 +304,18 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     }
 
     TRACE("mirror: frame begun (shouldRender %d), acquire", fs.shouldRender);
+    xr::input().sync(rt.session(), rt.localSpace(), fs.predictedDisplayTime);
+    {
+        static XrTime lastLog;
+        if (fs.predictedDisplayTime - lastLog > 2000000000) {
+            lastLog = fs.predictedDisplayTime;
+            for (int h = 0; h < 2; ++h) {
+                const auto& hs = xr::input().hand(h);
+                VRLOG("input: %c active %d pos %.2f %.2f %.2f trig %.2f sq %.2f stick %.2f %.2f btn %x", h ? 'R' : 'L', hs.active,
+                      hs.grip.position.x, hs.grip.position.y, hs.grip.position.z, hs.trigger, hs.squeeze, hs.stick.x, hs.stick.y, hs.buttons);
+            }
+        }
+    }
     VkImage src = sw.images[pi->pImageIndices[0]];
     uint32_t idx = 0;
     bool haveImage = rt.acquire(m.sc, idx);
@@ -357,8 +370,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         si.pSignalSemaphores = &m.done[s];
         realQueueSubmit(q, 1, &si, m.fence[s]);
         waitOn = m.done[s];
-        // The runtime reads the image after release; finish the blit first.
-        DFN(vkWaitForFences)(g.device, 1, &m.fence[s], VK_TRUE, UINT64_MAX);
+        // No CPU wait: the blit is submitted on the session's queue before xrReleaseSwapchainImage, and the
+        // runtime orders its own work on that queue after it (OpenXR Vulkan swapchain rules).
         VkPresentInfoKHR p = *pi;
         p.waitSemaphoreCount = 1;
         p.pWaitSemaphores = &waitOn;
@@ -383,9 +396,17 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     ++frames;
     imaged += haveImage;
     submitted += ended && haveImage && m.placed && fs.shouldRender;
-    if (frames % 600 == 1)
-        VRLOG("mirror: frames %u imaged %u submitted %u placed %d shouldRender %d period %.2f ms", frames, imaged, submitted, m.placed,
-              fs.shouldRender, fs.predictedDisplayPeriod / 1e6);
+    static XrTime windowStart;
+    static uint32_t windowFrames;
+    if (!windowStart) windowStart = fs.predictedDisplayTime;
+    ++windowFrames;
+    if (fs.predictedDisplayTime - windowStart >= 5000000000LL) {
+        double secs = double(fs.predictedDisplayTime - windowStart) / 1e9;
+        VRLOG("mirror: %.1f fps (frames %u submitted %u, display period %.2f ms)", windowFrames / secs, frames, submitted,
+              fs.predictedDisplayPeriod / 1e6);
+        windowStart = fs.predictedDisplayTime;
+        windowFrames = 0;
+    }
     return result;
 }
 
