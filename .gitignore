@@ -3,3 +3,4 @@ lab/
 *.pyc
 __pycache__/
 .venv/
+compile_commands.json
