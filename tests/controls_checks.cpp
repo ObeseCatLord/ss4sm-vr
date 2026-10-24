@@ -57,7 +57,11 @@ int main() {
         Mapper m;
         Frame f = idle(Kind::Index);
         f.head = yaw(Pi / 2);  // facing -X (yaw +90 deg about +Y turns -Z towards -X)
-        f.hand[0].buttons = TrackpadPress;
+        f.hand[0].buttons = TrackpadPress;  // both trackpads held: one wheel for both hands
+        f.hand[1].buttons = TrackpadPress;
+        f.ms = 1000;
+        m.update(f);
+        f.ms = 1300;  // the right pad is held past the tap time
         Pad p = m.update(f);
         assert(p.buttons & PadLB);
         assert(p.rx == 0 && p.ry == 0 && p.lx == 0 && p.ly == 0);  // opening does not select
@@ -77,14 +81,55 @@ int main() {
         f.hand[0].sx = 0, f.hand[0].sy = -0.9f;
         p = m.update(f);
         assert(p.ly == -0.9f);
-        // releasing the wheel button returns to plain sticks; reopening re-anchors
+        // releasing the wheel buttons returns to plain sticks; reopening re-anchors
         f.hand[0].buttons = 0;
+        f.hand[1].buttons = 0;
         f.hand[0].sy = 0;
         p = m.update(f);
         assert(!(p.buttons & PadLB) && p.rx == 0 && p.ry == 0);
         f.hand[0].buttons = TrackpadPress;
         p = m.update(f);
         assert(p.rx == 0 && p.ry == 0);
+    }
+    // Per-hand wheels (Index): the left pad picks only the left hand's weapon, the right pad (held) only the right;
+    // a right tap toggles dual wielding.
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.ms = 100;
+        f.hand[0].buttons = TrackpadPress;
+        Pad p = m.update(f);
+        assert(p.buttons & PadLB);
+        f.hand[0].pos = f.hand[0].pos + Vec3{0, 0.08f, 0};
+        f.hand[1].pos = f.hand[1].pos + Vec3{0, 0.08f, 0};
+        f.hand[1].sy = 0.9f;  // even a pushed right stick does not pick for the right hand
+        p = m.update(f);
+        assert(std::fabs(p.ly - 1) < 1e-3f && p.rx == 0 && p.ry == 0);
+        f.hand[0].buttons = 0, f.hand[1].sy = 0;
+        p = m.update(f);
+        assert(!(p.buttons & PadLB));
+        // right pad: a tap is RB for kPulseMs, no wheel
+        f.ms = 1000, f.hand[1].buttons = TrackpadPress;
+        p = m.update(f);
+        assert(!(p.buttons & (PadLB | PadRB)));
+        f.ms = 1100, f.hand[1].buttons = 0;
+        p = m.update(f);
+        assert(p.buttons & PadRB);
+        f.ms = 1300;
+        assert(!(m.update(f).buttons & PadRB));
+        // right pad held: the right hand's wheel, left selections ignored
+        f.ms = 2000, f.hand[1].buttons = TrackpadPress;
+        m.update(f);
+        f.ms = 2300;
+        p = m.update(f);
+        assert((p.buttons & PadLB) && p.rx == 0 && p.ry == 0);
+        f.hand[1].pos = f.hand[1].pos + Vec3{0.08f, 0, 0};
+        f.hand[0].pos = f.hand[0].pos + Vec3{0.08f, 0, 0};
+        p = m.update(f);
+        assert(std::fabs(p.rx - 1) < 1e-3f && p.lx == 0 && p.ly == 0);
+        // releasing after a hold is not a tap
+        f.ms = 2400, f.hand[1].buttons = 0;
+        assert(!(m.update(f).buttons & PadRB));
     }
     // Wheel held: the right face buttons are taken by the gadget ring (HUD commands), so no jump/crouch
     {

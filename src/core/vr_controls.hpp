@@ -14,13 +14,13 @@
 // The gadget (left grip) does not go through the pad: src/se4/gadgets.cpp issues the player's quick-use HUD command
 // directly, because pad Y's meaning depends on the saved gamepad layout.
 // Per-profile layout (semantic action -> button):
-//   Valve Index: wheel L trackpad press, dual-wield R trackpad press, jump R A, crouch R B, reload L A,
+//   Valve Index: wheel per hand (L/R trackpad hold; L tap previous weapon, R tap dual-wield toggle), jump R A, crouch R B, reload L A,
 //                menu L B, gadget L grip, use R stick click, sprint L stick click.
 //   Oculus Touch: wheel Y, jump A, crouch B, reload X, menu left menu, gadget L grip, use R stick click,
 //                sprint L stick click (dual wielding through the wheel's second-hand selection).
 //   HTC Vive (trackpads are the axes): wheel L trackpad click, jump R trackpad click, crouch R grip,
 //                use R menu, menu L menu, gadget L grip (reload is automatic when empty).
-//   Microsoft motion: wheel L trackpad click, dual-wield R trackpad click, jump R menu, crouch R grip,
+//   Microsoft motion: wheel per hand (L/R trackpad click hold, as Index), jump R menu, crouch R grip,
 //                menu L menu, gadget L grip, use R stick click, sprint L stick click.
 //   Simple controller: trigger fires, menu opens the menu.
 #include "core/math.hpp"
@@ -49,6 +49,7 @@ struct Hand {
 
 struct Frame {
     Kind kind = Kind::Unknown;
+    uint64_t ms = 0;        // a millisecond clock (taps vs holds)
     Hand hand[2];           // 0 left, 1 right
     Quat head{0, 0, 0, 1};  // HMD orientation, play space
 };
@@ -64,12 +65,17 @@ inline float gripThreshold(Kind k) { return k == Kind::Index ? 0.4f : k == Kind:
 
 constexpr float kWheelRadius = 0.08f;     // hand travel (m) that reads as a full stick deflection
 constexpr float kWheelDeadZone = 0.015f;  // hand jitter below this is ignored
+constexpr uint64_t kTapMs = 250;          // a right trackpad press shorter than this is a tap (dual-wield toggle)
+constexpr uint64_t kPulseMs = 120;        // how long a tap's pad button is held
 
 struct Mapper {
     bool wheelHeld = false;
     Vec3 origin[2]{};
     Quat frame{0, 0, 0, 1};  // yaw-only head orientation when the wheel button went down
     bool grip[2]{};
+    bool wheelSel[2]{true, true};  // which hands' selections the open wheel takes (per-hand wheels)
+    bool rightPad = false;
+    uint64_t rightPadAt = 0, dualPulseUntil = 0;
 
     Pad update(const Frame& f) {
         Pad p;
@@ -87,10 +93,22 @@ struct Mapper {
         uint16_t b = 0;
         auto on = [](const Hand& h, uint32_t bit) { return (h.buttons & bit) != 0; };
         bool wheel = false;
+        bool selL = true, selR = true;
+        // Index / WMR: a wheel per hand. Holding a hand's trackpad opens the native wheel for that hand's weapon
+        // only (both pads: both hands). The left tap stays the native wheel-button tap (previous weapon); a right
+        // tap (shorter than kTapMs) toggles dual wielding.
+        auto perHand = [&](bool lPad, bool rPad) {
+            if (rPad && !rightPad) rightPadAt = f.ms;
+            if (!rPad && rightPad && f.ms - rightPadAt < kTapMs) dualPulseUntil = f.ms + kPulseMs;
+            rightPad = rPad;
+            const bool rWheel = rPad && f.ms - rightPadAt >= kTapMs;
+            wheel = lPad || rWheel;
+            if (wheel) selL = lPad, selR = rWheel;
+            if (f.ms < dualPulseUntil) b |= PadRB;
+        };
         switch (f.kind) {
         case Kind::Index:
-            wheel = on(L, TrackpadPress);
-            if (on(R, TrackpadPress)) b |= PadRB;
+            perHand(on(L, TrackpadPress), on(R, TrackpadPress));
             if (on(R, Primary)) b |= PadA;
             if (on(R, Secondary)) b |= PadB;
             if (on(L, Primary)) b |= PadX;
@@ -115,8 +133,7 @@ struct Mapper {
             if (on(L, Menu)) b |= PadStart;
             break;
         case Kind::WMR:
-            wheel = on(L, TrackpadPress);
-            if (on(R, TrackpadPress)) b |= PadRB;
+            perHand(on(L, TrackpadPress), on(R, TrackpadPress));
             if (on(R, Menu)) b |= PadA;
             if (grip[1]) b |= PadB;
             if (on(L, Menu)) b |= PadStart;
@@ -132,7 +149,7 @@ struct Mapper {
             b &= uint16_t(~(PadA | PadB));  // A/B cycle the gadget ring (src/se4/gadgets.cpp), not jump/crouch
         if (wheel) {
             b |= PadLB;
-            if (!wheelHeld) {
+            if (!wheelHeld || selL != wheelSel[0] || selR != wheelSel[1]) {  // (re)anchor when the wheel opens or a hand joins
                 origin[0] = L.pos, origin[1] = R.pos;
                 frame = yaw(yawAngle(f.head));
             }
@@ -153,7 +170,10 @@ struct Mapper {
             };
             pick(p.lx, p.ly, sel[0]);
             pick(p.rx, p.ry, sel[1]);
+            if (!selL) p.lx = p.ly = 0;  // a one-hand wheel leaves the other hand's weapon as it is
+            if (!selR) p.rx = p.ry = 0;
         }
+        wheelSel[0] = selL, wheelSel[1] = selR;
         wheelHeld = wheel;
         p.buttons = b;
         return p;

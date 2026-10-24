@@ -264,6 +264,10 @@
     - The native grab test never grabs: its attachment virtual finds nothing. The mod grabs exactly as the engine
       would, with the one-hand pose, the time stamp (entity time 0x140ba78c0) and flag 0x20, and the native release
       path is kept.
+  - **Weapon wheel per hand (2026-10-24):** on Index/WMR each trackpad held opens the native wheel for that
+    hand's weapon only (the other hand's stick is held neutral); a right tap (< 250 ms) toggles dual wielding,
+    the left tap stays previous weapon. Lab: right wheel picked the pistol, the left wheel the second pistol
+    (dual wielding is a skill: lab give-all sets it).
   - **Weapon wheel:** the Index left trackpad press opens the native wheel. As device button 6 it had opened
     Netricsa, so the press is no longer reported there. Lab weapon selection is in `tools/lab/to_sniper.sh`, and give-all
     needs `+cht_bEnableCheats 1`.
@@ -281,8 +285,19 @@
     - Lab: the medkit was used.
   - The device no longer reports buttons 1–6 to the engine unless `native_vr_action` is on. The VR player code read
     them in levels and acted on them too.
-  - Throwables:
-    - Direction and speed come from the holding hand (pointing, or a throwing motion × throw_gain), written into the
-      launch mode just before the native spawn 0x140a6f5a0 (ported to all builds through its anim-event handler).
-    - Still open: a throwable launch is not yet seen in the lab. The inventory's second gadget never reached the
-      launch.
+  - **In-hand gestures (user design 2026-10-24, `core/gadget_use.hpp`), lab-verified in SS4 Pompeii:**
+    - The left squeeze takes the selected gadget into the right hand (HUD 9 → GadgetHolder, no quick use). Again:
+      put away by selecting the weapons held before through the wheel's net commit 0x140471450 (HUD 9 with the
+      holder up cycles to the next gadget; a wheel-button tap does not leave the holder).
+    - Classification from the item's name key (gip_tsName +0xc0, a char* in all builds) and bot usage type
+      (+0x188): MedKit inject (other forearm, or the torso/hips with the needle pointing in), SeriousRage drink,
+      ExtraLife chest, CompanionDrone/SeriousTime toss, FIRE_AT_FOE_* aimed throw, anything else the trigger.
+    - Aimed throws: while the AOE targeting step 0x140a62220 runs, the player view (vt+0x340 mode 0) is the aiming
+      (left) hand's orientation, placed so the first-person start offset (params+0xe0) lands at the gadget hand.
+      The native arc, marker, target checks, speed and lifetime follow; captures show the arc swinging with the
+      left hand. A throwing motion (core/grenade_throw) issues HUD 0xc → holder use → native launch.
+    - Lab: Black Hole/Nerve Gas/Decoy/Mini Nuke launched (speeds 40/50/25/10), drone and Serious Time tossed, the
+      MedKit injected into the forearm and into the hip, Serious Rage drunk. Extra Life is not in the selectable
+      ring (it is not manually selectable).
+    - Lab give-all now also sets the cheats menu's give-all flags (gadgets, upgrades, skills): found in
+      CMSCheats2::GiveAllGadgets_OnChange's code.

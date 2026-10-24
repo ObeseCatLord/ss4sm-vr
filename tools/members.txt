@@ -13,3 +13,9 @@ CWeaponEntity::en_bRightHandWeapon
 CMacheteWeaponParams::mwp_fDamageRayRadius
 CMacheteWeaponParams::mwp_slDamage
 CWeaponEntity::en_henOwner
+CGadgetItemParams::gip_bgutBotUsageType      # R12: BGUT_USE_IMMEDIATELY 1, FIRE_AT_FOE_* 2..4 (aimed)
+CGadgetItemParams::gip_tsName                # R12: CTransString name key (MedKit/SeriousRage/ExtraLife ...)
+CGadgetHolderWeaponEntity::en_pgipUsedGadget # R12: the holder's gadget item params (set at init)
+CGadgetHolderWeaponEntity::en_bQuickUse      # R12: quick-use holder (auto-fires)
+CGadgetHolderWeaponEntity::en_bGadgetUsed    # R12: set by the holder use
+CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson # R12: arc start offset from the view (params = mode+0x10)

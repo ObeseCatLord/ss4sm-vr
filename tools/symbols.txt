@@ -88,3 +88,12 @@ manual:gadget_launch_activate    # R12: gadget launch mode activation; the mod s
 manual:gadget_launch             # R12: gadget projectile spawn from the launch mode fields
 manual:gadget_launch_event       # R12: launch mode Throw/Fire event handler
 var:prj_iGamepadButtonLayout     # pad layout (GBL_STANDARD 12, GBL_CUSTOM 9); the virtual pad assumes standard
+manual:player_view               # R3/R8: player vt+0x340 view placement; the mod steers mode 0 by the aiming hand during gadget targeting
+manual:aoe_targeting_step        # R12: AOE gadget targeting step (arc + marker from the view placement)
+manual:gadget_holder_model       # R12: GadgetHolder vt+0x668; a weapon whose slot holds it is the gadget holder
+manual:gadget_holder_use         # R12: GadgetHolder vt+0x8a0 use (logged: the mod's motion triggers end here)
+manual:gadget_holder_step        # R12: GadgetHolder step; the mod runs the in-hand gadget use (aim, motions) from it
+manual:gadget_holder_ready       # R12: GadgetHolder ready-to-use test; the in-hand motions wait for it like quick use does
+manual:giveall_gadgets_script    # lab: cheats-menu handler holding the give-all flags global (GACF_GADGETS 4)
+manual:weapons_restore           # R12: weapons remembered before a gadget; the mod reads their offsets for the put-away
+manual:select_weapons_net        # R3: wheel dual commit (net call); the mod puts a gadget away by selecting the remembered weapons

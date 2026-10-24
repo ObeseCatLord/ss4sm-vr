@@ -364,5 +364,55 @@
   "index": 0,
   "limit": 96,
   "_note": "CLaunchGadgetProjectile spawn (mode) from the Throw/Fire anim event, authority only; reads mode +0x20 quat, +0x3c speed, +0x40 lifetime (R12 s8.3)"
+ },
+ "player_view": {
+  "src": "0x1404794a0",
+  "len": 31,
+  "_note": "player vt+0x340 view placement (player, out QuatVect, ?, mode): mode 0 = camera (head world with vrd), 1 = +0xf3c (R3 s2, R8 s4)"
+ },
+ "aoe_targeting_step": {
+  "src": "0x140a62220",
+  "len": 64,
+  "_note": "CAOETargeting weapon mode step (vt+0x28): arc from player vt+0x340 mode 0; stores +0x30 valid, +0x34 launch, +0x50 speed, +0x54 time (R12 s8.1)"
+ },
+ "gadget_holder_model": {
+  "src": "0x140775e20",
+  "len": 48,
+  "_note": "CGadgetHolderWeaponEntity vt+0x668 first-person model (gip at holder+0x380): identifies a holder by its vtable slot (R12 s7, s10)"
+ },
+ "gadget_holder_use": {
+  "src": "0x140776550",
+  "len": 48,
+  "_note": "CGadgetHolderWeaponEntity vt+0x8a0 use: consume, recoil anim, Fire (R12 s7)"
+ },
+ "gadget_holder_step": {
+  "src": "0x140776aa0",
+  "len": 48,
+  "_note": "CGadgetHolderWeaponEntity step: quick-use auto-fire (+0x390, +0x378) then the generic step (R12 s7)"
+ },
+ "gadget_holder_ready": {
+  "call_of": "gadget_holder_step",
+  "index": 1,
+  "limit": 64,
+  "_note": "GadgetHolder ready-to-use test (holder) -> int; the quick-use auto-fire waits for it (R12 s7); 2nd direct call of the holder step"
+ },
+ "giveall_gadgets_script": {
+  "script": "CMSCheats2::GiveAllGadgets_OnChange",
+  "_note": "cheats menu: mov edx,[rip+flags]; mov ecx,edx; or ecx,4 - the give-all flags global (GACF_GADGETS = 4); lab_giveall sets it"
+ },
+ "weapons_restore": {
+  "src": "0x140490bc0",
+  "len": 32,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1404912b0",
+   "len": 32
+  },
+  "_note": "restore the weapons remembered before a gadget (player +0x22ac right / +0x22b0 left; SM +0x22b4/+0x22b8) after a quick use; the mod reads the two offsets from its first compares"
+ },
+ "select_weapons_net": {
+  "src": "0x140471450",
+  "len": 48,
+  "_note": "weapon wheel dual commit (player, idxRight, idxLeft): net call + 0x140493b70 (R3 s6)"
  }
 }

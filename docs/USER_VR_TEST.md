@@ -13,15 +13,27 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
 3. `eyes: eye 1/2 image ...` lines appear; `stereo:` lines confirm the projection layer.
 4. Head tracking: looking around moves the view without judder; IPD/scale look right.
 5. Controllers: A continues screens, sticks move/turn, triggers fire; haptics on firing.
-   Index layout: R A jump, R B crouch, L A reload, L B menu, L trackpad press weapon wheel (hold),
-   R trackpad press dual wielding, L grip gadget quick use, R stick click use, L stick click sprint.
+   Index layout: R A jump, R B crouch, L A reload, L B menu, L/R trackpad press (hold) that hand's weapon wheel,
+   L trackpad tap previous weapon, R trackpad tap dual wielding, L grip gadget in/out, R stick click use,
+   L stick click sprint.
    Other profiles: `src/core/vr_controls.hpp`.
 6. In a level: the log shows `player_vr: local user psd ... marked as playing in VR` and
    `CPlayerVRData ... (local 1)`. The view follows head position and rotation, and the weapon follows the
    right hand. Turn with the right stick and note whether the view turns once or twice as fast as expected.
-7. Weapon wheel: hold the left trackpad (Index) or Y (Touch). The native wheel opens with slow motion. Move the
-   right hand up/down/left/right to highlight, then release to select. The left hand selects the second-hand
-   weapon.
+7. Weapon wheels (one per hand on Index/WMR): hold the right trackpad and move the right hand towards an item
+   to pick the right-hand weapon; hold the left trackpad and move the left hand to pick the left-hand (dual-wield)
+   weapon. Both trackpads: both hands at once. Touch: Y opens one wheel for both hands. While a wheel is held,
+   right A/B cycle the gadget ring.
+7i. Gadgets: the left grip takes the selected gadget into the right hand (again: puts it away, the weapons come
+   back). Set it off with its gesture:
+   - throwables (Black Hole, Nerve Gas, Decoy, Mini Nuke, SM Artillery/Hoverboard): point the LEFT hand where it
+     should land - the native arc and marker start at the gadget and follow that hand - then make a throwing motion
+     with the right hand;
+   - Companion Drone, Serious Time: a throwing motion;
+   - Med Kit: the needle onto the left forearm, or pointed into the body (belly, side, hip);
+   - Serious Rage: to the mouth; Extra Life: to the chest.
+   Log: `gadgets: <use> -> use`, `gadgets: holder use`, `gadgets: launch`. `gadget_motion=0` makes the trigger set
+   off any gadget.
 7b. Crosshair: the game's crosshair should sit where the right-hand gun points, and its spread ring should
    match the native spread. Turn it off with `native_crosshair=0` in options.txt to compare.
 7c. Vehicles (ATV): the left stick drives. Squeeze both grips on the handlebars; turning the hands should turn the

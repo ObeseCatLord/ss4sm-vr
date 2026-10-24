@@ -6,6 +6,7 @@
 #include "core/vr_controls.hpp"
 #include "se4/player_vr.hpp"
 #include "se4/vehicles.hpp"
+#include "se4/gadgets.hpp"
 #include "se4/hands.hpp"
 #include <xinput.h>
 #include <cmath>
@@ -124,7 +125,7 @@ void publishFromXr() {
         const auto& x = xr::input().hand(h);
         Hand& o = f.hand[h];
         o.active = x.active;
-        o.trigger = x.trigger;
+        o.trigger = gadgets::triggerTaken(h) ? 0.0f : x.trigger;  // a gadget in this hand goes off by its own gesture
         o.squeeze = hands::squeezeTaken(h) ? 0.0f : x.squeeze;  // the off hand is on (or at) a two-handed weapon
         o.sx = x.stick.x, o.sy = x.stick.y;
         o.buttons = x.buttons;
@@ -133,6 +134,7 @@ void publishFromXr() {
     // Kind from the right hand (both hands share a profile in practice), else the left.
     auto k = xr::input().hand(1).kind != xr::ControllerKind::Unknown ? xr::input().hand(1).kind : xr::input().hand(0).kind;
     f.kind = Kind(int(k));
+    f.ms = GetTickCount64();
     const auto& v = xr::runtime().views();
     if (v.valid) f.head = {v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w};
     const Pad m = g_mapper.update(f);

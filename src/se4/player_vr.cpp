@@ -48,7 +48,20 @@ void hookedVrdInit(void* vrd, void* player) {
         VRLOG("player_vr: gamepad button layout %d (the virtual pad assumes GBL_STANDARD 12)", *layout);
     if (local) g_localVrd = vrd;
     // Lab only: give all weapons once the local VR player exists (needs +cht_bEnableCheats 1).
-    if (local && se4::options::get("lab_giveall", 0)) se4::setIndex(se4::gen::cht_bGiveAll, 1);
+    if (local && se4::options::get("lab_giveall", 0)) {
+        // Gadgets, upgrades and skills too: the give-all flags global (GACF_*: gadgets 4, upgrades 8, skills 0x10) found in the cheats menu's own handler
+        // (mov edx,[rip+flags]; mov ecx,edx; ...; or ecx,4).
+        if (auto* fn = se4::build().at<uint8_t>(se4::gen::giveall_gadgets_script))
+            for (int i = 0; i < 0x100; ++i)
+                if (fn[i] == 0x8B && fn[i + 1] == 0x15 && fn[i + 6] == 0x8B && fn[i + 7] == 0xCA &&
+                    [&] { for (int k = 8; k < 20; ++k) if (fn[i + k] == 0x83 && fn[i + k + 1] == 0xC9 && fn[i + k + 2] == 0x04) return true; return false; }()) {
+                    auto* flags = reinterpret_cast<uint32_t*>(fn + i + 6 + *reinterpret_cast<int32_t*>(fn + i + 2));
+                    VRLOG("player_vr: lab give-all flags %p: 0x%x -> 0x%x", flags, *flags, *flags | 0x1cu);
+                    *flags |= 0x1cu;  // gadgets, upgrades, skills (dual wielding is a skill)
+                    break;
+                }
+        se4::setIndex(se4::gen::cht_bGiveAll, 1);
+    }
 }
 
 // --- controller world placement: callers outside the player (VR view hand ray 0x1401d8430) pass the

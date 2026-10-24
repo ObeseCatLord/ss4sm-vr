@@ -13,7 +13,13 @@
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
   "CMacheteWeaponParams::mwp_slDamage": "0x244",
-  "CWeaponEntity::en_henOwner": "0x98"
+  "CWeaponEntity::en_henOwner": "0x98",
+  "CGadgetItemParams::gip_bgutBotUsageType": "0x188",
+  "CGadgetItemParams::gip_tsName": "0xc0",
+  "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
+  "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
+  "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
  },
  "Sam4_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -29,7 +35,13 @@
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
   "CMacheteWeaponParams::mwp_slDamage": "0x244",
-  "CWeaponEntity::en_henOwner": "0x98"
+  "CWeaponEntity::en_henOwner": "0x98",
+  "CGadgetItemParams::gip_bgutBotUsageType": "0x188",
+  "CGadgetItemParams::gip_tsName": "0xc0",
+  "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
+  "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
+  "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
  },
  "SamSM": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -45,7 +57,13 @@
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
   "CMacheteWeaponParams::mwp_slDamage": "0x244",
-  "CWeaponEntity::en_henOwner": "0x98"
+  "CWeaponEntity::en_henOwner": "0x98",
+  "CGadgetItemParams::gip_bgutBotUsageType": "0x188",
+  "CGadgetItemParams::gip_tsName": "0xc0",
+  "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
+  "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
+  "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
  },
  "SamSM_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -61,6 +79,12 @@
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
   "CMacheteWeaponParams::mwp_slDamage": "0x244",
-  "CWeaponEntity::en_henOwner": "0x98"
+  "CWeaponEntity::en_henOwner": "0x98",
+  "CGadgetItemParams::gip_bgutBotUsageType": "0x188",
+  "CGadgetItemParams::gip_tsName": "0xc0",
+  "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
+  "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
+  "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
  }
 }

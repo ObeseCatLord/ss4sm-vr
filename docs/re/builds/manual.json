@@ -70,7 +70,16 @@
   "entity_time": "0x140ba78c0",
   "gadget_launch_activate": "0x140a6f3e0",
   "gadget_launch": "0x140a6f5a0",
-  "gadget_launch_event": "0x140a6f820"
+  "gadget_launch_event": "0x140a6f820",
+  "player_view": "0x1404794a0",
+  "aoe_targeting_step": "0x140a62220",
+  "gadget_holder_model": "0x140775e20",
+  "gadget_holder_use": "0x140776550",
+  "gadget_holder_step": "0x140776aa0",
+  "gadget_holder_ready": "0x140775ab0",
+  "giveall_gadgets_script": "0x140842e90",
+  "weapons_restore": "0x140490bc0",
+  "select_weapons_net": "0x140471450"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -143,7 +152,16 @@
   "entity_time": "0x140baa270",
   "gadget_launch_activate": "0x140a71b10",
   "gadget_launch_event": "0x140a71f50",
-  "gadget_launch": "0x140a71cd0"
+  "gadget_launch": "0x140a71cd0",
+  "player_view": "0x14047bbd0",
+  "aoe_targeting_step": "0x140a64950",
+  "gadget_holder_model": "0x140778550",
+  "gadget_holder_use": "0x140778c80",
+  "gadget_holder_step": "0x1407791d0",
+  "gadget_holder_ready": "0x1407781e0",
+  "giveall_gadgets_script": "0x1408455c0",
+  "weapons_restore": "0x1404932f0",
+  "select_weapons_net": "0x140473b80"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -216,7 +234,16 @@
   "entity_time": "0x140ba7f90",
   "gadget_launch_activate": "0x140a6f940",
   "gadget_launch_event": "0x140a6fd80",
-  "gadget_launch": "0x140a6fb00"
+  "gadget_launch": "0x140a6fb00",
+  "player_view": "0x140479b00",
+  "aoe_targeting_step": "0x140a62640",
+  "gadget_holder_model": "0x1407756e0",
+  "gadget_holder_use": "0x140775e10",
+  "gadget_holder_step": "0x140776360",
+  "gadget_holder_ready": "0x140775370",
+  "giveall_gadgets_script": "0x140842400",
+  "weapons_restore": "0x1404912b0",
+  "select_weapons_net": "0x140471aa0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -289,6 +316,15 @@
   "entity_time": "0x140baa930",
   "gadget_launch_activate": "0x140a72060",
   "gadget_launch_event": "0x140a724a0",
-  "gadget_launch": "0x140a72220"
+  "gadget_launch": "0x140a72220",
+  "player_view": "0x14047c220",
+  "aoe_targeting_step": "0x140a64d60",
+  "gadget_holder_model": "0x140777e00",
+  "gadget_holder_use": "0x140778530",
+  "gadget_holder_step": "0x140778a80",
+  "gadget_holder_ready": "0x140777a90",
+  "giveall_gadgets_script": "0x140844b20",
+  "weapons_restore": "0x1404939d0",
+  "select_weapons_net": "0x1404741c0"
  }
 }
