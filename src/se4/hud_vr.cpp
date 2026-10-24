@@ -6,7 +6,7 @@
 #include "se4/patch.hpp"
 #include "se4/vr_device.hpp"
 #include "se4/player_vr.hpp"
-#include "se4/melee.hpp"
+#include "se4/crosshair.hpp"
 #include "se4/wheel_panel.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -145,7 +145,7 @@ void logElement(uint8_t* e, void** ctx) {
 // projects the barrel target to a pixel of this eye's image (src/se4/crosshair.cpp's per-eye view), and this
 // plane maps every pixel back along its own ray, so the crosshair keeps its native look and screen position but
 // sits at the target's depth in both eyes.
-bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp) {
+bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp, float dist) {
     const int eye = vrdev::currentEye();
     float l, r, u, dn, e7[7];
     uint8_t* params = *reinterpret_cast<uint8_t**>(e + kParams);
@@ -156,8 +156,6 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp) {
     const unsigned vrdOff = player_vr::vrdOffset();
     if (!player || !vrdOff || !player_vr::localVrd() || *reinterpret_cast<void**>(player + vrdOff) != player_vr::localVrd()) return false;
     if (!params || !(w > 16 && h > 16) || !vrdev::eyeFov(eye, l, r, u, dn) || !vrdev::eyeInHead(eye, e7)) return false;
-    const int delta = int(vrdOff) - 0x25c8;  // SM's player fields sit 8 bytes later
-    float dist = *reinterpret_cast<float*>(player + 0x2194 + delta);  // aim-ray hit distance (R8 s4)
     if (!(dist > 0.0f && dist < 1e5f)) dist = 50.0f;
     const float d = std::fmax(0.3f, std::fmin(dist, 200.0f)) * 0.97f;  // just in front of the surface
     const float tl = std::tan(l), tr = std::tan(r), tu = std::tan(u), td = std::tan(dn);
@@ -176,28 +174,43 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp) {
     return true;
 }
 
-// No crosshair for melee weapons (knife, generic melee): the HUD's viewing player's right weapon (+0xf90, SM +0xf98).
-bool meleeInHand(void** ctx) {
-    uint8_t* player = ctx[3] ? *static_cast<uint8_t**>(ctx[3]) : nullptr;
-    const unsigned vrdOff = player_vr::vrdOffset();
-    auto handle = reinterpret_cast<uint8_t*(__cdecl*)(int32_t)>(se4::build().at<void>(se4::gen::handle_entity));
-    if (!player || !vrdOff || !handle || !*reinterpret_cast<void**>(player + vrdOff)) return false;
-    const int delta = int(vrdOff) - 0x25c8;
-    return melee::isMeleeWeapon(handle(*reinterpret_cast<int32_t*>(player + 0xf90 + delta)));
+// One crosshair element draw: in the flat HUD natively (projected per eye by src/se4/crosshair.cpp), on the 3D path
+// at the target's depth or in 2D.
+void drawCrosshair(void** ctx, uint8_t* e, float dist) {
+    uint8_t* params = *reinterpret_cast<uint8_t**>(e + kParams);
+    uint8_t* dp = ctx[9] ? *static_cast<uint8_t**>(ctx[9]) : nullptr;
+    if (!params || !dp || !ctx[7] || !*static_cast<int32_t*>(ctx[7]) || !ctx[8]) return realElement(ctx, e);
+    if (g_crosshair3d && crosshairAtTarget(ctx, e, dp, dist)) return;
+    crosshair2d(ctx, e, dp);
 }
+struct CrosshairArgs {
+    void** ctx;
+    uint8_t* e;
+};
 
 void hookedElement(void** ctx, uint8_t* e) {
     if (g_log && e) logElement(e, ctx);
     void** vt = e ? *reinterpret_cast<void***>(e) : nullptr;
-    if (vt && vt[0x80 / 8] == g_crosshairRender && meleeInHand(ctx)) return;
+    if (vt && vt[0x80 / 8] == g_crosshairRender) {
+        // One crosshair per hand holding a gun (none for melee weapons), each with its own target and spread.
+        uint8_t* player = ctx[3] ? *static_cast<uint8_t**>(ctx[3]) : nullptr;
+        CrosshairArgs a{ctx, e};
+        auto draw = [](void* user, float dist) {
+            auto* c = static_cast<CrosshairArgs*>(user);
+            drawCrosshair(c->ctx, c->e, dist);
+        };
+        if (crosshair::forEachPass(player, draw, &a)) return;
+        const unsigned vrdOff = player_vr::vrdOffset();
+        const float dist = player && vrdOff ? *reinterpret_cast<float*>(player + 0x2194 + (int(vrdOff) - 0x25c8)) : 50.0f;  // R8 s4
+        return drawCrosshair(ctx, e, dist);
+    }
     uint8_t* params = e ? *reinterpret_cast<uint8_t**>(e + kParams) : nullptr;
     uint8_t* dp = ctx[9] ? *static_cast<uint8_t**>(ctx[9]) : nullptr;
     if (!vt || !params || !dp || !ctx[7] || !*static_cast<int32_t*>(ctx[7]) || !ctx[8]) {
         realElement(ctx, e);
         return;
     }
-    if (vt[0x80 / 8] == g_crosshairRender && g_crosshair3d && crosshairAtTarget(ctx, e, dp)) return;
-    if (vt[0x80 / 8] == g_crosshairRender || (g_all2d && vt[0x80 / 8] != g_wheelRender)) return crosshair2d(ctx, e, dp);
+    if (g_all2d && vt[0x80 / 8] != g_wheelRender) return crosshair2d(ctx, e, dp);
     const int32_t* box = reinterpret_cast<const int32_t*>(dp + kDpBox);
     const float w = float(box[2] - box[0]), h = float(box[3] - box[1]);
     Placement native;

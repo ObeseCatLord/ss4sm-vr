@@ -112,3 +112,5 @@ manual:hud_render                # R8 A5: HUD render; its immersive-flag call (+
 manual:vr_hand_use              # R8: native VR use path; device button 8 (right B) drives it for the kick; hooked for a log
 manual:generic_melee_step        # R12: generic melee weapon step
 manual:generic_melee_swing_test  # R12: generic melee canned swing test (skipped for VR owners)
+manual:crosshair_ring           # R8 A7: crosshair ring draw (per-weapon target, distance, placement)
+manual:other_hand_weapon        # R8 A7: other-hand weapon (ring takes the max spread); null during per-weapon passes

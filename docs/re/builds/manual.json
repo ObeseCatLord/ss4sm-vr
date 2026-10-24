@@ -91,7 +91,9 @@
   "hud_render": "0x1400d7be0",
   "vr_hand_use": "0x14043dcb0",
   "generic_melee_step": "0x14077a840",
-  "generic_melee_swing_test": "0x1407796d0"
+  "generic_melee_swing_test": "0x1407796d0",
+  "crosshair_ring": "0x140121410",
+  "other_hand_weapon": "0x1402dc8c0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -185,7 +187,9 @@
   "hud_render": "0x1400da530",
   "vr_hand_use": "0x1404403e0",
   "generic_melee_step": "0x14077cf70",
-  "generic_melee_swing_test": "0x14077be00"
+  "generic_melee_swing_test": "0x14077be00",
+  "crosshair_ring": "0x140123d60",
+  "other_hand_weapon": "0x1402def80"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -279,7 +283,9 @@
   "hud_render": "0x1400d7cc0",
   "vr_hand_use": "0x14043de00",
   "generic_melee_step": "0x14077a100",
-  "generic_melee_swing_test": "0x140778f90"
+  "generic_melee_swing_test": "0x140778f90",
+  "crosshair_ring": "0x140121e10",
+  "other_hand_weapon": "0x1402dc3c0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -373,6 +379,8 @@
   "hud_render": "0x1400da600",
   "vr_hand_use": "0x140440520",
   "generic_melee_step": "0x14077c820",
-  "generic_melee_swing_test": "0x14077b6b0"
+  "generic_melee_swing_test": "0x14077b6b0",
+  "crosshair_ring": "0x140124750",
+  "other_hand_weapon": "0x1402dea70"
  }
 }

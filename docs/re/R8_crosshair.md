@@ -636,3 +636,206 @@ Confidence:
 - High: the canvas-queue mechanics and the simple-element matrix overwrite (read from code).
 - Medium: shared entries explain the canvas-drawn elements.
 - Low: the crosshair cause (needs log 2).
+
+### A7. One crosshair per weapon (2026-10-24, static)
+
+Goal: dual wield draws two crosshairs, each at its own barrel's ray hit with its own spread. A melee weapon in
+either hand draws no crosshair for that hand, and the gun in the other hand keeps its crosshair. Static analysis
+only (capstone disassembly of both exes, Ghidra decompiles in a private scratch copy of the `sam4` project), plus
+the thread ids in the existing lab log `Bin/x64/ss4smvr/ss4smvr.log`. Nothing was run.
+
+#### A7.1 Threading: the HUD render and the aim writer run on the same OS thread, one after the other (high)
+* Main loop 0x14003a810 runs each frame on one thread: `pi->vt[0x48]` (game loop 0x140058800, the simulation
+  step) and then `pi->vt[0x50/0x58]` Render/RenderVR, which reaches the HUD (R10 §2). Nothing in between hands
+  work to another thread.
+* The aim writer's caller is the player step **0x14048a0f0** (SM 0x14048a834). In order it runs: vrd post-step
+  0x14043f180, then **0x14046cd40** (rebuilds `+0xf20` mode 0 and `+0xf3c` mode 1 through `vt+0x11c8`), then the
+  aim writer (call **0x14048a269**, SM **0x14048a879**, `E8` → 0x1404a3670 / 0x1404a3c50), then right weapon
+  `vt+0x8f8`. So `+0xf3c` is fresh when the ray is cast (closes unknown 3). The other aim-writer caller,
+  0x1404591a3 (SM 0x140459353), is a respawn/teleport path.
+* The engine checks for the main thread itself. 0x1410ca020 (SM 0x1410ca810) returns
+  `GetCurrentThreadId() == [0x1422566f0]`. Both the aim writer and the ring draw use the same idiom before
+  every `vt+0x340` call: `ctx = IsMainThread() ? [0x14239c4e0] : (one-shot stripped assert 0x141120790, flag
+  0x142274700; 0)`. SM uses 0x142379550, 0x141120f50 and flag 0x1422517c0. Both functions are therefore written
+  to run on the main thread.
+* Runtime evidence from the lab log: device slot 0x050 (SimulationStep, called from the game loop at
+  0x1400599ed), the RenderVR slots 0x030/0x120/0x070/0x078 and the sim-side mod lines (`player_vr`, `arms`,
+  `hands`, `gadgets`) all log TID 332. TID 420 is only the mod's observer thread.
+* Not traced: the renderer's worker threads (`ren_bMultiThreadedRendering`, `ren_iMaxPrepareThreads`,
+  "Using %1 threads for prepare rendering"). Whether any of them reads player fields while the HUD renders is
+  unknown.
+
+**Swap or redirect?** A temporary field swap would not race the simulation, because both run on one thread. It
+is still the worse choice:
+1. It writes gameplay state from the render path (AGENTS rule).
+2. Swapping `+0xf90`/`+0xf94` reverses the meaning of `en_bRightHandWeapon` for 0x1402dc8c0 and every other
+   `vt+0x11c8`/`vt+0x340` consumer called meanwhile.
+3. The health-bar option keeps per-player animation state at `+0x26b0..+0x26c4` (SM `+0x26b8..`), which would
+   step twice.
+4. A crash in the middle of a pass would leave the state corrupted.
+5. The worker-thread question above is open.
+
+**Recommendation: redirect the reads** with `E8` call-site retargets inside code that only the crosshair
+runs: render, ring, and the show predicate, whose only callers are the two crosshair gates (A1). Pass data
+lives in a mod-owned block that the simulation thread writes.
+
+#### A7.2 Every read inside render / ring / supplement, and the per-pass sites
+`P` = player = `*(*(element+8)+8)`. Sam4 first, then SM. Bytes are the instruction at that address.
+
+| # | site (Sam4 / SM) | bytes (Sam4 / SM) | what | per-pass action |
+|---|---|---|---|---|
+| R0 | 0x140120df8, clear 0x140120e27 / 0x140121816, clears 0x140121841 and 0x140121da0 | `41 8b 86 a8 0f 00 00` / `…b0 0f…` | `+0xfa8` (SM `+0xfb0`) bit 13: early-out, **cleared on every call** | read it before the first pass; if set, run one native pass only |
+| R0b | 0x140120e07 / 0x140121827 | `45 84 a6 9c 26 00 00` / `…a4 26…` | wheel bit | same as R0 |
+| – | 0x140120e36, 0x140120e44 / 0x140121834, 0x14012184d | `f2 41 0f 10 86 88 21 00 00`, `41 8b 86 90 21 00 00` | T = `+0x2188/+0x2190` (SM `+0x2190/+0x2198`) | used only by the no-weapon (riding) branch; leave alone |
+| R1 | **0x140120e55** / **0x14012185e** | `e8 f6 1d ff 00` / `e8 9d 1c ff 00` (→ handle_entity 0x141112c50 / 0x141113500), after `mov ecx,[r14+0xf90]` (SM `+0xf98`) | right weapon: picks weapon branch vs no-weapon branch | → `passWeapon(h)` |
+| – | 0x140120e9e / 0x1401218a7 | handle_entity of `+0x75c` | ride | leave |
+| R2 | **0x140120eee** / **0x1401218f7** | `e8 5d 1d ff 00` / `e8 04 1c ff 00`, after `mov ecx,[r14+0x21e0]` (SM `+0x21e8`) | hit entity → colour coding and health-bar target | → `passHit(h)`: the pass's hit handle |
+| R3 | **0x1401210f9** / **0x140121ace** | `e8 52 11 00 00` → 0x140122250 / `e8 7d 11 00 00` → 0x140122c50 | health bar (option 2): reads `+0x2194`, `+0xf90`, writes `+0x26b0..` | → thunk: native in the first pass, skipped in later passes |
+| R4 | 0x140121122, 0x14012112b / 0x140121af5, 0x140121afe | `f3 41 0f 10 86 94 21 00 00`, `49 8d 86 88 21 00 00` / `…9c 21…`, `…90 21…` | D and &T, passed as stack args 7 and 6 of the ring | covered by R5 |
+| R5 | **0x14012115a** / **0x140121b2d** | `e8 b1 02 00 00` → 0x140121410 / `e8 de 02 00 00` → 0x140121e10 | `ring(elem, view, proj, float scale, u32 colour, const float* T, float D, tex*)` | → `ringPass(...)`, same signature: replace T and D with the pass's values, then tail-call the ring |
+| – | 0x140121293 / 0x140121c75 | `+0x2194` | depth, no-weapon branch | leave |
+| G1 | **0x1401214cb** / **0x140121ecb** | `e8 80 17 ff 00` / `e8 30 16 ff 00`, after `mov ecx,[r15+0xf90]` (SM `+0xf98`) at 0x1401214b3 / 0x140121eb3 | weapon whose `vt+0x9f0` sets the ring | → `passWeapon(h)` |
+| G2 | **0x1401214e8** / **0x140121ee8** | `e8 d3 b3 1b 00` → 0x1402dc8c0 / `e8 d3 a4 1b 00` → 0x1402dc3c0 | other hand's weapon: max(spread) | → `noOther(w)`: return null while the local VR player is in per-weapon mode, else the original |
+| G3 | 0x140121584 (mode 0) / 0x140121f84 | `ff 90 40 03 00 00` | P0 = head | leave |
+| G4 | **0x1401215dc** (mode 1, `mov r9d,1` at 0x1401215d3) / **0x140121fdc** | `ff 90 40 03 00 00` | P1 = `+0xf3c`, the right shoot placement: ring axes and `D − \|P0−P1\|` | 6 bytes → `E8 rel32` + `90` → `passPlacement(P, out, ctx, mode)`: in a left pass with mode 1, copy the left P7 snapshot; otherwise do the original virtual call (same pattern as A4's view thunk) |
+| – | F site 0x1401218d4 / 0x1401222d4 | `E8` → 0x1400472e0 / 0x140047350 | recentre | already `hudGate` |
+| P1 | **0x140494901** (predicate +0x141) / **0x140494ff1** | `e8 4a e3 c7 00` / `e8 0a e5 c7 00`, after `mov ecx,[rbx+0xf90]` (SM `+0xf98`), then `jmp [rdx+0x7e8]` | weapon "wants crosshair" test inside the show predicate, called from the ring at 0x140121aa0 / 0x1401224a0 | → `passWeapon(h)`, so `vt+0x7e8` tests the pass's weapon |
+| G5 | 0x140121c2e / 0x14012262e | `e8 8d 02 00 00` → 0x140121ec0 / 0x1401228c0 | zero-damage supplement: reads `+0x2230/+0x2238` (SM `+0x2238/+0x2240`) at 0x140121fa0/0x140121fe2 (SM 0x1401229a0/0x1401229e2) and draws at the **drawport centre**, not at T | optional: skip in later passes (otherwise it is drawn twice in the same place) |
+| G6 | lock-on: `mov rcx,[r15+0x2240]` 0x140121c77 / `…0x2248` 0x140122677; time getter call 0x140121c72 → 0x1400db260 / 0x140122672 → 0x1400db340 | `e8 e9 95 fb ff` / `e8 c9 8c fb ff` | lock-on flash at the projected T; the stamp comes from the **right** ray | optional: in later passes, retarget the time getter to a thunk that adds 2^62 to the result, so the fade test fails |
+
+Every listed `E8` must be checked as "`E8` whose rel32 target equals the expected function" before patching
+(fingerprint rule). The six required retargets per build are R1, R2, R5, G1, G2 and P1, plus the 6-byte patch G4.
+R3, G5 and G6 are polish. port_check/sigscan were not run on the new sites. They were found by aligning the
+two disassemblies 1:1 (same instruction sequence, offsets +8 in SM).
+
+`passWeapon(h)` is `e = handle_entity(h); return (g_pass && e == g_pass->native) ? g_pass->weapon : e;`. It uses
+the build's handle_entity, and `g_pass` is set only around the mod's own `realElement` call (main thread). With
+`g_pass` null all thunks behave natively, so desktop players, bots and spectated HUDs are unchanged.
+
+#### A7.3 Left-barrel aim ray on the simulation thread (native calls only)
+**Hook:** retarget the player-step call **0x14048a269 / 0x14048a879** (`E8` → aim writer) to
+`aimStep(P)`. It calls the real aim writer, then casts the left ray for the local VR player, and writes only the
+mod block `{T[3], D, hitHandle, P7 leftPlacement, valid}`. No player field is written. A MinHook on the aim
+writer works too, but the call retarget leaves the respawn caller alone.
+
+Handles: right `+0xf90` / left `+0xf94` (`en_henCurrentRightHandWeapon`/`…LeftHandWeapon`, reflection; SM
+`+0xf98/+0xf9c`). Resolve them with handle_entity 0x141112c50 / 0x141113500. Entity → handle is 0x141113230 /
+0x141113b00. Other-hand helper 0x1402dc8c0 / 0x1402dc3c0: weapon `+0x98` = `en_henOwner`, and
+`+0x118 en_bRightHandWeapon` ? owner `+0xf94` : owner `+0xf90` (SM `+0xf9c/+0xf98`).
+
+Left shoot placement (what `vt+0x11c8` mode 1 does for the right weapon, at 0x1404795a0):
+```
+ctx = IsMainThread() ? *(void**)0x14239c4e0 : 0          // SM 0x1410ca810 / 0x142379550
+if (L->vt[0x908](L)) ShootPlacement(L, &pl /*P7 q xyzw, pos*/, ctx)
+                                                         // thunk 0x1402d5770 / SM 0x1402d53d0: r9 = [0x141fc5278]
+                                                         // / [0x141fa9e48] (= ""), call L->vt[0x9b0]
+```
+With vrd this returns `GetBarrelPlacement` of the left weapon (0x1402d57e0). The engine does the same itself:
+its VR debug draw 0x140440fa0 (gated by 0x142285e60) calls `0x1402d5770(handle(+0xf94), &p, ctx)` and draws the
+left shoot line in colour 0xaa00ff00.
+
+Cast, copied from the aim writer (Sam4 sites in brackets; SM is identical with the substitutions below):
+```
+alignas(16) uint8_t res[0x1f0];         // the aim writer keeps two results 0x1f0 apart (rbp+0x20, rbp+0x210)
+CastResultCtor(res);                    // 0x1401a3f80  [0x1404a3871]
+origin = pl.pos;  q = pl.q;             // dir = view forward (-Z), as computed at 0x1404a3a2c..0x1404a3b2d:
+dir = { -(2qx*qz + 2qw*qy), 2qw*qx - 2qy*qz, 2qy*qy + 2qx*qx - 1 }
+// optional, matches F=0: body->origin check 0x1401acbc0(P, &origin, res); if handle_entity(*(int*)(res+8))
+//   then T = origin, D = 0, hit = that handle, and skip the cast            [0x1404a3b48 / F site 0x1404a3e06]
+CastResultReset(res);                   // 0x1401a4280  [0x1404a3b65]
+*(int*)res = EntityToHandle(P);         // 0x141113230  [0x1404a3b6d]  ignore self
+SetFilter(res, AimFilter);              // 0x1401a5030(res, 0x1404a21a0)  [0x1404a3b80]
+cat = *(uint64_t*)(P->vt[0x10b0](P) ? 0x142286cb8 /*bot_aim_ray*/ : 0x142286cc0 /*camera_aim_ray*/);
+maxD = *(float*)(Fn_14019bcf0(P) + 0x370);              // [0x1404a37de/0x1404a37e9]
+RayCast(res, *(void**)(P+0x30), &origin, &dir, cat, *(void**)0x141fc5278, maxD);   // 0x1401a4f20 [0x1404a3bcd]
+AimPost(P, res);                        // 0x14046e300 [0x1404a3bd9]: skips own vehicle/attachments, up to 10 hits
+T = res+0x28 (3 floats), D = *(float*)(res+0x70), hit = *(int*)(res+0x08)
+Dtor: 0x140c4ab20(res+0xa8); if (*(void**)(res+0x50)) RefRelease(*(void**)(res+0x50), res+0x50)   // 0x1410c6b00
+```
+SM: ctor 0x1401a4b60, reset 0x1401a4e60, entity→handle 0x141113b00, filter 0x1404a2780, set-filter 0x1401a5c10,
+categories 0x142263e38/0x142263e40, 6th arg `[0x141fa9e48]`, maxDist source 0x14019c910 +0x370, cast
+0x1401a5b00 (call 0x1404a41ad), post 0x14046e930, blocked check 0x1401ad720, dtor 0x140c4b0f0, release
+0x1410c72b0. The 7th argument is a float on the stack (`movss [rsp+0x30]`), and the 6th is the qword loaded from
+the global (`mov rax,[rip+…]`).
+
+Skip the cast when the left handle is null, equals the right weapon, or `isMeleeWeapon(L)`; then set `valid = 0`.
+The right pass uses the native `+0x2188/+0x2194/+0x21e0` unchanged.
+
+#### A7.4 Style and accuracy per weapon
+* **Texture is global, not per weapon (high).** The render takes `cp_aptxCrosshairs[clamp(profile+0x58)]`
+  (0x140121046..0x14012104d, `mov rsi,[rax+rcx*8]`). It passes that texture to the ring as the 8th argument.
+  `cp_aptxDispersionCrosshairs[profile+0x60]` is fetched at 0x140121173, add-ref'd and **released unused**, so
+  that code is dead. In the ring, texture `vt+0x258` (600) decides the shape: 0 → a fixed-size quad at the
+  projected T, ≠ 0 → a nine-slice box stretched to the dispersion bounds (0x140120300). Both crosshairs therefore
+  share one look, and the box size follows each weapon.
+* **`vt+0x9f0` is the weapon's live shot spread (high for the generic path).** R14: all player weapons are
+  `CGenericWeaponEntity`. Their `vt+0x9f0` is **0x14077e060**: the active primary mode
+  `en_apwmPrimaryWeaponModes[+0x330]` (`+0x310` array) `vt+0x1f0`. For `CFireableWeaponMode`/`CSpinFire` that is
+  **0x140a6cc70** = `mode+0x84 × fwm_pfoFireableObject(+0x38)->vt[0x20](weapon vt+0x800, weapon vt+0xad0)`.
+  Other modes use 0x140a76400 = (0,0). Fire 0x140a6c0c0 passes the **same** `mode+0x84`, `vt+0x800` and `vt+0xad0`
+  to `fireable vt+0x18`. So the ring is the same cone the shot uses.
+  * Bullet spread: 0x140a5c560 takes base scatter params `+0x70`, or `+0x84` when `vt+0x800`. It lerps toward
+    `+0x98` by `vt+0xad0`, then adds the pellet-pattern half-extent (`+0xc0` pattern × `+0xc8/+0xcc`).
+  * Projectile fireables: 0x140a5cc60 = 0.
+  * Legacy classes (AR/Pistol 0x140763a70 with `en_fAimRatio`, scatter base 0x14025c520, shotgun pattern
+    0x140772d90/0x1407ab340) are as in §2.
+* **Factors the ring shows:**
+  * `vt+0x800` = 0x1402dd610 → 0x14047ef60(owner) = "dual wielding". It is 1 when a non-excluded left weapon
+    exists (four class exclusions), or a timed flag `+0x26d8` is set. **With vrd it returns 0 unless
+    0x140aa78a0(game) ≠ 0** (unknown predicate). So in VR the dual-wield spread penalty is normally off for both
+    hands (medium).
+  * `vt+0xad0` = 0x14077d8a0 = `en_pwmSecondaryWeaponMode(+0x320)->vt[0x1b8]`, the aim/zoom ratio of the
+    secondary mode.
+  * No recoil, sprint or movement term was found in the spread function (medium; the mode's own `+0x84` writer
+    was not traced).
+* SM: the generic-mode functions were not ported (offsets: reflection unchanged per R14). Port them before
+  relying on SM addresses; the redirect design does not need them.
+
+#### A7.5 Melee weapons and their native crosshair (`vt+0x7e8`)
+Class labels come from `class_vtables` (nearest name string, medium). The `vt+0x208` steps match the mod's
+`knife_step`/`generic_melee_step`.
+
+| class | Sam4 vt / step | SM vt / step | `vt+0x7e8` | `vt+0x9f0` | content |
+|---|---|---|---|---|---|
+| `CMacheteWeaponEntity` (**the knife**) | 0x141ab69b8 / 0x140790230 | 0x141a9b028 / 0x14078fb70 | return-1 stub → **crosshair shown on desktop** | 0x1402d8570 (0) | SS4 + SM (`KnifeWeapon*.ep`) |
+| `CGenericMeleeWeaponEntity` (signs, poles) | 0x141aa1ef8 / 0x14077a840 | 0x141a86568 / 0x14077a100 | return 1 | 0 | both |
+| `CSledgeHammerWeaponEntity` | 0x141ad1fb0 | 0x141ab6620 | **0** (0x140052890 / SM 0x1400528f0) | scatter | unused |
+| `CChainsawWeaponEntity` / `CHammerWeaponEntity` / `CKnifeWeaponEntity` / `CVRMeleeWeaponEntity` | 0x141a95d28 / 0x141aa98a8 / 0x141ab1cb8 / 0x141ae6790 | 0x141a7a398 / 0x141a8df18 / 0x141a96328 / 0x141acae00 | return 1 | scatter | unused (R12) |
+| probably `CHandsWeaponEntity` | 0x141aad0e0 (step 0x1407886c0) | 0x141a91750 | 0x140788ed0: 1 only with a hand tool (`+0x424`) or owner `+0x19d8` bits | scatter | empty hands |
+
+SM adds no melee class. So natively the knife and melee items do show a (spread-0) crosshair on desktop. Hiding
+them is a mod rule. `melee::isMeleeWeapon` (knife + generic step) covers all melee used in content. Extending it
+to the unused vtables above is optional.
+
+#### A7.6 Recommended implementation
+1. **Simulation side** (`crosshair.cpp`): retarget 0x14048a269 / 0x14048a879 to `aimStep`, which runs the real
+   aim writer and then the left cast (A7.3). It writes the mod block, versioned, only for the local VR player.
+2. **Install the redirects** R1, R2, R5, G1, G2, P1 (`E8` retargets via `nearJump` + `retargetCall`, checking the
+   targets) and G4 (6-byte `FF 90 40 03 00 00` → `E8`+`90`, the same mechanism as `perEyeView`). Optionally add
+   R3, G5 and G6. Leave the no-weapon branch alone.
+3. **HUD side** (`hud_vr.cpp`, `hookedElement`): replace the `meleeInHand` early return with a pass loop over
+   right = handle(+0xf90) and left = handle(+0xf94).
+   * Make a pass for each non-null, non-melee weapon (left only if ≠ right and the mod block is valid).
+   * If no weapon exists at all (riding), run one native pass.
+   * If `+0xfa8` bit 13 or the wheel bit is set, run one native pass (it clears bit 13) and stop.
+   * Per pass: `g_pass = {native: right, weapon: W, T, D, hit, placement, first}`. The right pass uses the native
+     values. Call the existing `crosshairAtTarget`/`crosshair2d` with the **pass D** instead of `player+0x2194`.
+     Then flush and clear `g_pass`.
+   * Right melee + left gun → one left pass. Both guns → two passes. Both melee → none.
+4. **Expected result:** each crosshair is projected per eye at its own barrel hit. Each ring uses only its own
+   weapon's `vt+0x9f0`, its own barrel axes and its own `|head − barrel|`. Colour coding follows each ray's
+   target. Each hand's `vt+0x7e8` decides whether it shows (zoomed sniper/autoshotgun, aimed rifles).
+
+#### A7.7 Confidence and unknowns
+* High: the call sites and bytes (read in both builds), the ring/render data flow, the left-placement call (the
+  native debug draw does the same), the aim-writer sequence, same-thread sim/HUD, and the global texture style.
+* Medium: the `vt+0x9f0` = shot-cone equivalence on generic weapons (the mode `+0x84` writer was not traced),
+  the VR dual-wield penalty being off (0x140aa78a0 unknown), and the class labels of the unused melee and Hands
+  vtables.
+* Unknown:
+  * renderer worker threads vs player fields;
+  * whether the zero-damage stamps `+0x2230/+0x2238` and the lock-on `+0x2240` belong to a specific hand (both
+    look per player);
+  * the SM generic-mode spread addresses;
+  * runtime: confirm that the left ray hit matches left-gun impacts, and log `valid`, D and the hit handle per
+    pass.

@@ -480,5 +480,25 @@
   "src": "0x1407796d0",
   "len": 48,
   "_note": "CGenericMeleeWeaponEntity canned swing test (body/view arc; skipped for VR owners) (R12 s2.2)"
+ },
+ "crosshair_ring": {
+  "src": "0x140121410",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140121e10",
+   "len": 64
+  },
+  "_note": "crosshair dispersion ring/quad draw ring(elem, view, proj, float scale, u32 colour, const float* T, float D, tex*), called once from the crosshair render (R8 s1, A7.2 R5)"
+ },
+ "other_hand_weapon": {
+  "src": "0x1402dc8c0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1402dc3c0",
+   "len": 48
+  },
+  "_note": "weapon -> the owner's other-hand weapon (en_bRightHandWeapon ? left : right); the ring takes max(spread) of both (R8 s1, A7.2 G2)"
  }
 }
