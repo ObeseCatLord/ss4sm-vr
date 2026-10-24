@@ -121,6 +121,8 @@ core::controls::Mapper g_mapper;
 volatile LONG g_kick;
 bool kick() { return g_kick != 0; }
 
+bool wheelHeld() { return g_mapper.wheelHeld; }
+
 int wheelHand() {
     if (!g_mapper.wheelHeld) return -1;
     return g_mapper.wheelSel[0] && g_mapper.wheelSel[1] ? -1 : g_mapper.wheelSel[1] ? 1 : 0;

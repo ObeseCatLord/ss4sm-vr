@@ -14,9 +14,20 @@ enum Button : uint32_t {
     BtnTriggerTouch = 1u << 4,
     BtnStickTouch = 1u << 5,
     BtnTrackpadPress = 1u << 6,  // Index trackpad force / Vive+WMR trackpad click
+    // Steam Frame controllers (XR_VALVE_frame_controller_interaction): ABXY on the right, D-pad and View on the
+    // left, a bumper on each, and the grip's second stage (squeeze/click).
+    BtnX = 1u << 7,
+    BtnY = 1u << 8,
+    BtnBumper = 1u << 9,
+    BtnDpadUp = 1u << 10,
+    BtnDpadDown = 1u << 11,
+    BtnDpadLeft = 1u << 12,
+    BtnDpadRight = 1u << 13,
+    BtnView = 1u << 14,
+    BtnSqueezeClick = 1u << 15,
 };
 
-enum class ControllerKind { Touch, Index, Vive, WMR, Simple, Unknown };
+enum class ControllerKind { Touch, Index, Vive, WMR, Simple, Frame, Unknown };
 
 struct HandState {
     bool active = false;          // controller present and pose valid
@@ -55,7 +66,7 @@ private:
     XrActionSet set_ = XR_NULL_HANDLE;
     XrPath handPath_[2]{};
     XrAction aim_{}, grip_{}, haptic_{}, trigger_{}, squeeze_{}, stick_{}, primary_{}, secondary_{}, stickClick_{}, menu_{},
-        triggerTouch_{}, stickTouch_{}, trackpadForce_{}, trackpadClick_{};
+        triggerTouch_{}, stickTouch_{}, trackpadForce_{}, trackpadClick_{}, x_{}, y_{}, bumper_{}, dpad_[4]{}, view_{}, squeezeClick_{};
     XrSpace aimSpace_[2]{}, gripSpace_[2]{};
     XrAction gazeAction_{};
     XrSpace gazeSpace_{};

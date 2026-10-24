@@ -331,7 +331,8 @@ const char* nameForKind(xr::ControllerKind k, bool perHand) {
     // Index: "Rift" per hand. The engine picks per-hand controller models by this name (0x14062f8b0), and
     // SS4/SM ship no Knuckles models (lab crash 2026-10-24 with "Knuckles"); "Rift" also reads as a thumbstick.
     case xr::ControllerKind::Index: return perHand ? "Rift" : "Vive";
-    case xr::ControllerKind::Touch: return "Rift";
+    case xr::ControllerKind::Touch:
+    case xr::ControllerKind::Frame: return "Rift";  // Frame: thumbsticks, Touch-like halves
     case xr::ControllerKind::WMR: return "WindowsMR";
     default: return "Vive";
     }

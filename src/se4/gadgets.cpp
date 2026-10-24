@@ -343,10 +343,8 @@ void onTick(uint8_t* player) {
     // While a weapon wheel is held (either trackpad press / Touch Y), the right A/B cycle the gadget ring through
     // the HUD's own next/previous commands (R12 s7) instead of pad buttons.
     static bool aWas, bWas;
-    const auto& lh = xr::input().hand(0);
     const auto& rh = xr::input().hand(1);
-    const bool wheel = (lh.buttons & xr::BtnTrackpadPress) || (rh.buttons & xr::BtnTrackpadPress) ||
-                       (lh.kind == xr::ControllerKind::Touch && (lh.buttons & xr::BtnSecondary));  // either hand's wheel
+    const bool wheel = gamepad::wheelHeld();  // either hand's wheel
     const bool a = wheel && (rh.buttons & xr::BtnPrimary), b = wheel && (rh.buttons & xr::BtnSecondary);
     if (a && !aWas) hud(player, kHudNext), VRLOG("gadgets: next gadget");
     if (b && !bWas) hud(player, kHudPrevious), VRLOG("gadgets: previous gadget");

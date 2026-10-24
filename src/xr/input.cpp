@@ -53,14 +53,28 @@ bool Input::create(XrInstance inst, XrSession session) {
     make(stickTouch_, "stick_touch", "Stick touch", XR_ACTION_TYPE_BOOLEAN_INPUT);
     make(trackpadForce_, "trackpad_force", "Trackpad press (force)", XR_ACTION_TYPE_FLOAT_INPUT);
     make(trackpadClick_, "trackpad_click", "Trackpad press", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(x_, "button_x", "X button", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(y_, "button_y", "Y button", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(bumper_, "bumper", "Bumper", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(dpad_[0], "dpad_up", "D-pad up", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(dpad_[1], "dpad_down", "D-pad down", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(dpad_[2], "dpad_left", "D-pad left", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(dpad_[3], "dpad_right", "D-pad right", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(view_, "view", "View button", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    make(squeezeClick_, "squeeze_click", "Grip second stage", XR_ACTION_TYPE_BOOLEAN_INPUT);
 
     struct Profile {
         const char* name;
         const char* axis;      // thumbstick or trackpad
         const char* squeeze;   // component bound to the float squeeze action
-        int kind;              // 0 touch, 1 index, 2 vive, 3 wmr, 4 simple
+        int kind;              // 0 touch, 1 index, 2 vive, 3 wmr, 4 simple, 5 steam frame
     };
+    // Steam Frame: only with its extension. SteamVR before 2.15.1 used the path without the _valve suffix; both are
+    // suggested and the one the runtime does not know is rejected.
+    const bool frame = runtime().hasExtension(kFrameExtension);
     const Profile profiles[] = {
+        {"/interaction_profiles/valve/frame_controller_valve", "thumbstick", "squeeze/value", 5},
+        {"/interaction_profiles/valve/frame_controller", "thumbstick", "squeeze/value", 5},
         {"/interaction_profiles/valve/index_controller", "thumbstick", "squeeze/force", 1},
         {"/interaction_profiles/oculus/touch_controller", "thumbstick", "squeeze/value", 0},
         {"/interaction_profiles/htc/vive_controller", "trackpad", "squeeze/click", 2},
@@ -69,6 +83,7 @@ bool Input::create(XrInstance inst, XrSession session) {
     };
     int accepted = 0;
     for (const auto& p : profiles) {
+        if (p.kind == 5 && !frame) continue;
         std::vector<XrActionSuggestedBinding> b;
         auto bind = [&](XrAction a, int h, const char* comp) {
             std::string s = std::string(h ? "/user/hand/right/" : "/user/hand/left/") + comp;
@@ -109,6 +124,25 @@ bool Input::create(XrInstance inst, XrSession session) {
             case 3:
                 bind(menu_, h, "input/menu/click");
                 bind(trackpadClick_, h, "input/trackpad/click");
+                break;
+            case 5:
+                if (h) {
+                    bind(primary_, h, "input/a/click");
+                    bind(secondary_, h, "input/b/click");
+                    bind(x_, h, "input/x/click");
+                    bind(y_, h, "input/y/click");
+                    bind(menu_, h, "input/menu/click");
+                } else {
+                    bind(dpad_[0], h, "input/dpad_up/click");
+                    bind(dpad_[1], h, "input/dpad_down/click");
+                    bind(dpad_[2], h, "input/dpad_left/click");
+                    bind(dpad_[3], h, "input/dpad_right/click");
+                    bind(view_, h, "input/view/click");
+                }
+                bind(bumper_, h, "input/bumper/click");
+                bind(squeezeClick_, h, "input/squeeze/click");
+                bind(triggerTouch_, h, "input/trigger/touch");
+                bind(stickTouch_, h, "input/thumbstick/touch");
                 break;
             }
         }
@@ -202,6 +236,15 @@ void Input::sync(XrSession session, XrSpace space, XrTime time) {
         if (bl(triggerTouch_)) b |= BtnTriggerTouch;
         if (bl(stickTouch_)) b |= BtnStickTouch;
         if (f(trackpadForce_) > 0.6f || bl(trackpadClick_)) b |= BtnTrackpadPress;
+        if (s.kind == ControllerKind::Frame) {
+            if (bl(x_)) b |= BtnX;
+            if (bl(y_)) b |= BtnY;
+            if (bl(bumper_)) b |= BtnBumper;
+            for (int d = 0; d < 4; ++d)
+                if (bl(dpad_[d])) b |= BtnDpadUp << d;
+            if (bl(view_)) b |= BtnView;
+            if (bl(squeezeClick_)) b |= BtnSqueezeClick;
+        }
         s.buttons = b;
         s.pressed = b & ~before;
         s.released = before & ~b;
@@ -232,6 +275,7 @@ void Input::sync(XrSession session, XrSpace space, XrTime time) {
                      : strstr(name, "htc/vive")    ? ControllerKind::Vive
                      : strstr(name, "microsoft/motion") ? ControllerKind::WMR
                      : strstr(name, "khr/simple")  ? ControllerKind::Simple
+                     : strstr(name, "valve/frame_controller") ? ControllerKind::Frame
                                                    : ControllerKind::Unknown;
             VRLOG("input: %s hand profile %s", h ? "right" : "left", name);
         }

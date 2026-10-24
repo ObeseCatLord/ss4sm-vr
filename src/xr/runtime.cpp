@@ -60,7 +60,7 @@ bool Runtime::initialize() {
     std::vector<const char*> want = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
     for (const char* e : {XR_KHR_VISIBILITY_MASK_EXTENSION_NAME, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME,
                           XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME, XR_EXT_HAND_TRACKING_EXTENSION_NAME,
-                          XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME})
+                          XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME, kFrameExtension})
         if (has(e)) want.push_back(e);
     enabled_.assign(want.begin(), want.end());
 

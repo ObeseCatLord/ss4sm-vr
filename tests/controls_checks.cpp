@@ -162,5 +162,27 @@ int main() {
         Pad p = m.update(f);
         assert(p.buttons == PadLB);
     }
+    // Steam Frame: bumpers hold the per-hand wheels (right tap toggles dual wielding), X reloads, View opens the menu
+    {
+        Mapper m;
+        Frame f = idle(Kind::Frame);
+        f.hand[1].buttons = Primary | ButtonX;
+        f.hand[0].buttons = View;
+        assert(m.update(f).buttons == (PadA | PadX | PadStart));
+        f.hand[1].buttons = Bumper, f.hand[0].buttons = 0, f.ms = 1000;
+        assert(!(m.update(f).buttons & PadLB));  // not yet a hold
+        f.ms = 1100, f.hand[1].buttons = 0;
+        assert(m.update(f).buttons & PadRB);  // a tap: dual-wield toggle
+        f.ms = 2000, f.hand[0].buttons = Bumper;
+        assert(m.update(f).buttons == PadLB);
+        f.hand[1].buttons = Secondary;
+        assert(!m.update(f).kick);  // B cycles the gadget ring while a wheel is held
+    }
+    // Crush: Index squeeze force well above the grab threshold, Frame grip second stage; never Touch's squeeze
+    {
+        assert(!crushSqueeze(Kind::Index, 0.6f, 0) && crushSqueeze(Kind::Index, 0.9f, 0));
+        assert(crushSqueeze(Kind::Frame, 0.5f, SqueezeClick) && !crushSqueeze(Kind::Frame, 1.0f, 0));
+        assert(!crushSqueeze(Kind::Touch, 1.0f, SqueezeClick));
+    }
     return 0;
 }

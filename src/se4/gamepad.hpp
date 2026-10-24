@@ -6,8 +6,10 @@ namespace gamepad {
 void publishFromXr();  // after xr::input().sync(), on the frame thread
 bool active();
 void logStats();
+// A weapon wheel is held (either hand).
+bool wheelHeld();
 // The hand whose wheel is held: 0 left, 1 right, -1 both (or none).
 int wheelHand();
-// The use/melee (kick) button state from the controller mapping, for the device's button 8 (src/se4/vr_device.cpp).
+// The use/melee (kick) button state from the controller mapping (src/se4/gadgets.cpp runs the native VR use).
 bool kick();
 }

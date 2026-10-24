@@ -9,6 +9,8 @@
 #include <vector>
 
 namespace xr {
+// Steam Frame controller profile (not in the pinned OpenXR headers).
+constexpr const char* kFrameExtension = "XR_VALVE_frame_controller_interaction";
 
 struct Swapchain {
     XrSwapchain handle = XR_NULL_HANDLE;

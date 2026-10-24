@@ -24,16 +24,25 @@
 //                use R menu, menu L menu, gadget L grip (reload is automatic when empty).
 //   Microsoft motion: wheel per hand (L/R trackpad click hold, as Index), jump R menu, crouch R grip,
 //                menu L menu, gadget L grip, use R stick click, sprint L stick click.
+//   Steam Frame (gamepad-style halves): wheel per hand (L/R bumper hold; L tap previous weapon, R tap dual-wield
+//                toggle), jump R A or R grip, use/melee kick R B, reload R X, crouch R stick click, menu R menu or
+//                L View, gadget L grip, sprint L stick click, D-pad up/down = pad D-pad.
 //   Simple controller: trigger fires, menu opens the menu.
+// Crushing a held item (a Sirian Artifact of Might): the trigger on every profile, plus a hard squeeze on Index
+// (squeeze force) and the grip's second stage on the Steam Frame (crushSqueeze).
 #include "core/math.hpp"
 #include <cstdint>
 
 namespace core::controls {
 
-enum class Kind { Touch, Index, Vive, WMR, Simple, Unknown };
+enum class Kind { Touch, Index, Vive, WMR, Simple, Frame, Unknown };
 
 // Raw button bits (same values as xr::Button).
-enum : uint32_t { Primary = 1u << 0, Secondary = 1u << 1, StickClick = 1u << 2, Menu = 1u << 3, TrackpadPress = 1u << 6 };
+enum : uint32_t {
+    Primary = 1u << 0, Secondary = 1u << 1, StickClick = 1u << 2, Menu = 1u << 3, TrackpadPress = 1u << 6,
+    ButtonX = 1u << 7, ButtonY = 1u << 8, Bumper = 1u << 9, DpadUp = 1u << 10, DpadDown = 1u << 11, View = 1u << 14,
+    SqueezeClick = 1u << 15,
+};
 
 // XInput wButtons bit values (kept local so this header stays portable).
 enum : uint16_t {
@@ -65,6 +74,13 @@ struct Pad {
 
 // Squeeze counts as a grip above this value, and releases below 60 % of it (hysteresis).
 inline float gripThreshold(Kind k) { return k == Kind::Index ? 0.4f : k == Kind::Touch ? 0.65f : 0.5f; }
+
+// A deliberate crush with the hand's grip (the trigger is checked by the caller): Index squeeze force well above
+// the grab threshold, or the Steam Frame grip's second stage.
+constexpr float kCrushForce = 0.85f;
+inline bool crushSqueeze(Kind k, float squeeze, uint32_t buttons) {
+    return (k == Kind::Index && squeeze >= kCrushForce) || (k == Kind::Frame && (buttons & SqueezeClick));
+}
 
 constexpr float kWheelRadius = 0.08f;     // hand travel (m) that reads as a full stick deflection
 constexpr float kWheelDeadZone = 0.015f;  // hand jitter below this is ignored
@@ -130,6 +146,18 @@ struct Mapper {
             if (on(L, StickClick)) b |= PadLeftThumb;
             if (on(R, StickClick)) b |= PadB;
             break;
+        case Kind::Frame:
+            perHand(on(L, Bumper), on(R, Bumper));
+            if (on(R, Primary)) b |= PadA;
+            p.kick = on(R, Secondary);
+            if (grip[1]) b |= PadA;  // the right grip jumps too
+            if (on(R, ButtonX)) b |= PadX;
+            if (on(R, Menu) || on(L, View)) b |= PadStart;
+            if (on(L, StickClick)) b |= PadLeftThumb;
+            if (on(R, StickClick)) b |= PadB;
+            if (on(L, DpadUp)) b |= PadDpadUp;
+            if (on(L, DpadDown)) b |= PadDpadDown;
+            break;
         case Kind::Vive:
             wheel = on(L, TrackpadPress);
             if (on(R, TrackpadPress)) b |= PadA;
@@ -150,7 +178,7 @@ struct Mapper {
             if (on(L, Menu) || on(R, Menu)) b |= PadStart;
             break;
         }
-        if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch))
+        if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch || f.kind == Kind::Frame))
             b &= uint16_t(~PadA), p.kick = false;  // A/B cycle the gadget ring (src/se4/gadgets.cpp), not jump/kick
         if (wheel) {
             b |= PadLB;
