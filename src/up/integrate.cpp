@@ -28,6 +28,7 @@ HdrFn realHdr;
 PpFn realPp;
 
 bool g_evaluate;  // an upscaler is selected (options)
+int g_trace;      // lab: trace this many projection calls once the upscaler runs (upscale_trace)
 DWORD g_hdrThread;
 // The engine's Vulkan graphics object keeps the command buffer it records into at +0x1ea8 (R13 s5; lab 2026-10-24:
 // the PP's own canvas barrier goes into exactly that handle; 58 identical loads in Sam4 616154 and SamSM 628492).
@@ -83,6 +84,7 @@ struct Fn {
     PFN_vkCmdPushConstants push;
     PFN_vkCmdDispatch dispatch;
     PFN_vkCmdCopyImage copy;
+    PFN_vkCmdClearColorImage clear;
 } vk;
 
 struct OwnImage {
@@ -219,7 +221,7 @@ bool ensureResources() {
     g_res.colorView = viewOf(g_color.image, g_color.format, VK_IMAGE_ASPECT_COLOR_BIT);
     g_res.depthView = viewOf(g_depth.image, g_depth.format, VK_IMAGE_ASPECT_DEPTH_BIT);
     bool ok = g_res.colorView && g_res.depthView &&
-              createOwn(g_res.motion, g_res.w, g_res.h, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT) &&
+              createOwn(g_res.motion, g_res.w, g_res.h, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
               createOwn(g_res.output, g_res.w, g_res.h,
                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     if (ok) {
@@ -240,6 +242,7 @@ bool ensureResources() {
     }
     g_res.ready = ok;
     g_res.failed = !ok;
+    if (ok && se4::options::get("upscale_trace", 0)) g_trace = 60;
     VRLOG("upint: resources for canvas %ux%u %s", g_res.w, g_res.h, ok ? "ready" : "FAILED");
     up::resetHistory();
     return ok;
@@ -247,6 +250,8 @@ bool ensureResources() {
 
 // ---- per-eye camera state ----
 struct ProjRec {
+    float appliedX = 0, appliedY = 0;  // jitter of the last projection handed to the engine for this eye
+    uint32_t appliedFrame = 0;
     core::Tangents tan{};
     float n = 0.1f, f = 1000.0f;
     bool valid = false;
@@ -267,6 +272,10 @@ float g_jx, g_jy;
 float g_jitterSign[2] = {1, 1};
 bool g_jitterOn = true;
 bool g_evaluateOn = true;
+float g_jitterScale = 1.0f;
+bool g_motionOn = true;
+float g_reportScale = 1.0f;
+int g_jitterLag;  // lab: upscale_jitter_lag reports the jitter of frame (current - lag)  // lab: upscale_report_scale (percent) scales the jitter reported to the upscaler  // lab: upscale_mv=0 clears the motion vectors instead of computing them  // lab: upscale_jitter_scale (percent) magnifies the rendered jitter for visibility checks
 LARGE_INTEGER g_lastEval[2];
 
 float worldScale() {
@@ -353,13 +362,13 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
     imageBarrier(b[1], g_res.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
     imageBarrier(b[2], g_res.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
-                 VK_ACCESS_SHADER_WRITE_BIT);
+                 VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
     imageBarrier(b[3], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
                  VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
     vk.barrier(cb,
                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                    VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 4, b);
+               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 4, b);
 
     // 2. camera motion vectors.
     struct {
@@ -372,13 +381,20 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
     memcpy(pc.cur, &ct, sizeof pc.cur);
     memcpy(pc.prev, &pt, sizeof pc.prev);
     pc.size[0] = float(W), pc.size[1] = float(H), pc.size[2] = g_proj[e].n, pc.size[3] = g_proj[e].f;
-    vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
-    vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_res.set, 0, nullptr);
-    vk.push(cb, g_pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, &pc);
-    vk.dispatch(cb, (W + 7) / 8, (H + 7) / 8, 1);
+    if (g_motionOn) {
+        vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
+        vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_res.set, 0, nullptr);
+        vk.push(cb, g_pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, &pc);
+        vk.dispatch(cb, (W + 7) / 8, (H + 7) / 8, 1);
+    } else {
+        const VkClearColorValue zero{};
+        const VkImageSubresourceRange all{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vk.clear(cb, g_res.motion.image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &all);
+    }
     imageBarrier(b[0], g_res.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                 VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-    vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, b);
+                 VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+    vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
+               nullptr, 1, b);
 
     // 3. the upscaler (phase A, native AA: render size == output size).
     LARGE_INTEGER now, freq;
@@ -392,7 +408,15 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
     f.depth = {g_res.depth, g_res.depthView, g_depth.format, W, H};
     f.motion = {g_res.motion.image, g_res.motion.view, VK_FORMAT_R16G16B16A16_SFLOAT, W, H};
     f.output = {g_res.output.image, g_res.output.view, VK_FORMAT_R16G16B16A16_SFLOAT, W, H};
-    f.jitterX = g_jx * g_jitterSign[0], f.jitterY = g_jy * g_jitterSign[1];
+    float rx = g_jx, ry = g_jy;
+    if (g_jitterLag) up::jitter(uint32_t(int(g_frame) - g_jitterLag), g_color.w, g_color.w, rx, ry);  // lab: report another frame's jitter
+    f.jitterX = rx * g_jitterSign[0] * g_reportScale, f.jitterY = ry * g_jitterSign[1] * g_reportScale;
+    {
+        static int mismatches, checks;
+        ++checks;
+        if (g_proj[e].appliedFrame != g_frame || g_proj[e].appliedX != g_jx || g_proj[e].appliedY != g_jy) ++mismatches;
+        if (checks % 600 == 0) VRLOG("upint: jitter check: %d of %d evaluations saw a different jitter than the eye's last projection", mismatches, checks);
+    }
     f.frameMs = std::clamp(ms, 1.0f, 100.0f);
     f.nearZ = g_proj[e].n, f.farZ = g_proj[e].f;
     f.fovY = std::atan(ct.u) - std::atan(ct.d);
@@ -435,6 +459,7 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
     h.frame = g_frame;
     h.worldEye = cur;
     h.tan = ct;
+    if (g_trace > 0) VRLOG("upint: trace evaluate eye %d frame %u jitter %.3f %.3f", eye, g_frame, g_jx, g_jy);
     static volatile LONG logged;
     if (InterlockedIncrement(&logged) <= 4)
         VRLOG("upint: eye %d %s %ux%u (frame %u, jitter %.3f %.3f, reset %d)", eye, ok ? "evaluated" : "evaluate FAILED", W, H, g_frame,
@@ -508,6 +533,7 @@ void onDevice(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice 
     F(push, vkCmdPushConstants);
     F(dispatch, vkCmdDispatch);
     F(copy, vkCmdCopyImage);
+    F(clear, vkCmdClearColorImage);
 #undef F
 }
 
@@ -594,8 +620,9 @@ void onBeginCommandBuffer(VkCommandBuffer cb) {
     g_openPass.erase(cb);
 }
 
-core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int64_t frameTime) {
+core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int64_t frameTime, void* caller) {
     if (eye != 1 && eye != 2) return fov;
+    if (g_trace > 0 && g_trace-- > 0) VRLOG("upint: trace projection eye %d frame %u time %lld from %p", eye, g_frame + (frameTime != g_frameTime), (long long)frameTime, caller);
     if (frameTime != g_frameTime) {
         g_frameTime = frameTime;
         ++g_frame;
@@ -603,11 +630,12 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
         else g_jx = g_jy = 0;
     }
     ProjRec& p = g_proj[eye - 1];
+    p.appliedX = g_jx, p.appliedY = g_jy, p.appliedFrame = g_frame;
     p.tan = core::tangents(fov);
     p.n = n, p.f = f;
     p.valid = true;
     if (!g_jx && !g_jy) return fov;
-    return core::angles(core::jittered(p.tan, g_jx, g_jy, g_color.w, g_color.h));
+    return core::angles(core::jittered(p.tan, g_jx * g_jitterScale, g_jy * g_jitterScale, g_color.w, g_color.h));
 }
 
 bool install() {
@@ -615,6 +643,10 @@ bool install() {
     if (!g_evaluate) return false;
     g_jitterOn = se4::options::get("upscale_jitter", 1) != 0;
     g_evaluateOn = se4::options::get("upscale_evaluate", 1) != 0;
+    g_jitterScale = se4::options::get("upscale_jitter_scale", 100) / 100.0f;
+    g_motionOn = se4::options::get("upscale_mv", 1) != 0;
+    g_reportScale = se4::options::get("upscale_report_scale", 100) / 100.0f;
+    g_jitterLag = se4::options::get("upscale_jitter_lag", 0);
     g_jitterSign[0] = se4::options::get("upscale_jitter_x", 1) < 0 ? -1.0f : 1.0f;
     g_jitterSign[1] = se4::options::get("upscale_jitter_y", 1) < 0 ? -1.0f : 1.0f;
     const auto& b = se4::build();

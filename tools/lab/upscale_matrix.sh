@@ -5,6 +5,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"
 G="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/Serious Sam 4"
 OUT=$1; shift; mkdir -p "$OUT"
 for cfg in "$@"; do
+  kill -0 "$(cat "$ROOT/lab/monado/monado.pid" 2>/dev/null)" 2>/dev/null || { echo "lab Monado is not running - stopping"; exit 3; }
   tag=$(echo "$cfg" | tr ' =' '_-')
   "$HERE/killgame.sh" >/dev/null 2>&1
   { echo lab_giveall=1; for kv in $cfg; do echo "$kv"; done; } > "$G/Bin/x64/ss4smvr/options.txt"

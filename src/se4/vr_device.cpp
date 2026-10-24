@@ -209,7 +209,7 @@ float* sProjection(Object*, float* m, int eye, float n, float f) {
     if (!InterlockedExchange(&logged[eye - 1], 1))
         VRLOG("vrdev: eye %d fov left %.4f right %.4f up %.4f down %.4f (near %.3f far %.1f)", eye, shared.left, shared.right, shared.up,
               shared.down, n, f);
-    core::engineProjection(upint::jitterProjection(eye, shared, n, f, v.time), n, f, m);
+    core::engineProjection(upint::jitterProjection(eye, shared, n, f, v.time, __builtin_return_address(0)), n, f, m);
     return m;
 }
 float* sEyeTransform(Object*, float* m, int eye) {

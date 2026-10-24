@@ -70,7 +70,14 @@ bool selfTest(NVSDK_NGX_Parameter* p) {
     bool ok = NVSDK_NGX_Parameter_GetUI(p, "ss4smvr.test.ui", &ui) == NVSDK_NGX_Result_Success && ui == 0x1234u &&
               NVSDK_NGX_Parameter_GetF(p, "ss4smvr.test.f", &f) == NVSDK_NGX_Result_Success && f == 1.5f &&
               NVSDK_NGX_Parameter_GetULL(p, "ss4smvr.test.ull", &ull) == NVSDK_NGX_Result_Success && ull == 0x100000005ull;
-    VRLOG("ngx: parameter vtable self-test %s (ui %x f %.2f ull %llx)", ok ? "passed" : "FAILED", ui, f, ull);
+    // Cross-type reads tell the float and double slots apart (a same-type round trip cannot).
+    NVSDK_NGX_Parameter_SetD(p, "ss4smvr.test.d", 2.5);
+    double d = 0;
+    float fd = 0;
+    NVSDK_NGX_Result rd = NVSDK_NGX_Parameter_GetD(p, "ss4smvr.test.f", &d);
+    NVSDK_NGX_Result rf = NVSDK_NGX_Parameter_GetF(p, "ss4smvr.test.d", &fd);
+    VRLOG("ngx: parameter vtable self-test %s (ui %x f %.2f ull %llx; float as double %g [%x], double as float %g [%x])", ok ? "passed" : "FAILED",
+          ui, f, ull, d, unsigned(rd), double(fd), unsigned(rf));
     return ok;
 }
 }  // namespace ngx

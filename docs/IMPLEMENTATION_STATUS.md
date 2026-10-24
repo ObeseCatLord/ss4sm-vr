@@ -229,3 +229,22 @@
   - The off hand's squeeze is withheld from the pad while that hand is in reach or gripping.
 - Finger poses (`core/hand_pose.hpp`, host-tested): controller-state curls and OpenXR joint flexion, smoothing, and
   the wire packing. Not yet applied to bones.
+- Upscaler image quality (lab, 2026-10-24), open item:
+  - Facts:
+    - The rendered jitter has the expected magnitude: a 10× lab scale shifts the image ±5 px.
+    - Every evaluation uses the same jitter the eye's projections had in that frame (0 mismatches in 3000).
+    - The NGX parameter shim is correct; cross-type reads convert.
+    - DLSS uses the reported jitter: reporting it 10× too large wrecks the output.
+    - The camera is static and there are no history resets.
+  - Symptoms:
+    - DLSS with jitter is stable-ish (frame diff 0.5 against 0.2 for no AA on a static region).
+    - It is noticeably softer than no AA, and about 25 % softer than a 6-frame supersampled reference. Fine
+      corrugation fades.
+    - DLSS without jitter is as sharp as no AA.
+    - Sign flips and ±1 frame jitter lag give results within run-to-run noise. FSR prefers the current sign
+      convention.
+  - Next steps:
+    - Use NGX's debug overlay (ShowDlssIndicator, jitter/MV views) in the lab.
+    - Make a deterministic static capture: freeze foliage/time and read the eye image back directly instead of the
+      desktop mirror.
+  - Until then `upscaler` stays 0 by default. Lab switches are listed in src/up/integrate.cpp.

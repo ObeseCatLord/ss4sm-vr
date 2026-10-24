@@ -32,5 +32,5 @@ void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkIma
 
 // Device slot 0x070 for eye 1/2: records the unjittered frustum (motion vectors) and returns it jittered for this
 // frame while an upscaler runs. `frameTime` is the XR predicted display time (advances the jitter sequence).
-core::Fov jitterProjection(int eye, const core::Fov& fov, float nearZ, float farZ, int64_t frameTime);
+core::Fov jitterProjection(int eye, const core::Fov& fov, float nearZ, float farZ, int64_t frameTime, void* caller = nullptr);
 }  // namespace upint
