@@ -79,3 +79,16 @@
     auto-shotgun while zoomed.
   - Still to do: per-eye correctness (R8 s8 B: projection and eye offset during the crosshair draw, once R10
     shows which stereo path runs), and a second crosshair for dual wield (s8 C).
+- Gate R10 done (`docs/re/R10_vr_render_gate.md`). SS4/SM were compiled to call `CProjectInstance::Render`
+  (slot 0x50) from the main loop. Only Fusion's VR exe calls `RenderVR` (slot 0x58), and no flag or cvar
+  switches it.
+  - `vrdev::hookRender` detours Render. While our device is installed, the main loop's call (inVR 0, return
+    address main_loop+0x25f, verified in all four builds) goes to RenderVR. Per-eye renders (inVR 1) pass
+    through.
+  - `vr_bForceImmersiveMode` is set to 1 so the world renders in stereo, not on the cinema screen.
+  - Harvester fix: records whose first qword is string bytes are now accepted as variables when every other
+    field validates. This added 31–32 real cvars per build, among them SM's `vr_bForceImmersiveMode`, with no
+    existing address changed.
+  - The harvest also lists a `_svc_AppInputDeviceVRController` service in every build. A "VRController" input
+    device may exist after all, contrary to the R3 follow-up. Check at runtime before relying on either
+    conclusion; the device still never sets +0xb3c.

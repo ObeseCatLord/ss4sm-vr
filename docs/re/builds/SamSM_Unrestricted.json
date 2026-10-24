@@ -31672,6 +31672,15 @@
    "type": "men_fPulseFrequency",
    "va": "0x142251b50"
   },
+  "_svc_ANSIAsyncRead": {
+   "aux": "0x2e6e",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fcba18",
+   "type": "CService",
+   "va": "0x14237cd10"
+  },
   "_svc_AmbientOcclusionShader": {
    "aux": "0x1422cc0d8",
    "count": 1,
@@ -31725,6 +31734,24 @@
    "record": "0x14165a200",
    "type": "CService",
    "va": "0x142253e30"
+  },
+  "_svc_AppInputDeviceRouter": {
+   "aux": "0x6174614465",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x1415fd008",
+   "type": "CService",
+   "va": "0x142251f90"
+  },
+  "_svc_AppInputDeviceVRController": {
+   "aux": "0x64617065",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x1415fd148",
+   "type": "CService",
+   "va": "0x142252030"
   },
   "_svc_AppInputDeviceVirtualGamepad": {
    "aux": "0x0",
@@ -31825,6 +31852,15 @@
    "type": "CService",
    "va": "0x1422636d0"
   },
+  "_svc_CASShader": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141f405f8",
+   "type": "CService",
+   "va": "0x1422cbf60"
+  },
   "_svc_CCharacterTool": {
    "aux": "0x0",
    "count": 1,
@@ -31879,6 +31915,15 @@
    "type": "CService",
    "va": "0x142250540"
   },
+  "_svc_CheckStructMembers": {
+   "aux": "0x7276",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fcaec8",
+   "type": "CService",
+   "va": "0x14237cca0"
+  },
   "_svc_CollisionTable": {
    "aux": "0x0",
    "count": 1,
@@ -31887,6 +31932,33 @@
    "record": "0x141ea0d08",
    "type": "CService",
    "va": "0x1422b5f10"
+  },
+  "_svc_ColorConvShader": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141f237f8",
+   "type": "CService",
+   "va": "0x1422c9b20"
+  },
+  "_svc_CompressionShaders": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141ee54c8",
+   "type": "CService",
+   "va": "0x1422c6f00"
+  },
+  "_svc_ComputeHelperShaders": {
+   "aux": "0xffe1ccf385ebc8a0",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141f65268",
+   "type": "CService",
+   "va": "0x1422cd860"
   },
   "_svc_ComputerTerminalDialogFileType": {
    "aux": "0x142267160",
@@ -31951,6 +32023,15 @@
    "type": "CService",
    "va": "0x142252480"
   },
+  "_svc_CroteamInitialInteractionSteps": {
+   "aux": "0x73706574536e",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x14206ec78",
+   "type": "CService",
+   "va": "0x142389f90"
+  },
   "_svc_CrumbsBakerShader": {
    "aux": "0x142274730",
    "count": 1,
@@ -31959,6 +32040,15 @@
    "record": "0x141cc1a30",
    "type": "CService",
    "va": "0x142274760"
+  },
+  "_svc_Cryptography": {
+   "aux": "0x2173656c69",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fb2e28",
+   "type": "CService",
+   "va": "0x142377fb0"
   },
   "_svc_Cutscene": {
    "aux": "0x1422673d8",
@@ -32068,6 +32158,24 @@
    "type": "CService",
    "va": "0x14237c1e0"
   },
+  "_svc_DummySfxWrapper": {
+   "aux": "0x73646e756f7320",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141edcd98",
+   "type": "CService",
+   "va": "0x1422c61a0"
+  },
+  "_svc_DummyWrapper": {
+   "aux": "0xffe1ccf385ebc8a0",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141dda848",
+   "type": "CService",
+   "va": "0x142286c60"
+  },
   "_svc_DynamicAtlas": {
    "aux": "0x0",
    "count": 1,
@@ -32094,6 +32202,15 @@
    "record": "0x141cb7de0",
    "type": "CService",
    "va": "0x1422721c0"
+  },
+  "_svc_EntityConverter": {
+   "aux": "0x3b66",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141608a78",
+   "type": "CService",
+   "va": "0x1422524d0"
   },
   "_svc_EntityParams": {
    "aux": "0x0",
@@ -32212,6 +32329,15 @@
    "type": "CService",
    "va": "0x1422863e0"
   },
+  "_svc_FunctionEnvironments": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fb7e78",
+   "type": "CService",
+   "va": "0x142378560"
+  },
   "_svc_GPUTest": {
    "aux": "0x0",
    "count": 1,
@@ -32247,6 +32373,15 @@
    "record": "0x141ddfef8",
    "type": "CService",
    "va": "0x142287110"
+  },
+  "_svc_GameEnvTools": {
+   "aux": "0xa2e2779",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141ef7558",
+   "type": "CService",
+   "va": "0x1422c75d0"
   },
   "_svc_GameTitle": {
    "aux": "0x14224f608",
@@ -32419,6 +32554,15 @@
    "type": "CService",
    "va": "0x142389410"
   },
+  "_svc_JoystickDeviceCheck": {
+   "aux": "0x6b6365",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x14205a578",
+   "type": "CService",
+   "va": "0x142389c20"
+  },
   "_svc_LGLCD": {
    "aux": "0x140046e10",
    "count": 1,
@@ -32482,6 +32626,15 @@
    "type": "CService",
    "va": "0x1422c6bf0"
   },
+  "_svc_MemoryBlockInjectors": {
+   "aux": "0x3030303030303030",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fc7da8",
+   "type": "CService",
+   "va": "0x14237cb40"
+  },
   "_svc_MenuStreamingPrecacheData": {
    "aux": "0x0",
    "count": 1,
@@ -32508,6 +32661,15 @@
    "record": "0x141fbe6d8",
    "type": "CService",
    "va": "0x14237bec0"
+  },
+  "_svc_MetaIndexStack": {
+   "aux": "0xa21726564726f",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fbce68",
+   "type": "CService",
+   "va": "0x142378d40"
   },
   "_svc_ModdingSupport": {
    "aux": "0x0",
@@ -32679,6 +32841,15 @@
    "record": "0x141ea3228",
    "type": "CService",
    "va": "0x1422b5fd0"
+  },
+  "_svc_ObjectID": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fc0298",
+   "type": "CService",
+   "va": "0x14237c120"
   },
   "_svc_OpaqueFozeShader": {
    "aux": "0x1422ccab8",
@@ -33013,6 +33184,15 @@
    "type": "CService",
    "va": "0x1422f6ba0"
   },
+  "_svc_ResourceGeneration": {
+   "aux": "0x7372696150",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fbed08",
+   "type": "CService",
+   "va": "0x14237bf60"
+  },
   "_svc_ResourceLeasing_GFX": {
    "aux": "0x1422c7810",
    "count": 1,
@@ -33085,6 +33265,15 @@
    "type": "CService",
    "va": "0x1422c8ec0"
   },
+  "_svc_ScriptDebugging": {
+   "aux": "0xbfa00000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141e02168",
+   "type": "CService",
+   "va": "0x1422b1470"
+  },
   "_svc_ScriptInterface": {
    "aux": "0x0",
    "count": 1,
@@ -33102,6 +33291,15 @@
    "record": "0x141e5d4f0",
    "type": "CService",
    "va": "0x1422b3c60"
+  },
+  "_svc_SecureFunctions": {
+   "aux": "0x726566",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fc8888",
+   "type": "CService",
+   "va": "0x14237cc00"
   },
   "_svc_ShadeShader": {
    "aux": "0x142281a08",
@@ -33129,6 +33327,15 @@
    "record": "0x141fb3170",
    "type": "CService",
    "va": "0x142378020"
+  },
+  "_svc_SimpleShaders": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141dda8b8",
+   "type": "CService",
+   "va": "0x1422b3090"
   },
   "_svc_Skeleton": {
    "aux": "0x1422b23d0",
@@ -33229,6 +33436,15 @@
    "type": "CService",
    "va": "0x14238a3a0"
   },
+  "_svc_SteamInitialInteractionSteps": {
+   "aux": "0x312520",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x1420729a8",
+   "type": "CService",
+   "va": "0x14238a4e0"
+  },
   "_svc_SteamWorkshopModManager": {
    "aux": "0x0",
    "count": 1,
@@ -33256,6 +33472,15 @@
    "type": "CService",
    "va": "0x142383960"
   },
+  "_svc_StreamSigning": {
+   "aux": "0x2e7865",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fb3608",
+   "type": "CService",
+   "va": "0x142378080"
+  },
   "_svc_StreamingSoundReadCache": {
    "aux": "0x0",
    "count": 1,
@@ -33273,6 +33498,15 @@
    "record": "0x141e77700",
    "type": "CService",
    "va": "0x1422b5170"
+  },
+  "_svc_TerrainMaterialMixShader": {
+   "aux": "0xffe1ccf385ebc8a0",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141f56608",
+   "type": "CService",
+   "va": "0x1422cd210"
   },
   "_svc_TerrainMaterials": {
    "aux": "0x1422cd2b8",
@@ -33373,6 +33607,15 @@
    "type": "CService",
    "va": "0x1422c6c50"
   },
+  "_svc_TextureConvertor": {
+   "aux": "0x7265747265766e",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141608ae8",
+   "type": "CService",
+   "va": "0x142252510"
+  },
   "_svc_TextureMetricsShader": {
    "aux": "0x1422cb130",
    "count": 1,
@@ -33382,6 +33625,15 @@
    "type": "CService",
    "va": "0x1422cb170"
   },
+  "_svc_TextureRandom": {
+   "aux": "0x2e657079",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141f086a8",
+   "type": "CService",
+   "va": "0x1422c8a50"
+  },
   "_svc_TextureStreaming": {
    "aux": "0x0",
    "count": 1,
@@ -33390,6 +33642,15 @@
    "record": "0x141e6b828",
    "type": "CService",
    "va": "0x1422b4110"
+  },
+  "_svc_ThreadProfilingService": {
+   "aux": "0x40860a920000005a",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fbfd98",
+   "type": "CService",
+   "va": "0x14237c0b0"
   },
   "_svc_VegetationShader": {
    "aux": "0x14156254c",
@@ -33499,6 +33760,15 @@
    "type": "CService",
    "va": "0x1422b3710"
   },
+  "_svc_VisualBugsSystemAddOns": {
+   "aux": "0x3f00000000000000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141bf0238",
+   "type": "CService",
+   "va": "0x14226d890"
+  },
   "_svc_VolumetricShader": {
    "aux": "0x0",
    "count": 1,
@@ -33507,6 +33777,33 @@
    "record": "0x141d00a98",
    "type": "CService",
    "va": "0x14227cad0"
+  },
+  "_svc_WaterMapAnimatorShader": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141cd7508",
+   "type": "CService",
+   "va": "0x1422753d0"
+  },
+  "_svc_WaterMapDisruptorShader": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141cd77f8",
+   "type": "CService",
+   "va": "0x142275420"
+  },
+  "_svc_WaterMapToBumpMapShader": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141cd79e8",
+   "type": "CService",
+   "va": "0x142275470"
   },
   "_svc_WaterRippler": {
    "aux": "0x142271f90",
@@ -33534,6 +33831,15 @@
    "record": "0x141fb0268",
    "type": "CService",
    "va": "0x1422f7890"
+  },
+  "_svc_WindowSystem": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 0,
+   "kind": 2,
+   "record": "0x141fb50a8",
+   "type": "CService",
+   "va": "0x142378240"
   },
   "_svc_WindowSystemImp_Null": {
    "aux": "0x142381000",
@@ -34192,6 +34498,15 @@
    "type": "FLOAT",
    "va": "0x1422284ac"
   },
+  "bot_iLogActivity": {
+   "aux": "0xbfd9999a",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141882778",
+   "type": "INDEX",
+   "va": "0x142263650"
+  },
   "bot_iRecordPlayerActions": {
    "aux": "0x0",
    "count": 1,
@@ -34309,6 +34624,15 @@
    "type": "BOOL",
    "va": "0x1422c6274"
   },
+  "bug_bBackupPreviousLog": {
+   "aux": "0x746f68736e6565",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141fb0748",
+   "type": "BOOL",
+   "va": "0x142234090"
+  },
   "bug_bHighlightMine": {
    "aux": "0x14156254c",
    "count": 1,
@@ -34371,6 +34695,15 @@
    "record": "0x141edd098",
    "type": "INDEX",
    "va": "0x1422c6278"
+  },
+  "bug_strBugzillaServer": {
+   "aux": "0xc37a0000",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141edcf18",
+   "type": "CString",
+   "va": "0x1422c6280"
   },
   "bug_strDefaultAssignee": {
    "aux": "0x0",
@@ -34776,6 +35109,15 @@
    "record": "0x141def6b8",
    "type": "ULONG",
    "va": "0x14222ae0c"
+  },
+  "cld_iMaxThreads": {
+   "aux": "0x7478742e73",
+   "count": 1,
+   "flags": 262150,
+   "kind": 2,
+   "record": "0x141eef358",
+   "type": "INDEX",
+   "va": "0x1422c7290"
   },
   "cli_iMaxBPS": {
    "aux": "0x0",
@@ -35308,6 +35650,15 @@
    "type": "BOOL",
    "va": "0x1422b0d08"
   },
+  "dbg_bShowFreeMemory": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141dfd758",
+   "type": "INDEX",
+   "va": "0x1422b0cf0"
+  },
   "dbg_bStealthMode": {
    "aux": "0x0",
    "count": 1,
@@ -35316,6 +35667,15 @@
    "record": "0x141fc0858",
    "type": "BOOL",
    "va": "0x14237c1c8"
+  },
+  "dbg_fScaleDebugArrows": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141e34d28",
+   "type": "FLOAT",
+   "va": "0x14222b98c"
   },
   "dbr_ctMaxDebrisEffectsPerModel": {
    "aux": "0x1422b2738",
@@ -36451,6 +36811,15 @@
    "type": "BOOL",
    "va": "0x142287494"
   },
+  "gfx_bLiquidVRManualTransfer": {
+   "aux": "0x3f80000000000000",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x142089128",
+   "type": "BOOL",
+   "va": "0x14239de78"
+  },
   "gfx_bMaximized": {
    "aux": "0x0",
    "count": 1,
@@ -36892,6 +37261,15 @@
    "type": "INDEX",
    "va": "0x14222ebf0"
   },
+  "gfx_iDisplayDPI": {
+   "aux": "0x21727450657571",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141fbe0e8",
+   "type": "INDEX",
+   "va": "0x14237be00"
+  },
   "gfx_iDriverVersion": {
    "aux": "0x0",
    "count": 1,
@@ -37233,6 +37611,15 @@
    "record": "0x141deb8c8",
    "type": "ULONG",
    "va": "0x142287574"
+  },
+  "gput_bRunGPUSideTests": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141f242a8",
+   "type": "BOOL",
+   "va": "0x1422c9c10"
   },
   "gst_bSaveProfileAfterUpload": {
    "aux": "0x141562584",
@@ -38017,6 +38404,15 @@
    "type": "BOOL",
    "va": "0x14222b7bc"
   },
+  "mdl_bCacheAnimations": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141f00c18",
+   "type": "BOOL",
+   "va": "0x14222eca0"
+  },
   "mdl_bDebugRemoveFinestRenderMeshLOD": {
    "aux": "0x0",
    "count": 1,
@@ -38034,6 +38430,15 @@
    "record": "0x141ed3f30",
    "type": "BOOL",
    "va": "0x1422c5ea8"
+  },
+  "mdl_bHardwareSkinning": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141e2eea8",
+   "type": "BOOL",
+   "va": "0x14222b77c"
   },
   "mdl_bHighQualityTrees": {
    "aux": "0x1422c7ba0",
@@ -38124,6 +38529,15 @@
    "record": "0x141e2eee8",
    "type": "INDEX",
    "va": "0x14222b7b8"
+  },
+  "mem_iOptimizeCopy": {
+   "aux": "0x656c676e416469",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141fa9de8",
+   "type": "INDEX",
+   "va": "0x142234028"
   },
   "men_bAllowGlowing": {
    "aux": "0x0",
@@ -38782,6 +39196,15 @@
    "type": "INDEX",
    "va": "0x1422c8a94"
   },
+  "phy_iMaxThreads": {
+   "aux": "0x6167",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141f08758",
+   "type": "INDEX",
+   "va": "0x1422c8a90"
+  },
   "plp_bDisableProfileSaving": {
    "aux": "0x0",
    "count": 1,
@@ -39241,6 +39664,15 @@
    "type": "BOOL",
    "va": "0x14225e06c"
   },
+  "prj_bDumpPerChapterPrecachingFiles": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x1417e53d8",
+   "type": "BOOL",
+   "va": "0x142261078"
+  },
   "prj_bEmulateTouchEvents": {
    "aux": "0x0",
    "count": 1,
@@ -39357,6 +39789,15 @@
    "record": "0x14156b8b8",
    "type": "BOOL",
    "va": "0x142227170"
+  },
+  "prj_bGenerateChapterAutoSaveThumbnail": {
+   "aux": "0x657275736165",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x1417b4b68",
+   "type": "BOOL",
+   "va": "0x142260498"
   },
   "prj_bHardwareMouseCursor": {
    "aux": "0x1415496f5",
@@ -40753,6 +41194,15 @@
    "type": "INDEX",
    "va": "0x14222cb04"
   },
+  "ptt_strDefault": {
+   "aux": "0x3d08850a3d08850a",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141ddf588",
+   "type": "CString",
+   "va": "0x142287050"
+  },
   "ptt_strDemo": {
    "aux": "0x0",
    "count": 1,
@@ -41284,6 +41734,15 @@
    "type": "INDEX",
    "va": "0x14222eba8"
   },
+  "ren_iFastLightsUseZ": {
+   "aux": "0xffe1ccf385ebc8a0",
+   "count": 1,
+   "flags": 262146,
+   "kind": 2,
+   "record": "0x141ef9d08",
+   "type": "INDEX",
+   "va": "0x14222eba4"
+  },
   "ren_iLODOffset": {
    "aux": "0x14156d628",
    "count": 1,
@@ -41301,6 +41760,15 @@
    "record": "0x141e011d8",
    "type": "INDEX",
    "va": "0x1422b0f2c"
+  },
+  "ren_iMaxRenderThreads": {
+   "aux": "0x656461",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141ea4648",
+   "type": "INDEX",
+   "va": "0x1422b6050"
   },
   "ren_iMirrorFastLights": {
    "aux": "0x14156254c",
@@ -41770,6 +42238,15 @@
    "type": "FLOAT",
    "va": "0x14222c3b8"
   },
+  "sha_fShadowDarkness": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141e41898",
+   "type": "FLOAT",
+   "va": "0x14222bb50"
+  },
   "sha_fShadowDithering": {
    "aux": "0x0",
    "count": 1,
@@ -42103,6 +42580,15 @@
    "type": "FLOAT",
    "va": "0x14222701c"
   },
+  "sim_bBlockingWorldPreparing": {
+   "aux": "0x41a00000",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141f22368",
+   "type": "BOOL",
+   "va": "0x1422c9ab8"
+  },
   "sim_bFinalizeOutEntitiesInEditor": {
    "aux": "0x0",
    "count": 1,
@@ -42147,6 +42633,15 @@
    "record": "0x141f223a8",
    "type": "FLOAT",
    "va": "0x14222efc8"
+  },
+  "sim_iFixMicroStuttering": {
+   "aux": "0x100000008",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141e023a8",
+   "type": "INDEX",
+   "va": "0x14222b240"
   },
   "snd_bEmptySounds": {
    "aux": "0x0",
@@ -42264,6 +42759,15 @@
    "record": "0x14206ef58",
    "type": "BOOL",
    "va": "0x14223a864"
+  },
+  "steam_strConnectToLobby": {
+   "aux": "0x3f80000000000000",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x14206ef18",
+   "type": "CString",
+   "va": "0x14238a018"
   },
   "steam_strDownloadedMods": {
    "aux": "0x14238a040",
@@ -42553,6 +43057,15 @@
    "type": "CString",
    "va": "0x142378130"
   },
+  "sys_strPlatform": {
+   "aux": "0x34366e6957",
+   "count": 1,
+   "flags": 65539,
+   "kind": 2,
+   "record": "0x141fb37c8",
+   "type": "CString",
+   "va": "0x142378128"
+  },
   "sys_ulHDDMisc": {
    "aux": "0x0",
    "count": 1,
@@ -42724,6 +43237,15 @@
    "type": "BOOL",
    "va": "0x1422b40b8"
   },
+  "texs_bStreamingShowDebug": {
+   "aux": "0x3f80000000000000",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141dd9ea8",
+   "type": "BOOL",
+   "va": "0x1422864b4"
+  },
   "texs_ctMaxUnloadsPerFrame": {
    "aux": "0x0",
    "count": 1,
@@ -42777,6 +43299,15 @@
    "record": "0x141e6b768",
    "type": "FLOAT",
    "va": "0x14222c334"
+  },
+  "texs_iForceFirstMip": {
+   "aux": "0x3f800000",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141ee3cf8",
+   "type": "INDEX",
+   "va": "0x14222e510"
   },
   "thr_bBusyWaitingWorkers": {
    "aux": "0x141faaf30",
@@ -42904,6 +43435,15 @@
    "type": "SLONG",
    "va": "0x142234a78"
   },
+  "tmp_iValue6": {
+   "aux": "0x745f65",
+   "count": 1,
+   "flags": 262146,
+   "kind": 2,
+   "record": "0x141fc8208",
+   "type": "SLONG",
+   "va": "0x142234a74"
+  },
   "tobii_bAimAtGazeOn": {
    "aux": "0x0",
    "count": 1,
@@ -42939,6 +43479,15 @@
    "record": "0x14205a998",
    "type": "BOOL",
    "va": "0x14223a398"
+  },
+  "tobii_bEyeTrackingOn": {
+   "aux": "0x736b",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x14205a958",
+   "type": "BOOL",
+   "va": "0x14223a394"
   },
   "tobii_bFlashlightControlOn": {
    "aux": "0x0",
@@ -43093,6 +43642,15 @@
    "type": "FLOAT",
    "va": "0x14222d878"
   },
+  "trn_fGrassCrumbsGap": {
+   "aux": "0x3f8000003f800000",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141f4e528",
+   "type": "FLOAT",
+   "va": "0x14222ff90"
+  },
   "trn_fGrassCrumbsMaxDistance": {
    "aux": "0x141ea4368",
    "count": 1,
@@ -43182,6 +43740,15 @@
    "record": "0x141f629f8",
    "type": "INDEX",
    "va": "0x1422302ec"
+  },
+  "trn_iDumpElevMapAtlasTile": {
+   "aux": "0x3f8000003f800000",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141f629b8",
+   "type": "INDEX",
+   "va": "0x1422302e8"
   },
   "trn_iDynstanceCacheDensity": {
    "aux": "0x0",
@@ -43308,6 +43875,15 @@
    "record": "0x141f1ff28",
    "type": "BOOL",
    "va": "0x1422c9624"
+  },
+  "vis_bDisableScanner": {
+   "aux": "0x43808080436b97f6",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141f1fea8",
+   "type": "BOOL",
+   "va": "0x1422c9620"
   },
   "vis_bDisableTiling": {
    "aux": "0x0",
@@ -43875,6 +44451,15 @@
    "record": "0x141dddce8",
    "type": "FLOAT",
    "va": "0x142286ea4"
+  },
+  "vr_bForceImmersiveMode": {
+   "aux": "0x31252074736575",
+   "count": 1,
+   "flags": 65542,
+   "kind": 2,
+   "record": "0x141651648",
+   "type": "BOOL",
+   "va": "0x142253bd0"
   },
   "vr_bMaskHiddenArea": {
    "aux": "0x141562584",
@@ -44973,6 +45558,15 @@
    "record": "0x142056ec0",
    "type": "FLOAT",
    "va": "0x142239c08"
+  },
+  "wld_bFixDuplicateEntityIDs": {
+   "aux": "0xffffffffffffffff",
+   "count": 1,
+   "flags": 65538,
+   "kind": 2,
+   "record": "0x141de4f28",
+   "type": "BOOL",
+   "va": "0x142287378"
   },
   "wld_fTestBotSetupDiagnosticsNavRadiusOverride": {
    "aux": "0x0",

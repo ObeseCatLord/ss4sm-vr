@@ -25,8 +25,12 @@ def harvest(path):
     out = {'variables': {}, 'functions': {}}
     for o in range(0, len(rdata) - 64, 8):
         zero, kind, name_p, help_p, addr, count, typ, flags = struct.unpack_from('<8Q', rdata, o)
-        if (zero != 0 and img.section_of(zero) is None) or kind > 16 or count > 0x10000:
+        if kind > 16 or count > 0x10000:
             continue
+        # +0x00 normally holds 0 or an image pointer, but string bytes have been seen there (SamSM
+        # vr_bForceImmersiveMode); such records are accepted only as variables, whose name, help, address
+        # and type name are all validated below.
+        odd_aux = zero != 0 and img.section_of(zero) is None
         name = img.cstr(name_p, 128)
         if not name or not IDENT.match(name):
             continue
@@ -34,10 +38,10 @@ def harvest(path):
             continue
         sec = img.section_of(addr)
         rec = '0x%x' % (rva + o)
-        if sec == '.text':
+        if sec == '.text' and not odd_aux:
             out['functions'].setdefault(name, {'va': '0x%x' % addr, 'record': rec, 'kind': kind,
                                                'count': count, 'signature': typ, 'flags': flags})
-        elif sec in ('.data', '.bss'):
+        elif sec in ('.data', '.bss') and (not odd_aux or kind == 2):
             tname = img.cstr(typ, 64)
             if tname is None or not IDENT.match(tname):
                 continue

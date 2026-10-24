@@ -90,6 +90,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     if (!(skip & 8)) {
         vrdev::hookShutdown();
         vrdev::hookViewport();
+        vrdev::hookRender();
     }
     if (!(skip & 0x10) && player_vr::install(true) && !(skip & 0x20)) crosshair::install();
 }

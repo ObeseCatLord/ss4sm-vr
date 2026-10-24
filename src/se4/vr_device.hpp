@@ -15,6 +15,8 @@ bool hookShutdown();
 bool hookViewport();
 // Device-local head placement (quaternion xyzw + position in engine units), as slot 0x080 returns it.
 void headPlacement(float out[7]);
+// Sends the main loop's desktop Render to RenderVR while the device is installed (R10).
+bool hookRender();
 // Periodic diagnostics: per-slot call counts since the last report.
 void logStats();
 }  // namespace vrdev

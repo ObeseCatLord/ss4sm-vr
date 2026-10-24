@@ -107,5 +107,15 @@
   "src": "0x1401015d0",
   "len": 64,
   "_note": "CObjectHolderHudElement vt+0x80 render (R8 s1)"
+ },
+ "project_render": {
+  "src": "0x140053b70",
+  "len": 64,
+  "_note": "CProjectInstance slot 0x50 Render(pi, dp, inVR) (R10)"
+ },
+ "main_loop": {
+  "src": "0x14003a810",
+  "len": 64,
+  "_note": "main loop; call [rax+0x50] (Render) at +0x25c, the only caller passing inVR=0 (R10)"
  }
 }

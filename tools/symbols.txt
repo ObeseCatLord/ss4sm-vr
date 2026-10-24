@@ -34,3 +34,6 @@ manual:client_action             # R3: desktop ClientAction net stub + apply (pl
 manual:aim_writer                # R8: player aim/target writer; 2 calls to the shared return-1 predicate gate the barrel ray
 manual:crosshair_render          # R8: CWeaponCrosshairHudElement render; 2 predicate calls gate the projected crosshair
 manual:object_holder_render      # R8: CObjectHolderHudElement render; 1 predicate call gates the gadget aim indicator
+manual:project_render            # R10: CProjectInstance slot 0x50 Render(pi, dp, inVR)
+manual:main_loop                 # R10: main loop; its call [rax+0x50] at +0x25c is the desktop Render
+var:vr_bForceImmersiveMode       # R10: immersive stereo path instead of the cinema screen

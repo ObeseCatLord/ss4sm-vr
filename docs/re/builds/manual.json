@@ -23,7 +23,9 @@
   "send_vr_action": "0x14048b730",
   "aim_writer": "0x1404a3670",
   "crosshair_render": "0x140120b60",
-  "object_holder_render": "0x1401015d0"
+  "object_holder_render": "0x1401015d0",
+  "project_render": "0x140053b70",
+  "main_loop": "0x14003a810"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -49,7 +51,9 @@
   "send_vr_action": "0x14048de60",
   "aim_writer": "0x1404a5da0",
   "object_holder_render": "0x140103f20",
-  "crosshair_render": "0x1401234b0"
+  "crosshair_render": "0x1401234b0",
+  "project_render": "0x1400564c0",
+  "main_loop": "0x14003a880"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -75,7 +79,9 @@
   "send_vr_action": "0x14048bd50",
   "aim_writer": "0x1404a3c50",
   "object_holder_render": "0x140101ef0",
-  "crosshair_render": "0x140121570"
+  "crosshair_render": "0x140121570",
+  "project_render": "0x140053bd0",
+  "main_loop": "0x14003a8b0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -101,6 +107,8 @@
   "send_vr_action": "0x14048e470",
   "aim_writer": "0x1404a6370",
   "object_holder_render": "0x140104830",
-  "crosshair_render": "0x140123eb0"
+  "crosshair_render": "0x140123eb0",
+  "project_render": "0x140056510",
+  "main_loop": "0x14003a920"
  }
 }

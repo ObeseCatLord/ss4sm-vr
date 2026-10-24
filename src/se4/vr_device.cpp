@@ -406,6 +406,26 @@ void hookedMouse(void* viewport, int* pos, int msg, int* size) {
     realMouse(viewport, pos, msg, size);
 }
 
+// The main loop calls CProjectInstance::Render (slot 0x50) every frame; SS4/SM were compiled to call it
+// instead of RenderVR (slot 0x58), which only Fusion's VR exe calls (R10). While our device is installed,
+// the main loop's call (inVR 0, returning to main_loop+0x25f) goes to RenderVR, which renders both eyes
+// through the device and returns 1 so the overlay and present still run. Per-eye renders inside the VR view
+// pass inVR 1 and reach the real Render.
+using RenderFn = int(__cdecl*)(void* pi, void* dp, int inVR);
+RenderFn realRender;
+const uint8_t* g_mainLoopRet;
+int hookedRender(void* pi, void* dp, int inVR) {
+    void** global = se4::build().at<void*>(se4::gen::vr_device_global);
+    if (!inVR && g_installed && g_mainLoopRet && __builtin_return_address(0) == g_mainLoopRet && global &&
+        *global == &g_obj) {
+        static LONG once;
+        if (!InterlockedExchange(&once, 1)) VRLOG("vrdev: main loop renders through RenderVR");
+        auto renderVR = reinterpret_cast<RenderFn>(se4::build().at<void>(se4::gen::viewport_render_vr));
+        return renderVR(pi, dp, 0);
+    }
+    return realRender(pi, dp, inVR);
+}
+
 using ShutdownFn = void(__cdecl*)();
 ShutdownFn realShutdown;
 void hookedShutdown() {
@@ -436,6 +456,7 @@ bool install() {
     *global = &g_obj;
     g_installed = true;
     player_vr::onDeviceInstalled();
+    se4::setIndex(se4::gen::vr_bForceImmersiveMode, 1);  // stereo world view, not the cinema screen (R10)
     VRLOG("vrdev: COpenXRDevice installed at %p (global %p)", static_cast<void*>(&g_obj), static_cast<void*>(global));
     return true;
 }
@@ -469,6 +490,24 @@ bool hookViewport() {
     if (!target || MH_CreateHook(target, reinterpret_cast<void*>(hookedMouse), reinterpret_cast<void**>(&realMouse)) != MH_OK ||
         MH_EnableHook(target) != MH_OK) {
         VRLOG("vrdev: viewport mouse hook FAILED");
+        return false;
+    }
+    return true;
+}
+
+bool hookRender() {
+    const auto& b = se4::build();
+    auto* render = b.at<uint8_t>(se4::gen::project_render);
+    auto* loop = b.at<uint8_t>(se4::gen::main_loop);
+    static const uint8_t site[6] = {0x48, 0x8B, 0x01, 0xFF, 0x50, 0x50};  // mov rax,[rcx]; call [rax+0x50]
+    if (!render || !loop || !b.at<void>(se4::gen::viewport_render_vr) || memcmp(loop + 0x259, site, 6)) {
+        VRLOG("vrdev: main-loop Render call not found - VR view will not render");
+        return false;
+    }
+    g_mainLoopRet = loop + 0x25f;
+    if (MH_CreateHook(render, reinterpret_cast<void*>(hookedRender), reinterpret_cast<void**>(&realRender)) != MH_OK ||
+        MH_EnableHook(render) != MH_OK) {
+        VRLOG("vrdev: Render hook FAILED");
         return false;
     }
     return true;
