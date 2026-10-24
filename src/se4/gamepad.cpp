@@ -19,8 +19,9 @@ GetCapsFn realGetCaps;
 SRWLOCK g_lock = SRWLOCK_INIT;
 XINPUT_GAMEPAD g_pad{};
 DWORD g_packet;
-// Connected (neutral) from the start: the engine enumerates gamepads early, before the XR session exists.
-bool g_active = true;
+// The pad exists only when an OpenXR runtime is up (initialised at the game's Vulkan init, before its first
+// gamepad poll); flat play never sees a phantom controller.
+bool isActive() { return xr::runtime().active(); }
 LONG g_polled;
 volatile LONG g_polls, g_pollsOther;
 
@@ -31,7 +32,7 @@ SHORT axis(float v) {
 BYTE trig(float v) { return BYTE(std::lround((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0f)); }
 
 DWORD WINAPI hookGetState(DWORD user, XINPUT_STATE* st) {
-    if (user != 0 || !g_active) {
+    if (user != 0 || !isActive()) {
         InterlockedIncrement(&g_pollsOther);
         return realGetState ? realGetState(user, st) : ERROR_DEVICE_NOT_CONNECTED;
     }
@@ -45,7 +46,7 @@ DWORD WINAPI hookGetState(DWORD user, XINPUT_STATE* st) {
 }
 
 DWORD WINAPI hookGetCaps(DWORD user, DWORD flags, XINPUT_CAPABILITIES* c) {
-    if (user != 0 || !g_active) return realGetCaps ? realGetCaps(user, flags, c) : ERROR_DEVICE_NOT_CONNECTED;
+    if (user != 0 || !isActive()) return realGetCaps ? realGetCaps(user, flags, c) : ERROR_DEVICE_NOT_CONNECTED;
     memset(c, 0, sizeof *c);
     c->Type = XINPUT_DEVTYPE_GAMEPAD;
     c->SubType = XINPUT_DEVSUBTYPE_GAMEPAD;
@@ -57,7 +58,7 @@ DWORD WINAPI hookGetCaps(DWORD user, DWORD flags, XINPUT_CAPABILITIES* c) {
 }
 
 DWORD WINAPI hookSetState(DWORD user, XINPUT_VIBRATION* v) {
-    if (user != 0 || !g_active) return realSetState ? realSetState(user, v) : ERROR_DEVICE_NOT_CONNECTED;
+    if (user != 0 || !isActive()) return realSetState ? realSetState(user, v) : ERROR_DEVICE_NOT_CONNECTED;
     auto& rt = xr::runtime();
     if (rt.running()) {
         // Native rumble: left (low-frequency) motor -> left hand, right motor -> right hand.
@@ -86,7 +87,7 @@ FARPROC interceptProc(HMODULE, const char* name, FARPROC real) {
     return real;
 }
 
-bool active() { return g_active; }
+bool active() { return isActive(); }
 
 void logStats() {
     VRLOG("gamepad: polls user0 %ld other %ld, buttons %04x LX %d LY %d RT %u", InterlockedExchange(&g_polls, 0),
