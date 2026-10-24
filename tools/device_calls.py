@@ -131,6 +131,8 @@ def analyse(img, md, fs, fe, g, sva, text, fname, volatile=VOLATILE, this='rcx',
                 newV = dst
         if ins.mnemonic == 'mov' and len(ops) == 2 and ops[0].type == X86_OP_MEM and ops[1].type == X86_OP_REG:
             m = ops[0].mem
+            if fam(md, ops[1].reg) in D and not (m.base and fam(md, m.base) in ('rsp', 'rbp')):
+                passes.append({'site': hex(ins.address), 'ins': txt, 'kind': 'device pointer stored to memory'})
             if m.base and fam(md, m.base) in ('rsp', 'rbp'):
                 key = (fam(md, m.base), m.disp)
                 if fam(md, ops[1].reg) in D:
