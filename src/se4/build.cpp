@@ -5,6 +5,7 @@
 
 namespace se4 {
 unsigned g_debugSkip;
+bool g_vrEnabled;
 namespace {
 Build g_build;
 

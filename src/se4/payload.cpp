@@ -61,12 +61,22 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     unsigned skip = readSkipMask(path);
     if (skip) VRLOG("attach: debug skip mask 0x%x", skip);
     se4::g_debugSkip = skip;
+    {
+        wchar_t flag[MAX_PATH];
+        wcscpy(flag, path);
+        wcscpy(wcsrchr(flag, L'\\') + 1, L"enable_vr");
+        char env[8] = {};
+        se4::g_vrEnabled = GetFileAttributesW(flag) != INVALID_FILE_ATTRIBUTES ||
+                           (GetEnvironmentVariableA("SS4SMVR_VR", env, sizeof env) && env[0] == '1');
+        VRLOG("attach: VR %s (opt-in: SS4SMVR_VR=1 or ss4smvr/enable_vr)", se4::g_vrEnabled ? "enabled" : "disabled");
+    }
     se4::Build b;
     if (!se4::identifyBuild(b)) return;
     if (MH_Initialize() != MH_OK) {
         VRLOG("MinHook init failed");
         return;
     }
+    if (!se4::g_vrEnabled) return;  // flat play: no hooks at all
     if (!(skip & 2)) se4::installProcAddressHook();
     if (!(skip & 4)) focus::install();
     if (!(skip & 8)) {
