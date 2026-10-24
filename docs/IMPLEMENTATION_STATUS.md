@@ -63,3 +63,10 @@
   Host-tested (`controls_checks`).
 - Still to do for the wheel: drive the gadget ring (syscmdUp/Down) from the controllers, and present the wheel
   on the HUD layer near the hand.
+- Blocker found by `tools/lab/check_log.py` in the last lab log:
+  - The engine never called device slots 0x028, 0x030 or 0x018, so its VR view render (0x1401dcbe0, reached
+    only through CProjectInstance slot 0x58 at 0x1400552e0) never ran. That run never got to stereo.
+  - What gates that call is unknown. Likely an SS4 constant flip, like `SetPlayingInVR` (Fusion
+    `prjIsVRActive` = vt[0x18](this,1); SS4 = vt[0x10](this,0)).
+  - Gate R10 is in progress (`docs/re/R10_vr_render_gate.md`).
+- In progress: gates R7 (vehicles), R8 (crosshair), R9 (body IK) and R10.

@@ -1,5 +1,5 @@
 /build*/
-lab/
+/lab/
 *.pyc
 __pycache__/
 .venv/
