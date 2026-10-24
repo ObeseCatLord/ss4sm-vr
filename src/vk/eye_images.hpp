@@ -8,7 +8,8 @@ namespace eyes {
 // The device brackets the engine's render-target creation for an eye; images created on this thread
 // with the given extent inside the bracket are recorded as that eye's image.
 void beginCapture(int eye, uint32_t width, uint32_t height);
-void endCapture();
+// expectNew: the call was meant to create an image (first use or resize); otherwise silence is normal.
+void endCapture(bool expectNew = true);
 // Called by the vkCreateImage interception.
 void onImageCreated(VkImage image, const VkImageCreateInfo& ci);
 void onImageDestroyed(VkImage image);

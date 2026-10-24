@@ -44,9 +44,9 @@ void beginCapture(int eye, uint32_t w, uint32_t h) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 
-void endCapture() {
+void endCapture(bool expectNew) {
     AcquireSRWLockExclusive(&g_lock);
-    if (g_cap.eye && !g_cap.got) {
+    if (g_cap.eye && !g_cap.got && expectNew) {
         g_pending[g_cap.eye - 1] = {g_cap.w, g_cap.h, GetTickCount64() + kPendingMs};
         VRLOG("eyes: no image created for eye %d inside the engine call - waiting up to %llu ms", g_cap.eye, kPendingMs);
     }

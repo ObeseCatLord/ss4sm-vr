@@ -8,6 +8,7 @@
 #include "se4/cvars.hpp"
 #include "se4/log.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/options.hpp"
 #include "vk/eye_images.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
@@ -138,15 +139,25 @@ void* sEyeRT(Object*, void* gfx, int eye) {
     }
     int w, h;
     eyeSize(w, h);
-    if (w != t.w || h != t.h) {
-        eyes::beginCapture(eye, uint32_t(w), uint32_t(h));
-        int id = create(t.holder, gfx, w, h, 2, 0, 0, 0);
-        eyes::endCapture();
+    // The engine releases render targets on its own (seen ~4 s after start: the holder's texture id changed
+    // and holder_get returned NULL), and recreates its own holders by calling holder_create every frame
+    // (vr_eye_render does so for the single-pass target). Do the same; the capture bracket records the
+    // VkImage whenever the call actually creates one.
+    bool resized = w != t.w || h != t.h;
+    eyes::beginCapture(eye, uint32_t(w), uint32_t(h));
+    int id = create(t.holder, gfx, w, h, 2, 0, 0, 0);
+    eyes::endCapture(resized);
+    if (resized) {
         t.w = w, t.h = h;
         VRLOG("vrdev: eye %d render target %dx%d (engine id %d)", eye, w, h, id);
     }
     void* wrapper = get(t.holder);
-    return wrapper ? *reinterpret_cast<void**>(static_cast<uint8_t*>(wrapper) + 8) : nullptr;
+    void* rt = wrapper ? *reinterpret_cast<void**>(static_cast<uint8_t*>(wrapper) + 8) : nullptr;
+    static LONG nullLogged[2];
+    if (!rt && InterlockedIncrement(&nullLogged[eye - 1]) <= 3)
+        VRLOG("vrdev: eye %d target is NULL (holder %p wrapper %p, id %d)", eye, t.holder, wrapper,
+              *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(t.holder) + 0x7c));
+    return rt;
 }
 void sBeginFrame(Object*) { NOTE(0x030); }
 void sPhase1(Object*) { NOTE(0x038); }
@@ -457,6 +468,11 @@ bool install() {
     g_installed = true;
     player_vr::onDeviceInstalled();
     se4::setIndex(se4::gen::vr_bForceImmersiveMode, 1);  // stereo world view, not the cinema screen (R10)
+    // Stereo path: vr_iUsingSinglePassStereo is recomputed every frame from vr_bSinglePrepareRendering
+    // (0x140b6b5b0). Single pass renders into an engine-owned double-width target (vr_eye_render), which came
+    // back NULL in the first lab run and crashed Render; two-pass uses the device's per-eye targets.
+    // Option single_pass=1 selects the engine's single-pass path for testing.
+    se4::setIndex(se4::gen::vr_bSinglePrepareRendering, se4::options::get("single_pass", 0) ? 1 : 0);
     VRLOG("vrdev: COpenXRDevice installed at %p (global %p)", static_cast<void*>(&g_obj), static_cast<void*>(global));
     return true;
 }
