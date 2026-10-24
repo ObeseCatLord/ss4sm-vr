@@ -43,6 +43,13 @@ the user. Status lives in `docs/IMPLEMENTATION_STATUS.md`. This file only change
       local vrd exists; the barrel ray hits the crosshair point.
 - [ ] Dual wielding with per-hand fire and a crosshair per weapon.
 - [ ] The native weapon wheel and gadget ring, selected by hand movement, with native slow motion.
+- [ ] Hands separate from guns, as in eduke32_vr:
+  - Hand models follow the controllers.
+  - A selected weapon sticks to its hand.
+  - A hand with no weapon is an empty hand with finger tracking (OpenXR hand joints, or controller finger
+    curls).
+  - The off hand can grip two-handed weapons by squeezing near them and let go again.
+  - Both hands are visible to other players.
 - [ ] Two-hand steadying for two-handed weapons.
 - [ ] Picture-in-picture scopes for the sniper rifle and every other usable scope: a magnified view through the
       scope lens of the hand-held weapon, while the world keeps the normal eye FOV. Native zoom state, damage
