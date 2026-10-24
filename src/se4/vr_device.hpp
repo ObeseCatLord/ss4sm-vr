@@ -7,6 +7,8 @@ namespace vrdev {
 // initialised XR runtime. Returns false and leaves the global untouched otherwise.
 bool install();
 bool installed();
+// Once per frame after xr::input().sync(): refresh the engine button table (slot 0x0d0).
+void updateFromInput();
 // Hooks the engine's device shutdown so it never frees our statically allocated object.
 bool hookShutdown();
 // Makes sure engine objects the device presence implies exist before they are used (viewport VR viewer).

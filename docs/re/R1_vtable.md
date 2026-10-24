@@ -254,3 +254,9 @@ table. Fields to initialise: all zero except +0x20/+0x50/+0x80 (non-zero = contr
 6. Unit of 0x90/0xa0 (Fusion `0x22d3640` Euler output) not confirmed; returning 0 is safe.
 7. SamSM.exe (global `0x142287ed0`): offsets of fields and slots not yet re-verified; run
    `tools/device_calls.py` on it with `docs/re/builds/SamSM.json`.
+
+## SamSM.exe verification (2026-10-23)
+`tools/device_calls.py` on SamSM.exe (global 0x142287ed0, `lab/device_calls_samsm.json`) against Sam4: 52 of
+54 used slots have identical call-site counts and caller names; 0x070 (11 vs 12) and 0x118 (5 vs 6) each
+have one fewer caller in SM. Directly accessed base fields are identical
+(+0x8, +0xc, +0x18, +0x1c, +0xb18, +0xb1c, +0xb3c, +0xb40, +0xb44). One implementation serves both games.

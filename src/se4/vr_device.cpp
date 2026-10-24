@@ -224,13 +224,55 @@ int sCtrlPlacement2(Object* self, int role, float* out) {
     NOTE(0x0c0);
     return sCtrlPlacement(self, role, out);
 }
+// Engine controller buttons (slot 0x0d0), per role (0 right, 1 left, 2 aux), 10 indices. Index meaning from
+// Fusion CSteamVRDevice 0x24e6f70 (values at role entry +0x4c+i*4): 0 trigger, 1 grip, 2/3 stick or pad x/y,
+// 4 stick/pad click (A on Rift), 5 application menu, 6 stick/pad click, 7 menu/back (engine consumes it as
+// back, base 0x140b6ade0), 8/9 unused. Flags (Fusion 0x1fdf500): 1 pressed this frame, 2 held, 4 consumed
+// until release, 8 released this frame; threshold 0.5.
+constexpr int kButtons = 10;
+struct ButtonTable {
+    float value[3][kButtons];
+    unsigned flags[3][kButtons];
+};
+ButtonTable g_btn;
+SRWLOCK g_btnLock = SRWLOCK_INIT;
+
 float sButton(Object*, int role, int button, unsigned* flags) {
     NOTE(0x0d0);
-    if (flags) *flags = 0;
-    int hand = role == 0 ? 1 : role == 1 ? 0 : -1;
-    if (hand < 0) return 0;
-    if (button == 0) return xr::input().hand(hand).trigger;
-    return 0;
+    if (role < 0 || role > 2 || button < 0 || button >= kButtons) {
+        if (flags) *flags = 0;
+        return 0;
+    }
+    AcquireSRWLockShared(&g_btnLock);
+    float v = g_btn.value[role][button];
+    if (flags) *flags = g_btn.flags[role][button];
+    ReleaseSRWLockShared(&g_btnLock);
+    return v;
+}
+void setButtonLocked(int role, int button, float v) {
+    unsigned& f = g_btn.flags[role][button];
+    bool was = (f & 2) != 0, now = v >= 0.5f;
+    unsigned consumed = f & 4;
+    f = (now ? 2u : 0u) | (now && !was ? 1u : 0u) | (!now && was ? 8u : 0u) | (now ? consumed : 0u);
+    g_btn.value[role][button] = v;
+    if (now && (button == 0 || button == 1)) field<int32_t>(0xb3c) = 1;  // VR controllers in use
+}
+void sSetButton(Object*, int role, int button, float v) {
+    NOTE(0x0d8);
+    if (role < 0 || role > 2 || button < 0 || button >= kButtons) return;
+    AcquireSRWLockExclusive(&g_btnLock);
+    setButtonLocked(role, button, v);
+    ReleaseSRWLockExclusive(&g_btnLock);
+}
+void sConsume(Object*, int button) {
+    NOTE(0x0e0);
+    if (button < 0 || button >= kButtons) return;
+    AcquireSRWLockExclusive(&g_btnLock);
+    for (auto& r : g_btn.flags) {
+        r[button] |= 4;
+        if (button == 7) r[5] |= 4;  // Fusion consumes 5 together with 7
+    }
+    ReleaseSRWLockExclusive(&g_btnLock);
 }
 void* sName(Object*, void* ret) { NOTE(0x110); return makeString(ret, "Vive"); }
 void* sCtrlTypeName(Object*, void* ret, int) { NOTE(0x118); return makeString(ret, "Vive"); }
@@ -246,6 +288,38 @@ const void* sHiddenMesh(Object*, int, int* count) {
     return nullptr;  // OpenXR masks are not index-paired between eyes (R1 0x178)
 }
 float sFingerCurl(Object*, int, int) { NOTE(0x1e0); return -1.0f; }
+
+// Slot 0x130: the engine's active vibration list, every frame (caller 0x1412ee6a0,
+// vsl_fGlobalVibrationStrength). CStaticArray {Entry* data; int count}. Entry (0x20 bytes, Fusion
+// CSteamVRDevice 0x24e52f0): +0 int loop, +4 float strength, +8 float time, +0x10 effect, +0x18 int right,
+// +0x1c int left. Fusion evaluates the effect's curve tracks (pulse = curves(t) * strength * 3500 us); this
+// first version applies `strength` per flagged hand without the curve shape (follow-up: evaluate curves).
+struct VibEntry {
+    int32_t loop;
+    float strength;
+    float time;
+    int32_t pad;
+    void* effect;
+    int32_t right, left;
+};
+struct VibList {
+    VibEntry* data;
+    int32_t count;
+};
+void sVibrations(Object*, const VibList* list) {
+    NOTE(0x130);
+    if (!list || !list->data || list->count <= 0 || !xr::runtime().running()) return;
+    float amp[2] = {0, 0};  // [left, right] OpenXR hands
+    for (int i = 0; i < list->count && i < 64; ++i) {
+        const VibEntry& e = list->data[i];
+        float a = e.strength < 0 ? 0 : e.strength > 1 ? 1 : e.strength;
+        if (e.left) amp[0] += a;
+        if (e.right) amp[1] += a;
+    }
+    for (int h = 0; h < 2; ++h)
+        if (amp[h] > 0.01f) xr::input().vibrate(xr::runtime().session(), h, amp[h] > 1 ? 1 : amp[h], 0.03f);
+}
+void sStopVibration(Object*, int) { NOTE(0x138); }
 void* sSerial(Object*, void* ret, int) { NOTE(0x198); return makeString(ret, ""); }
 
 void buildTable() {
@@ -276,9 +350,13 @@ void buildTable() {
     set(0x0b8, sCtrlPlacement);
     set(0x0c0, sCtrlPlacement2);
     set(0x0d0, sButton);
+    set(0x0d8, sSetButton);
+    set(0x0e0, sConsume);
     set(0x110, sName);
     set(0x118, sCtrlTypeName);
     set(0x128, sOne);
+    set(0x130, sVibrations);
+    set(0x138, sStopVibration);
     set(0x148, sApi);
     set(0x178, sHiddenMesh);
     set(0x198, sSerial);
@@ -344,6 +422,21 @@ bool install() {
 }
 
 bool installed() { return g_installed; }
+
+void updateFromInput() {
+    if (!g_installed) return;
+    AcquireSRWLockExclusive(&g_btnLock);
+    for (int role = 0; role < 2; ++role) {
+        const auto& h = xr::input().hand(role == 0 ? 1 : 0);
+        const uint32_t b = h.buttons;
+        const float v[kButtons] = {h.trigger, h.squeeze, h.stick.x, h.stick.y,
+                                   (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
+                                   (b & (xr::BtnStickClick | xr::BtnTrackpadPress)) ? 1.f : 0.f,
+                                   (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f, 0.f, 0.f};
+        for (int i = 0; i < kButtons; ++i) setButtonLocked(role, i, v[i]);
+    }
+    ReleaseSRWLockExclusive(&g_btnLock);
+}
 
 bool hookViewport() {
     void* target = se4::build().at<void>(se4::gen::viewport_mouse_event);

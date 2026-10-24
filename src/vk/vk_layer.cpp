@@ -371,6 +371,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     rt.updateViews(fs.predictedDisplayTime);
     xr::input().sync(rt.session(), rt.playSpace(), fs.predictedDisplayTime);
     gamepad::publishFromXr();
+    vrdev::updateFromInput();
     {
         static XrTime lastLog;
         if (fs.predictedDisplayTime - lastLog > 2000000000) {
