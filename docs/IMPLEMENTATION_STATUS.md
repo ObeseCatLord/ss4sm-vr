@@ -154,3 +154,8 @@
     draw).
 - Research: neither game has DLSS/FSR/XeSS or TAA, and no community upscaler mod exists. Upscaler plan: per-eye
   FSR 3.1 and DLSS/DLAA using the engine's dormant motion-vector shader path, with added jitter.
+- Single pass re-analysis: the crashing call used the device's eye-1 target (vr_eye_render takes it when
+  device+0x1c is set, device+0x18 == 0 and +0xb1c == 0), which was NULL only because of the
+  released-target bug fixed above. Retest `single_pass=1` in the lab; it may work now.
+- RE gates started: R11 (VR menus and loading-screen Continue), R12 (melee and gadgets), R13 (multiplayer
+  mod channel/Lua bridge and upscaler insertion).
