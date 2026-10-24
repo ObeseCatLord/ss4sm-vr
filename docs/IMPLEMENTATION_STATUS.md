@@ -36,3 +36,12 @@
 - [x] Lab: `+level <path>` loads a level directly; `tools/lab/xkey.py`/`xfocus.py` for the private display
 - [ ] Hand-tracked aiming and head-tracked view (needs the device seam, R1 table in `docs/re/R1_vtable.md`)
 - [ ] Final controller layout with native weapon/gadget wheels (Phase 3)
+
+## Offline progress (2026-10-23, headset busy)
+- Device: eye render targets through engine holders, Vulkan eye-image capture, projection layer with the
+  render-time views; vibration list (0x130); button table with engine edge flags (0xd0/0xd8/0xe0).
+  RE notes: `docs/re/EYE_TARGETS.md`. SamSM slot usage verified identical (`docs/re/R1_vtable.md`).
+- Core (host-tested, `ctest` in build-tests): pose maths, engine projection, physical melee simulation,
+  full-body IK, 64-byte networked pose packet, grab-to-steer, ported SS2 two-hand/grenade/motion/comfort.
+- Installer with receipt (`tools/install.py`); VR opt-in switch; virtual pad only with an XR runtime.
+- Pending hardware/runtime checks: see `docs/USER_VR_TEST.md`. Gate R3 (live VR gameplay) in progress.
