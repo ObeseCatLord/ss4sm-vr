@@ -185,9 +185,12 @@ void endFrame() {
     setCvar(se4::gen::vr_bSkipMixedRealityWeaponRendering, g_frame.savedSkip, nullptr);
     if (!g_frame.rt || !g_frame.gfx) return;
     // Hand the image over like the engine does for eyes 1/2 before SubmitEye: gfx vt+0x288(tex, 3) records the
-    // transition to TRANSFER_SRC_OPTIMAL in the engine's command buffer (docs/re/EYE_TARGETS.md).
+    // transition to TRANSFER_SRC_OPTIMAL in the engine's command buffer (docs/re/EYE_TARGETS.md; lab 2026-10-24: passing the
+    // drawport itself faulted inside 0x14136f930).
     auto transition = reinterpret_cast<GfxTransitionFn>((*reinterpret_cast<void***>(g_frame.gfx))[0x288 / 8]);
-    transition(g_frame.gfx, g_frame.rt, 3);
+    void* tex = *reinterpret_cast<void**>(g_frame.rt);  // the engine passes *rt (0x1401dd35c), not the drawport itself
+    if (!tex) return;
+    transition(g_frame.gfx, tex, 3);
     eyes::submitted(3);
 }
 

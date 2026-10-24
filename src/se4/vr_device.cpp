@@ -590,7 +590,9 @@ void updateFromInput() {
         const float sx = player_vr::nativeTurn() ? h.stick.x : 0.f, sy = 0.f;
         const float v[kButtons] = {h.trigger, h.squeeze, sx, sy,
                                    (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
-                                   (b & (xr::BtnStickClick | xr::BtnTrackpadPress)) ? 1.f : 0.f,
+                                   // The trackpad press is the weapon wheel on the virtual pad; as engine button 6 the
+                                   // engine opened Netricsa on it (lab 2026-10-24).
+                                   (b & xr::BtnStickClick) ? 1.f : 0.f,
                                    (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f, 0.f, 0.f};
         for (int i = 0; i < kButtons; ++i) setButtonLocked(role, i, v[i]);
     }

@@ -24,5 +24,6 @@ void main() {
         if (line || post) v.rgb = vec3(0.0);
     }
     v.a = 1.0 - smoothstep(0.95, 1.0, r);
+    v.rgb *= v.a;  // premultiplied for the quad layer (source-alpha blending)
     imageStore(img, c, v);
 }

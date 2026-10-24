@@ -10,6 +10,7 @@
 #include "se4/cvars.hpp"
 #include "se4/procaddr.hpp"
 #include "se4/log.hpp"
+#include "se4/options.hpp"
 #include "vk/queue_lock.hpp"
 #include "xr/runtime.hpp"
 #include "xr/input.hpp"
@@ -663,13 +664,21 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     quad.size = {w, w * float(m.sc.height) / float(m.sc.width)};
     XrCompositionLayerQuad scopeQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if (scopeOn) {
-        scopeQuad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+        static const bool opaque = se4::options::get("scope_opaque", 0) != 0;  // lab: show the square image without its mask
+        scopeQuad.layerFlags = opaque ? 0 : XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;  // premultiplied (scope.comp)
         scopeQuad.space = rt.playSpace();
         scopeQuad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
         scopeQuad.subImage.swapchain = scopelayer::swapchain();
         scopeQuad.subImage.imageRect = {{0, 0}, {int32_t(scopelayer::size()), int32_t(scopelayer::size())}};
         scopeQuad.pose = scopeLayer.pose;
         scopeQuad.size = {scopeLayer.size, scopeLayer.size};
+        static int logged;
+        if (logged++ % 300 == 0) {
+            const auto& hp = rt.views().head.position;
+            const auto& p = scopeQuad.pose;
+            VRLOG("scope: quad at %.3f %.3f %.3f q %.3f %.3f %.3f %.3f size %.3f (head %.3f %.3f %.3f)", p.position.x, p.position.y,
+                  p.position.z, p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w, scopeQuad.size.width, hp.x, hp.y, hp.z);
+        }
     }
     const XrCompositionLayerBaseHeader* layers[] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
                                                            : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad),
