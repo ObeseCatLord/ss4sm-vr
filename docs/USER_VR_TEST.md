@@ -31,6 +31,15 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
 7e. Foveation: off by default except on a Steam Frame. Try `foveation=1` (fixed) in options.txt. The centre should
    stay sharp and the periphery should be slightly blurrier, with a higher frame rate in dense scenes. The log
    shows `fov: active` and `fov: scene render pass ...`.
+7f. Hands: with a one-handed hold, the left arm follows the left controller and the controller model is hidden.
+    The fingers curl with the trigger (index finger) and the touches (thumb). Bring the left hand to the rifle's
+    foregrip and squeeze: the rifle should follow the line from the right hand to the left hand. Releasing the
+    squeeze returns it to one hand. Report whether the hand looks rotated or offset relative to the controller.
+7g. Scopes: take the sniper rifle (SS4/SM), the Devastator or the SM crossbow and raise the scope to your eye. A
+    round, magnified view with a reticle should sit at the eyepiece, the rest of the world unzoomed. Report the
+    eyepiece position (`scope_eye_up_cm`, `scope_eye_back_cm`) and size (`scope_size_cm`) that feel right.
+7h. Menus: point at a menu item with the right controller. It highlights, and the trigger clicks it. The left
+    trigger moves the pointer to the left hand.
 8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line):
    `native_vr_action=1` sends head and hands with each player action (needed for multiplayer). Turning
    then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;
