@@ -153,5 +153,27 @@
   "index": 7,
   "_note": "Euler (H,P,B radians) -> quaternion (quat* out, float3*): 8th direct call of wvb_animate (R7 s2)",
   "limit": 1536
+ },
+ "bpf_ctor": {
+  "call_of": "CreateScriptedBonePathFollower",
+  "index": 10,
+  "limit": 768,
+  "_note": "CBonePathFollower ctor: 11th direct call of the script CreateScriptedBonePathFollower (R9 s3)"
+ },
+ "mh_register": {
+  "call_of": "CreateScriptedBonePathFollower",
+  "index": 11,
+  "limit": 768,
+  "_note": "register motion handler (renderable, handler, 0): 12th direct call (R9 s3)"
+ },
+ "mh_base_ctor": {
+  "call_of": "bpf_ctor",
+  "index": 0,
+  "_note": "CMotionHandler base ctor (writes the base vtable): 1st call of bpf_ctor (R9 s3)"
+ },
+ "vrd_tick": {
+  "src": "0x1404399c0",
+  "len": 64,
+  "_note": "CPlayerVRData per-tick step (vrd): hands, handlers (R3 s6, R9 s1)"
  }
 }

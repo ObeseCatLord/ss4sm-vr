@@ -130,4 +130,63 @@ inline BodyPose solveBody(const BodyDims& d, BodyState& s, Pose head, const Vec3
     return b;
 }
 
+// ---- Retargeting onto an animated skeleton (engine motion handler, parent-relative bone transforms) ----
+
+// Shortest rotation taking direction a to direction b.
+inline Quat fromTo(Vec3 a, Vec3 b) {
+    float la = std::sqrt(dot(a, a)), lb = std::sqrt(dot(b, b));
+    if (la < 1e-6f || lb < 1e-6f) return {};
+    a = a * (1 / la), b = b * (1 / lb);
+    float d = dot(a, b);
+    if (d < -0.99999f) {  // opposite: any perpendicular axis
+        Vec3 ax = std::fabs(a.x) < 0.9f ? cross(a, Vec3{1, 0, 0}) : cross(a, Vec3{0, 1, 0});
+        float l = std::sqrt(dot(ax, ax));
+        return {ax.x / l, ax.y / l, ax.z / l, 0};
+    }
+    Vec3 c = cross(a, b);
+    return normalize(Quat{c.x, c.y, c.z, 1 + d});
+}
+
+// One arm of an animated skeleton: local (parent-relative) transforms of the upper arm, forearm, hand and the
+// weapon bone under the hand, plus the model-space transform of the upper arm's parent (the shoulder).
+struct ArmLocals {
+    Pose parent;  // model space
+    Pose arm, fore, hand, weapon;  // local
+};
+
+// Re-aims the arm so the weapon bone lands on `weaponTarget` (model space, position and orientation): two-bone
+// IK for the shoulder->elbow->wrist chain bending towards `pole`, the arm and forearm swung from their
+// animated directions (twist kept), the hand oriented so the weapon bone matches the target orientation.
+// Only rotations change (bone lengths stay the skeleton's). `weight` blends from the animation (0) to IK (1).
+inline void retargetArm(ArmLocals& a, Pose weaponTarget, Vec3 pole, float weight = 1, float maxStretch = 1.0f) {
+    Pose armG = compose(a.parent, a.arm);
+    Pose foreG = compose(armG, a.fore);
+    Pose handG = compose(foreG, a.hand);
+    // Wrist target: the hand pose that puts the weapon bone on the target.
+    Quat handRot = multiply(weaponTarget.q, inverse(a.weapon.q));
+    Vec3 wrist = weaponTarget.p - rotate(handRot, a.weapon.p);
+    float upper = std::sqrt(dot(a.fore.p, a.fore.p)), lower = std::sqrt(dot(a.hand.p, a.hand.p));
+    Limb l = twoBone(armG.p, wrist, pole, upper, lower, maxStretch);
+    // Upper arm: swing the animated direction onto shoulder->elbow.
+    Quat swing = fromTo(foreG.p - armG.p, l.joint - armG.p);
+    Quat armNew = multiply(swing, armG.q);
+    armG.q = armNew;
+    foreG = compose(armG, a.fore);
+    handG = compose(foreG, a.hand);
+    // Forearm: swing onto elbow->wrist.
+    swing = fromTo(handG.p - foreG.p, l.end - foreG.p);
+    foreG.q = multiply(swing, foreG.q);
+    Quat armLocal = multiply(inverse(a.parent.q), armNew);
+    Quat foreLocal = multiply(inverse(armG.q), foreG.q);
+    Quat handLocal = multiply(inverse(foreG.q), handRot);
+    auto blend = [weight](Quat from, Quat to) {
+        if (from.x * to.x + from.y * to.y + from.z * to.z + from.w * to.w < 0) to = {-to.x, -to.y, -to.z, -to.w};
+        return normalize(Quat{from.x + (to.x - from.x) * weight, from.y + (to.y - from.y) * weight,
+                              from.z + (to.z - from.z) * weight, from.w + (to.w - from.w) * weight});
+    };
+    a.arm.q = blend(a.arm.q, armLocal);
+    a.fore.q = blend(a.fore.q, foreLocal);
+    a.hand.q = blend(a.hand.q, handLocal);
+}
+
 }  // namespace core

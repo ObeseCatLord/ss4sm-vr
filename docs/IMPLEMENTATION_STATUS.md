@@ -114,3 +114,12 @@
     the way the engine does.
   - New guard, done: the slot 0x1d8 forwarder (Sam4 0x14043aac0, SM 0x14043ac40), which runs every tick for
     every player with vrd, now goes through the null-checking thunk.
+- Body IK, first version (`src/se4/body.cpp`, option `body_ik`, default 0 until verified):
+  - Keeps one engine motion handler per player with vrd, registered from the vrd tick on the player model's
+    animation queue.
+  - After the native blend it re-aims both arms (`core::retargetArm`, host-tested) so each
+    `Left/RightWeapon` bone lands on that hand's controller placement. That placement is replicated for
+    remote players, so other machines see it too.
+  - Legs, hips, spine and head stay native.
+  - Still to do: torso and head from the HMD, a first-person body (R9 s5B), desktop peers (needs `mp_guards`
+    plus `body_ik`), and keeping the handler after `CHandsAdjuster` when that adjuster is re-created.

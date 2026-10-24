@@ -20,7 +20,7 @@ struct Build {
 bool identifyBuild(Build& out);
 const Build& build();
 // Lab bisect mask from ss4smvr/debug_skip.txt (0 in normal use). Bits: 2 procaddr hook, 4 focus hooks,
-// 8 VR device install, 0x10 VR player enable and guards (player_vr), 0x20 native projected crosshair, 0x40 vehicle grab steering.
+// 8 VR device install, 0x10 VR player enable and guards (player_vr), 0x20 native projected crosshair, 0x40 vehicle grab steering, 0x80 body IK.
 extern unsigned g_debugSkip;
 // VR is opt-in while in development: env SS4SMVR_VR=1 or the file ss4smvr/enable_vr next to the payload.
 extern bool g_vrEnabled;
