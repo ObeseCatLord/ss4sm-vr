@@ -14,11 +14,15 @@ if [ -f "$PIDF" ]; then
   if [ "$(readlink /proc/$p/exe 2>/dev/null)" = "$PRIV" ]; then kill "$p"; sleep 1; fi
   rm -f "$PIDF"
 fi
-for p in $(pgrep -x monado-service); do
-  if [ "$(readlink /proc/$p/exe 2>/dev/null)" != "$PRIV" ]; then
-    echo "another Monado is running (pid $p: $(readlink /proc/$p/exe)) - not starting the lab runtime" >&2; exit 2
+# The user's Monado may run at the same time: it owns /run/user/<uid>/monado_comp_ipc, the lab one owns
+# $XRT_RT/monado_comp_ipc. Refuse only if the private socket is held by something other than the lab build.
+if [ -S "$XRT_RT/monado_comp_ipc" ]; then
+  owner=$(ss -xlp 2>/dev/null | grep "$XRT_RT/monado_comp_ipc" | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+  if [ -n "$owner" ] && [ "$(readlink /proc/$owner/exe 2>/dev/null)" != "$PRIV" ]; then
+    echo "private socket $XRT_RT/monado_comp_ipc held by pid $owner - not starting" >&2; exit 2
   fi
-done
+  [ -z "$owner" ] && rm -f "$XRT_RT/monado_comp_ipc"
+fi
 D=$("$(dirname "$0")/private_display.sh") || exit 1
 cd "$LAB/monado"
 ( tail -f /dev/null | env -u WAYLAND_DISPLAY DISPLAY=$D XDG_RUNTIME_DIR=$XRT_RT XDG_CONFIG_HOME=$LAB/monado/config P_OVERRIDE_ACTIVE_CONFIG=remote \

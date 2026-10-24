@@ -9,12 +9,8 @@ case "$1" in
 esac
 shift; TO=${1:-90}; shift
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# Never compete with the user's headset runtime: refuse while a non-lab Monado is running.
-for p in $(pgrep -x monado-service); do
-  if [ "$(readlink /proc/$p/exe)" != "$HOME/ss2-vr-private/monado-exact-prefix/bin/monado-service" ]; then
-    echo "user's Monado is running (pid $p) - lab launch refused"; exit 3
-  fi
-done
+# The lab game talks only to the lab Monado (private XDG_RUNTIME_DIR + XR_RUNTIME_JSON below), so it may run
+# while the user's own Monado is up; real-headset tests are saved for the end of the project (user, 2026-10-23).
 ROOT=/home/obesecatlord/FasterGames/SteamLibrary/steamapps
 G="$ROOT/common/$GAME"
 "$HERE/killgame.sh" >/dev/null; sleep 2

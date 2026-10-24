@@ -18,6 +18,7 @@
 #include "se4/vr_device.hpp"
 #include "vk/eye_images.hpp"
 #include "vk/foveation.hpp"
+#include "up/upscaler.hpp"
 #include "core/math.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -96,6 +97,19 @@ struct Mirror {
 // xrCreateVulkan*KHR; those inner calls must reach the real functions.
 DWORD g_redirectThread;
 
+// Appends `extra` extension names to a create info's list (no duplicates, only those `available`).
+std::vector<const char*> mergeExtensions(const char* const* have, uint32_t n, const char** extra, uint32_t m,
+                                         const std::vector<VkExtensionProperties>& available) {
+    std::vector<const char*> out(have, have + n);
+    for (uint32_t i = 0; i < m; ++i) {
+        bool dup = false, ok = false;
+        for (auto* h : out) dup |= !strcmp(h, extra[i]);
+        for (auto& e : available) ok |= !strcmp(e.extensionName, extra[i]);
+        if (!dup && ok) out.push_back(extra[i]);
+    }
+    return out;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci, const VkAllocationCallbacks* a, VkInstance* out) {
     void* ret = __builtin_return_address(0);
     if (!realCreateInstance) realCreateInstance = reinterpret_cast<PFN_vkCreateInstance>(realGIPA(nullptr, "vkCreateInstance"));
@@ -109,8 +123,25 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
         if (r == VK_SUCCESS) g.instance = *out;
         return r;
     }
+    // Upscaler (DLSS) instance extensions, when enabled.
+    VkInstanceCreateInfo ici = *ci;
+    const char* upExt[16];
+    uint32_t upN = 0;
+    up::instanceExtensions(upExt, upN, 16);
+    std::vector<const char*> instExts;
+    if (upN) {
+        auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(realGIPA(nullptr, "vkEnumerateInstanceExtensionProperties"));
+        uint32_t c = 0;
+        enumerate(nullptr, &c, nullptr);
+        std::vector<VkExtensionProperties> av(c);
+        enumerate(nullptr, &c, av.data());
+        instExts = mergeExtensions(ci->ppEnabledExtensionNames, ci->enabledExtensionCount, upExt, upN, av);
+        ici.enabledExtensionCount = uint32_t(instExts.size());
+        ici.ppEnabledExtensionNames = instExts.data();
+        VRLOG("vk: instance extensions %u -> %u for the upscaler", ci->enabledExtensionCount, ici.enabledExtensionCount);
+    }
     g_redirectThread = GetCurrentThreadId();
-    VkResult r = rt.createVulkanInstance(realGIPA, ci, out);
+    VkResult r = rt.createVulkanInstance(realGIPA, &ici, out);
     g_redirectThread = 0;
     VRLOG("vk: xrCreateVulkanInstanceKHR -> %d", int(r));
     if (r == VK_SUCCESS) {
@@ -148,6 +179,22 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     fov::decide();
     alignas(16) static unsigned char fovStorage[64];
     fov::patchDeviceCreate(g.instance, realGIPA, pd, copy, fovStorage, sizeof fovStorage);
+    // Upscaler (DLSS) device extensions, when enabled and supported.
+    const char* upDev[24];
+    uint32_t upDevN = 0;
+    up::deviceExtensions(g.instance, pd, upDev, upDevN, 24);
+    std::vector<const char*> devExts;
+    if (upDevN) {
+        auto enumerate = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(realGIPA(g.instance, "vkEnumerateDeviceExtensionProperties"));
+        uint32_t c = 0;
+        enumerate(pd, nullptr, &c, nullptr);
+        std::vector<VkExtensionProperties> av(c);
+        enumerate(pd, nullptr, &c, av.data());
+        devExts = mergeExtensions(copy.ppEnabledExtensionNames, copy.enabledExtensionCount, upDev, upDevN, av);
+        VRLOG("vk: device extensions %u -> %u for the upscaler", copy.enabledExtensionCount, uint32_t(devExts.size()));
+        copy.enabledExtensionCount = uint32_t(devExts.size());
+        copy.ppEnabledExtensionNames = devExts.data();
+    }
     uint32_t family = UINT32_MAX;
     for (uint32_t i = 0; i < ci->queueCreateInfoCount; ++i) {
         uint32_t f = ci->pQueueCreateInfos[i].queueFamilyIndex;
@@ -176,6 +223,11 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realDestroyImage = DFN(vkDestroyImage);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
     fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
+    {
+        wchar_t dir[MAX_PATH];
+        se4::payloadDirectory(dir, MAX_PATH);
+        up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
+    }
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
     else se4::applyVrFramePacing();
     return r;

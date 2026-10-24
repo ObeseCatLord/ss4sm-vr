@@ -8,13 +8,21 @@ namespace {
 CRITICAL_SECTION g_lock;
 HANDLE g_file = INVALID_HANDLE_VALUE;
 LARGE_INTEGER g_t0, g_freq;
+wchar_t g_dir[MAX_PATH];
 }
 
 void logOpen(const wchar_t* path) {
     InitializeCriticalSection(&g_lock);
+    wcsncpy(g_dir, path, MAX_PATH - 1);
+    if (wchar_t* slash = wcsrchr(g_dir, L'\\')) *slash = 0;
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_t0);
     g_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+}
+
+void payloadDirectory(wchar_t* out, unsigned size) {
+    wcsncpy(out, g_dir, size - 1);
+    out[size - 1] = 0;
 }
 
 void logf(const char* fmt, ...) {

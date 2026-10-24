@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(SS4SMVR_TESTS "Build portable host-side unit tests instead of Windows targets" OFF)
 set(OPENXR_SOURCE "" CACHE PATH "Local OpenXR-SDK checkout (pinned 75c53b6, OpenXR 1.1.53)")
 set(MINHOOK_SOURCE "" CACHE PATH "Local MinHook checkout (pinned c3fcafd, v1.3.4)")
+# Upscaler SDKs (headers only; the runtime DLLs nvngx_dlss.dll / amd_fidelityfx_vk.dll are installed by tools/install.py)
+set(DLSS_SDK "$ENV{HOME}/LargeGames/Development/deps-src/dlss-310.9.16" CACHE PATH "NVIDIA DLSS SDK (github.com/NVIDIA/DLSS, v310.9.16)")
+set(FFX_SDK "$ENV{HOME}/LargeGames/Development/deps-src/fidelityfx-sdk-1.1.4" CACHE PATH "AMD FidelityFX SDK v1.1.4 (FSR 3.1, Vulkan)")
 set(VULKAN_HEADERS_ROOT "/usr/include" CACHE PATH "Directory containing vulkan/ and vk_video/ headers")
 
 if(SS4SMVR_TESTS)
@@ -61,9 +64,10 @@ target_link_options(msimg32_proxy PRIVATE -static -static-libgcc -static-libstdc
 
 # Payload (Bin/x64/ss4smvr/ss4smvr.dll)
 add_library(ss4smvr SHARED src/se4/payload.cpp src/se4/log.cpp src/se4/build.cpp src/se4/cvars.cpp src/se4/procaddr.cpp src/se4/gamepad.cpp src/se4/focus.cpp src/se4/vr_device.cpp src/se4/player_vr.cpp src/se4/options.cpp src/se4/patch.cpp src/se4/crosshair.cpp src/se4/vehicles.cpp src/se4/body.cpp
-  src/vk/vk_layer.cpp src/vk/queue_lock.cpp src/vk/eye_images.cpp src/vk/foveation.cpp src/xr/runtime.cpp src/xr/input.cpp)
+  src/vk/vk_layer.cpp src/vk/queue_lock.cpp src/vk/eye_images.cpp src/vk/foveation.cpp src/xr/runtime.cpp src/xr/input.cpp
+  src/up/upscaler.cpp src/up/ngx_shim.cpp)
 set_target_properties(ss4smvr PROPERTIES PREFIX "")
-target_include_directories(ss4smvr PRIVATE src ${VK_STAGE})
+target_include_directories(ss4smvr PRIVATE src ${VK_STAGE} ${DLSS_SDK}/include ${FFX_SDK}/ffx-api/include)
 target_compile_definitions(ss4smvr PRIVATE VK_USE_PLATFORM_WIN32_KHR VK_NO_PROTOTYPES XR_USE_GRAPHICS_API_VULKAN WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(ss4smvr PRIVATE minhook openxr_loader)
 target_link_options(ss4smvr PRIVATE -static -static-libgcc -static-libstdc++)

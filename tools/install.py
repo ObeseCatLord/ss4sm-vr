@@ -19,6 +19,14 @@ FILES = {  # destination (relative to game dir) -> source (relative to build dir
     'Bin/x64/ss4smvr/ss4smvr.dll': 'ss4smvr.dll',
     'Bin/x64/ss4smvr/libopenxr_loader.dll': 'openxr/src/loader/libopenxr_loader.dll',
 }
+DEPS = pathlib.Path.home() / 'LargeGames/Development/deps-src'
+# Third-party runtime DLLs taken from the SDK checkouts (never committed to the repo):
+#   nvngx_dlss.dll (NVIDIA DLSS SDK v310.9.16, redistributable with applications) next to the game exe, where
+#   NGX looks for it; amd_fidelityfx_vk.dll (AMD FidelityFX SDK v1.1.4, MIT, FSR 3.1 Vulkan) next to the mod.
+SDK_FILES = {
+    'Bin/x64/nvngx_dlss.dll': DEPS / 'dlss-310.9.16/lib/Windows_x86_64/rel/nvngx_dlss.dll',
+    'Bin/x64/ss4smvr/amd_fidelityfx_vk.dll': DEPS / 'fidelityfx-sdk-1.1.4/PrebuiltSignedDLL/amd_fidelityfx_vk.dll',
+}
 EXES = ('Sam4.exe', 'Sam4_Unrestricted.exe', 'SamSM.exe', 'SamSM_Unrestricted.exe')
 
 
@@ -59,8 +67,9 @@ def load_receipt(game):
 def install(game, build):
     exes = check_game(game)
     receipt = load_receipt(game) or {'files': {}}
-    for dst, src in FILES.items():
-        s = build / src
+    sources = {dst: build / src for dst, src in FILES.items()}
+    sources.update({dst: src for dst, src in SDK_FILES.items() if src.exists()})
+    for dst, s in sources.items():
         if not s.exists():
             sys.exit(f'missing build output {s}; build with: cmake --build {build}')
         d = game / dst
@@ -68,10 +77,10 @@ def install(game, build):
             mine = receipt['files'].get(dst)
             if not mine or mine != sha256(d):
                 sys.exit(f'refusing: {d} exists and was not installed by this mod (or was modified since)')
-    for dst, src in FILES.items():
+    for dst, src in sources.items():
         d = game / dst
         d.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(build / src, d)
+        shutil.copy2(src, d)
         receipt['files'][dst] = sha256(d)
     receipt.update({'installed_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'executables': exes,
                     'source': str(ROOT)})
