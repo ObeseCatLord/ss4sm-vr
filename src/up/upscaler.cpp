@@ -53,13 +53,24 @@ NVSDK_NGX_PerfQuality_Value dlssQuality() {
 
 bool dlssInit(PFN_vkGetInstanceProcAddr gipa, const wchar_t* dir) {
     if (!ngx::load()) return false;
-    auto init = reinterpret_cast<ngx::InitExt2Fn>(ngx::sym("NVSDK_NGX_VULKAN_Init_Ext2"));
+    // Custom-engine project id (no NVIDIA-issued application id). Feature DLLs (nvngx_dlss.dll) are searched in
+    // the game's Bin/x64 (the application folder) and the mod folder.
+    auto init = reinterpret_cast<ngx::InitProjectIdExtFn>(ngx::sym("NVSDK_NGX_VULKAN_Init_ProjectID_Ext"));
     if (!init) {
-        VRLOG("dlss: NGX core lacks NVSDK_NGX_VULKAN_Init_Ext2");
+        VRLOG("dlss: NGX core lacks NVSDK_NGX_VULKAN_Init_ProjectID_Ext");
         return false;
     }
-    // Application id: custom engine integration; NGX logs go to the mod directory.
-    NVSDK_NGX_Result r = init(0x5353344dull /* "SS4M" */, dir, g_inst, g_pd, g_dev, gipa, g_gdpa, NVSDK_NGX_Version_API, nullptr);
+    static wchar_t exeDir[MAX_PATH];
+    GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
+    if (wchar_t* slash = wcsrchr(exeDir, L'\\')) *slash = 0;
+    static const wchar_t* paths[2];
+    paths[0] = exeDir;
+    paths[1] = dir;
+    NVSDK_NGX_FeatureCommonInfo info{};
+    info.PathListInfo.Path = paths;
+    info.PathListInfo.Length = 2;
+    NVSDK_NGX_Result r = init("6c1f2a3e-5b7d-4e8a-9c0b-5d3f4a2b1c00", NVSDK_NGX_ENGINE_TYPE_CUSTOM, "1.0", dir, g_inst, g_pd, g_dev,
+                              gipa, g_gdpa, NVSDK_NGX_Version_API, &info);
     if (NVSDK_NGX_FAILED(r)) {
         VRLOG("dlss: NGX init failed (0x%x)", unsigned(r));
         return false;
@@ -72,9 +83,14 @@ bool dlssInit(PFN_vkGetInstanceProcAddr gipa, const wchar_t* dir) {
     int available = 0;
     NVSDK_NGX_Parameter_GetI(g_dlss.params, NVSDK_NGX_Parameter_SuperSampling_Available, &available);
     if (!available) {
-        int needsUpdate = 0;
+        int needsUpdate = 0, initResult = 0;
+        unsigned int minMajor = 0, minMinor = 0;
         NVSDK_NGX_Parameter_GetI(g_dlss.params, NVSDK_NGX_Parameter_SuperSampling_NeedsUpdatedDriver, &needsUpdate);
-        VRLOG("dlss: super sampling not available%s", needsUpdate ? " (driver update needed)" : "");
+        NVSDK_NGX_Parameter_GetI(g_dlss.params, NVSDK_NGX_Parameter_SuperSampling_FeatureInitResult, &initResult);
+        NVSDK_NGX_Parameter_GetUI(g_dlss.params, NVSDK_NGX_Parameter_SuperSampling_MinDriverVersionMajor, &minMajor);
+        NVSDK_NGX_Parameter_GetUI(g_dlss.params, NVSDK_NGX_Parameter_SuperSampling_MinDriverVersionMinor, &minMinor);
+        VRLOG("dlss: super sampling not available (feature init result 0x%x, needs driver update %d, min driver %u.%u)",
+              unsigned(initResult), needsUpdate, minMajor, minMinor);
         return false;
     }
     g_dlss.ready = true;

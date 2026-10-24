@@ -13,4 +13,10 @@ for d in /proc/[0-9]*; do
   esac
   [ -n "$hit" ] && { echo "kill ${d#/proc/} $a0 $a1"; kill -9 "${d#/proc/}"; }
 done
+# Lab wineservers only (their environment carries the lab's private XDG_RUNTIME_DIR): a server that outlives
+# killed games can keep stale file handles (seen: the mod log could not be reopened).
+sleep 1
+for p in $(pgrep -x wineserver); do
+  tr '\0' '\n' < /proc/$p/environ 2>/dev/null | grep -qx 'XDG_RUNTIME_DIR=/tmp/ss4vr-xr' && { echo "kill lab wineserver $p"; kill "$p"; }
+done
 exit 0

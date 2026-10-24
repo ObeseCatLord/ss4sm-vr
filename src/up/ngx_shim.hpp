@@ -14,4 +14,10 @@ bool selfTest(NVSDK_NGX_Parameter* p);
 using InitExt2Fn = NVSDK_NGX_Result(NVSDK_CONV*)(unsigned long long appId, const wchar_t* dataPath, VkInstance, VkPhysicalDevice,
                                                  VkDevice, PFN_vkGetInstanceProcAddr, PFN_vkGetDeviceProcAddr,
                                                  NVSDK_NGX_Version, const NVSDK_NGX_Parameter*);
+// Core-level project-ID init with Vulkan loader entry points, as nvsdk_ngx_s.lib's
+// NVSDK_NGX_VULKAN_Init_with_ProjectID calls it (argument order read from that library's code).
+using InitProjectIdExtFn = NVSDK_NGX_Result(NVSDK_CONV*)(const char* projectId, NVSDK_NGX_EngineType engine, const char* engineVersion,
+                                                         const wchar_t* dataPath, VkInstance, VkPhysicalDevice, VkDevice,
+                                                         PFN_vkGetInstanceProcAddr, PFN_vkGetDeviceProcAddr, NVSDK_NGX_Version,
+                                                         const NVSDK_NGX_FeatureCommonInfo*);
 }  // namespace ngx

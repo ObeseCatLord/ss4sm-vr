@@ -17,7 +17,14 @@ void logOpen(const wchar_t* path) {
     if (wchar_t* slash = wcsrchr(g_dir, L'\\')) *slash = 0;
     QueryPerformanceFrequency(&g_freq);
     QueryPerformanceCounter(&g_t0);
-    g_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    const DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    g_file = CreateFileW(path, GENERIC_WRITE, share, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (g_file == INVALID_HANDLE_VALUE) {
+        // A stale handle (e.g. a killed previous run still known to wineserver) can block the usual name.
+        wchar_t alt[MAX_PATH];
+        _snwprintf(alt, MAX_PATH, L"%ls\\ss4smvr-%lu.log", g_dir, GetCurrentProcessId());
+        g_file = CreateFileW(alt, GENERIC_WRITE, share, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
 }
 
 void payloadDirectory(wchar_t* out, unsigned size) {

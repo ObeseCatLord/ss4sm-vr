@@ -159,3 +159,16 @@
   released-target bug fixed above. Retest `single_pass=1` in the lab; it may work now.
 - RE gates started: R11 (VR menus and loading-screen Continue), R12 (melee and gadgets), R13 (multiplayer
   mod channel/Lua bridge and upscaler insertion).
+- Upscalers (`src/up/`):
+  - DLSS initializes in the lab under Proton with Vulkan. It goes through the driver's NGX core using a
+    custom-engine project ID: `NVSDK_NGX_VULKAN_Init_ProjectID_Ext`, with the argument order read from
+    nvsdk_ngx_s.lib. A numeric app ID gave FeatureNotFound.
+  - The parameter vtable self-test passes.
+  - FSR 3.1 loads from `amd_fidelityfx_vk.dll`. It's the fallback, and the default on non-NVIDIA GPUs.
+  - Not yet wired into the eye render: that needs R13's insertion point, motion vectors and jitter in the
+    scene projection.
+  - Options: `upscaler` (0 off, 1 FSR, 2 DLSS, -1 auto), `upscale_quality`, `upscale_sharpness`.
+- Fixed-foveation lab run (`foveation=1`): scene passes get the attachment, the 84x95 rate image is created,
+  and the menu renders correctly.
+- Lab fix: a lingering lab wineserver kept the mod log locked. `killgame.sh` now stops lab wineservers, and the
+  log falls back to a per-process name.
