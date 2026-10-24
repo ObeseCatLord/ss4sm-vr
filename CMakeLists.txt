@@ -61,7 +61,7 @@ target_link_options(msimg32_proxy PRIVATE -static -static-libgcc -static-libstdc
 
 # Payload (Bin/x64/ss4smvr/ss4smvr.dll)
 add_library(ss4smvr SHARED src/se4/payload.cpp src/se4/log.cpp src/se4/build.cpp src/se4/cvars.cpp src/se4/procaddr.cpp src/se4/gamepad.cpp src/se4/focus.cpp src/se4/vr_device.cpp src/se4/player_vr.cpp src/se4/options.cpp src/se4/patch.cpp src/se4/crosshair.cpp src/se4/vehicles.cpp src/se4/body.cpp
-  src/vk/vk_layer.cpp src/vk/queue_lock.cpp src/vk/eye_images.cpp src/xr/runtime.cpp src/xr/input.cpp)
+  src/vk/vk_layer.cpp src/vk/queue_lock.cpp src/vk/eye_images.cpp src/vk/foveation.cpp src/xr/runtime.cpp src/xr/input.cpp)
 set_target_properties(ss4smvr PROPERTIES PREFIX "")
 target_include_directories(ss4smvr PRIVATE src ${VK_STAGE})
 target_compile_definitions(ss4smvr PRIVATE VK_USE_PLATFORM_WIN32_KHR VK_NO_PROTOTYPES XR_USE_GRAPHICS_API_VULKAN WIN32_LEAN_AND_MEAN NOMINMAX)

@@ -34,6 +34,8 @@ public:
     bool ensure();
     // Instance extensions that were enabled (e.g. XR_EXT_eye_gaze_interaction for eye-tracked foveation).
     bool hasExtension(const char* name) const;
+    const std::string& systemName() const { return systemName_; }
+    bool eyeGazeSupported() const { return eyeGaze_; }
     bool active() const { return system_ != XR_NULL_SYSTEM_ID; }
 
     // Called from the hooked vkCreateInstance / vkCreateDevice instead of the real functions.
@@ -59,6 +61,7 @@ public:
     void updateViews(XrTime t);
     const Views& views() const { return views_; }
     XrSpace playSpace() const { return stage_ ? stage_ : local_; }
+    XrSpace viewSpace() const { return view_; }
 
     XrInstance instance() const { return instance_; }
     XrSession session() const { return session_; }
@@ -73,6 +76,8 @@ private:
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
     bool running_ = false;
     std::vector<std::string> enabled_;
+    std::string systemName_;
+    bool eyeGaze_ = false;
     std::vector<int64_t> formats_;
     PFN_xrGetVulkanGraphicsRequirements2KHR getRequirements_ = nullptr;
     PFN_xrCreateVulkanInstanceKHR createInstance_ = nullptr;

@@ -37,11 +37,19 @@ public:
     bool create(XrInstance instance, XrSession session);
     // Sync once per frame (after xrWaitFrame) and locate poses at `time` in `space`.
     void sync(XrSession session, XrSpace space, XrTime time);
+    // Locate the gaze in `viewSpace` (call after sync, with the same time).
+    void locateGaze(XrSpace viewSpace, XrTime time);
     const HandState& hand(int h) const { return hands_[h]; }
     // amplitude 0..1, duration in seconds, frequency in Hz (0 = runtime default)
     void vibrate(XrSession session, int h, float amplitude, float seconds, float frequency = 0);
     const char* profileName(XrInstance instance, int h) const;
     bool ready() const { return set_ != XR_NULL_HANDLE; }
+    // Eye gaze (XR_EXT_eye_gaze_interaction), in VIEW space: valid only when the runtime tracks the eyes.
+    bool gaze(XrPosef& inView) const {
+        if (!gazeValid_) return false;
+        inView = gaze_;
+        return true;
+    }
 
 private:
     XrActionSet set_ = XR_NULL_HANDLE;
@@ -49,6 +57,10 @@ private:
     XrAction aim_{}, grip_{}, haptic_{}, trigger_{}, squeeze_{}, stick_{}, primary_{}, secondary_{}, stickClick_{}, menu_{},
         triggerTouch_{}, stickTouch_{}, trackpadForce_{}, trackpadClick_{};
     XrSpace aimSpace_[2]{}, gripSpace_[2]{};
+    XrAction gazeAction_{};
+    XrSpace gazeSpace_{};
+    XrPosef gaze_{};
+    bool gazeValid_ = false;
     HandState hands_[2];
     XrInstance instance_ = XR_NULL_HANDLE;
 };

@@ -81,8 +81,12 @@ bool Runtime::initialize() {
     XrSystemId sys = XR_NULL_SYSTEM_ID;
     if (!check(xrGetSystem(instance_, &sgi, &sys), "xrGetSystem")) return false;
     XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};
+    XrSystemEyeGazeInteractionPropertiesEXT gaze{XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT};
+    if (hasExtension(XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME)) sp.next = &gaze;
     xrGetSystemProperties(instance_, sys, &sp);
-    VRLOG("xr: system '%s'", sp.systemName);
+    systemName_ = sp.systemName;
+    eyeGaze_ = gaze.supportsEyeGazeInteraction == XR_TRUE;
+    VRLOG("xr: system '%s' (eye gaze %s)", sp.systemName, eyeGaze_ ? "supported" : "no");
 
     getRequirements_ = fn<PFN_xrGetVulkanGraphicsRequirements2KHR>(instance_, "xrGetVulkanGraphicsRequirements2KHR");
     createInstance_ = fn<PFN_xrCreateVulkanInstanceKHR>(instance_, "xrCreateVulkanInstanceKHR");

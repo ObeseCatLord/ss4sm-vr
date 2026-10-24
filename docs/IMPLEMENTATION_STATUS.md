@@ -123,3 +123,34 @@
   - Legs, hips, spine and head stay native.
   - Still to do: torso and head from the HMD, a first-person body (R9 s5B), desktop peers (needs `mp_guards`
     plus `body_ik`), and keeping the handler after `CHandsAdjuster` when that adjuster is re-created.
+
+## Lab session 2026-10-23 (simulated Monado) and follow-ups
+- First stereo in the lab: the SS4 start screen, menu and loading screens render in both eyes through the
+  engine's own VR view at the simulated 60 Hz.
+- Fixes found by running:
+  - Single pass crashed: the engine's double-width target came back NULL. Two-pass is now the default, and
+    single pass sits behind the `single_pass` option.
+  - The engine released the eye targets after about 4 s. They are now re-created every call, as the engine
+    does for its own.
+  - Lab keyboard input needs a click first (`tools/lab/xclick.py`).
+- Open issues from the lab:
+  - The loading screen's Continue doesn't respond in VR, so the player never spawned and the local vrd was
+    never created.
+  - The game never polled XInput because the pad was missing at its first enumeration. Fixed in code by
+    starting the XR runtime at XInput resolution; retest.
+  - Menus are head-locked.
+- Lab safety:
+  - A lab Monado left running took the user's IPC socket. The lab now uses a private `XDG_RUNTIME_DIR`, and
+    `tools/lab/stop_lab.sh` ends every session.
+  - Level starts write quicksaves to the user's Steam cloud folder (14 lab saves, numbers 401–414; the 2021
+    saves are intact). Both games' saves are backed up in `lab/save-backups/`.
+- Foveated rendering (`src/vk/foveation.cpp`), untested:
+  - Mechanism: a VK_KHR_fragment_shading_rate attachment on the scene passes (render passes with depth and
+    colour). Eye-size framebuffers get the pattern; the engine's own VRS combines with it (the coarser rate
+    wins).
+  - Default: dynamic, eye-tracked (XR_EXT_eye_gaze_interaction), on a Steam Frame with gaze; off elsewhere.
+  - Options: `foveation=0|1|2` (off, fixed, dynamic) and `foveation_inner/outer` (percent of the image height).
+  - Quad views were evaluated in `docs/research/DLSS_FOVEATION.md` and deferred (they would need a second scene
+    draw).
+- Research: neither game has DLSS/FSR/XeSS or TAA, and no community upscaler mod exists. Upscaler plan: per-eye
+  FSR 3.1 and DLSS/DLAA using the engine's dormant motion-vector shader path, with added jitter.

@@ -1,5 +1,6 @@
 #include "xr/input.hpp"
 #include "se4/log.hpp"
+#include "xr/runtime.hpp"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -119,6 +120,23 @@ bool Input::create(XrInstance inst, XrSession session) {
         if (XR_SUCCEEDED(r)) ++accepted;
         else VRLOG("input: profile %s rejected (%d)", p.name, int(r));
     }
+    // Eye gaze: its own profile and top-level path, no subaction paths.
+    if (runtime().eyeGazeSupported()) {
+        XrActionCreateInfo gc{XR_TYPE_ACTION_CREATE_INFO};
+        strcpy(gc.actionName, "eye_gaze");
+        strcpy(gc.localizedActionName, "Eye gaze");
+        gc.actionType = XR_ACTION_TYPE_POSE_INPUT;
+        if (XR_SUCCEEDED(xrCreateAction(set_, &gc, &gazeAction_))) {
+            XrActionSuggestedBinding b{gazeAction_, toPath(inst, "/user/eyes_ext/input/gaze_ext/pose")};
+            XrInteractionProfileSuggestedBinding s{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+            s.interactionProfile = toPath(inst, "/interaction_profiles/ext/eye_gaze_interaction");
+            s.countSuggestedBindings = 1;
+            s.suggestedBindings = &b;
+            XrResult r = xrSuggestInteractionProfileBindings(inst, &s);
+            VRLOG("input: eye gaze binding %s (%d)", XR_SUCCEEDED(r) ? "accepted" : "rejected", int(r));
+            if (XR_FAILED(r)) gazeAction_ = XR_NULL_HANDLE;
+        }
+    }
     XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     at.countActionSets = 1;
     at.actionSets = &set_;
@@ -134,6 +152,12 @@ bool Input::create(XrInstance inst, XrSession session) {
         xrCreateActionSpace(session, &si, &aimSpace_[h]);
         si.action = grip_;
         xrCreateActionSpace(session, &si, &gripSpace_[h]);
+    }
+    if (gazeAction_) {
+        XrActionSpaceCreateInfo si{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        si.action = gazeAction_;
+        si.poseInActionSpace.orientation.w = 1;
+        xrCreateActionSpace(session, &si, &gazeSpace_);
     }
     VRLOG("input: action set attached, %d controller profiles suggested", accepted);
     return true;
@@ -224,6 +248,20 @@ void Input::vibrate(XrSession session, int h, float amplitude, float seconds, fl
     hi.action = haptic_;
     hi.subactionPath = handPath_[h];
     xrApplyHapticFeedback(session, &hi, reinterpret_cast<XrHapticBaseHeader*>(&v));
+}
+
+void Input::locateGaze(XrSpace viewSpace, XrTime time) {
+    gazeValid_ = false;
+    if (!gazeSpace_) return;
+    XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+    XrEyeGazeSampleTimeEXT st{XR_TYPE_EYE_GAZE_SAMPLE_TIME_EXT};
+    loc.next = &st;
+    if (XR_FAILED(xrLocateSpace(gazeSpace_, viewSpace, time, &loc))) return;
+    if (!(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) ||
+        !(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT))
+        return;
+    gaze_ = loc.pose;
+    gazeValid_ = true;
 }
 
 const char* Input::profileName(XrInstance inst, int h) const {

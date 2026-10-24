@@ -28,6 +28,9 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    real bars 1:1 and steer the ATV in the same direction. Log: `vehicles: grabbed the steering wheel`.
 7d. Body IK (`body_ik=1` in options.txt): in a mirror, third-person view (`plcmdThirdPersonView`) or another
    machine, the player body's arms should reach the hands and weapons. Log: `body: IK handler ... registered`.
+7e. Foveation: off by default except on a Steam Frame. Try `foveation=1` (fixed) in options.txt. The centre should
+   stay sharp and the periphery should be slightly blurrier, with a higher frame rate in dense scenes. The log
+   shows `fov: active` and `fov: scene render pass ...`.
 8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line):
    `native_vr_action=1` sends head and hands with each player action (needed for multiplayer). Turning
    then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;

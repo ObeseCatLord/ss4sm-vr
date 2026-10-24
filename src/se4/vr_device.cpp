@@ -10,6 +10,7 @@
 #include "se4/player_vr.hpp"
 #include "se4/options.hpp"
 #include "vk/eye_images.hpp"
+#include "vk/foveation.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
@@ -148,6 +149,7 @@ void* sEyeRT(Object*, void* gfx, int eye) {
     int id = create(t.holder, gfx, w, h, 2, 0, 0, 0);
     eyes::endCapture(resized);
     if (resized) {
+        fov::setEyeSize(uint32_t(w), uint32_t(h));
         t.w = w, t.h = h;
         VRLOG("vrdev: eye %d render target %dx%d (engine id %d)", eye, w, h, id);
     }

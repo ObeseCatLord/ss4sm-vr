@@ -17,6 +17,7 @@
 #include "se4/focus.hpp"
 #include "se4/vr_device.hpp"
 #include "vk/eye_images.hpp"
+#include "vk/foveation.hpp"
 #include "core/math.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -143,6 +144,10 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
         mv.pNext = const_cast<void*>(ci->pNext);
         copy.pNext = &mv;
     }
+    // Foveated rendering: decide from the headset, enable attachment shading rates on the game's chain.
+    fov::decide();
+    alignas(16) static unsigned char fovStorage[64];
+    fov::patchDeviceCreate(g.instance, realGIPA, pd, copy, fovStorage, sizeof fovStorage);
     uint32_t family = UINT32_MAX;
     for (uint32_t i = 0; i < ci->queueCreateInfoCount; ++i) {
         uint32_t f = ci->pQueueCreateInfos[i].queueFamilyIndex;
@@ -170,6 +175,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realCreateImage = DFN(vkCreateImage);
     realDestroyImage = DFN(vkDestroyImage);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
+    fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
     else se4::applyVrFramePacing();
     return r;
@@ -407,6 +413,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         DFN(vkBeginCommandBuffer)(cb, &bi);
+        fov::record(cb);
         if (haveImage) {
             VkImage dst = m.sc.images[idx];
             imageBarrier(cb, src, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, VK_ACCESS_TRANSFER_READ_BIT,
@@ -553,6 +560,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGDPA(VkDevice d, const char* name);
 
 PFN_vkVoidFunction deviceOverride(const char* name) {
+    if (auto f = fov::override(name)) return f;
     if (!strcmp(name, "vkQueueSubmit")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueueSubmit);
     if (!strcmp(name, "vkQueueSubmit2") || !strcmp(name, "vkQueueSubmit2KHR")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueueSubmit2);
     if (!strcmp(name, "vkQueuePresentKHR")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueuePresent);
