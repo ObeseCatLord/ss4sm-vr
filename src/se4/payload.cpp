@@ -4,6 +4,7 @@
 // one MinHook hook. Never create threads here: on Wine that stalls game startup (bisected 2026-10-23).
 #include "se4/build.hpp"
 #include "se4/log.hpp"
+#include "se4/procaddr.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -63,7 +64,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         VRLOG("MinHook init failed");
         return;
     }
-    if (!(skip & 2)) vk_layer::install();
+    if (!(skip & 2)) se4::installProcAddressHook();
 }
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {

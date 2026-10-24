@@ -8,10 +8,12 @@
 #include "vk/vk_layer.hpp"
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
+#include "se4/procaddr.hpp"
 #include "se4/log.hpp"
 #include "vk/queue_lock.hpp"
 #include "xr/runtime.hpp"
 #include "xr/input.hpp"
+#include "se4/gamepad.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <intrin.h>
@@ -73,12 +75,6 @@ struct Mirror {
 
 #define DFN(name) reinterpret_cast<PFN_##name>(realGDPA(g.device, #name))
 
-bool callerInGame(void* ret) {
-    const auto& b = se4::build();
-    if (!b.table) return false;
-    auto a = reinterpret_cast<uintptr_t>(ret);
-    return a >= b.base && a < b.base + b.table->sizeOfImage;
-}
 
 // Re-entrancy guard: the runtime calls vkCreateInstance/vkCreateDevice itself while we are inside
 // xrCreateVulkan*KHR; those inner calls must reach the real functions.
@@ -87,7 +83,7 @@ DWORD g_redirectThread;
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci, const VkAllocationCallbacks* a, VkInstance* out) {
     void* ret = __builtin_return_address(0);
     if (!realCreateInstance) realCreateInstance = reinterpret_cast<PFN_vkCreateInstance>(realGIPA(nullptr, "vkCreateInstance"));
-    if (g_redirectThread == GetCurrentThreadId() || g.instance || !callerInGame(ret)) return realCreateInstance(ci, a, out);
+    if (g_redirectThread == GetCurrentThreadId() || g.instance || !se4::callerInGame(ret)) return realCreateInstance(ci, a, out);
     onGameVulkan();
     VRLOG("vk: game vkCreateInstance (%u extensions)", ci->enabledExtensionCount);
     auto& rt = xr::runtime();
@@ -307,6 +303,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
 
     TRACE("mirror: frame begun (shouldRender %d), acquire", fs.shouldRender);
     xr::input().sync(rt.session(), rt.localSpace(), fs.predictedDisplayTime);
+    gamepad::publishFromXr();
     {
         static XrTime lastLog;
         if (fs.predictedDisplayTime - lastLog > 2000000000) {
@@ -446,16 +443,13 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGIPA(VkInstance inst, const char* n
     return realGIPA(inst, name);
 }
 
-// The engine loads vulkan-1.dll dynamically and resolves entry points with GetProcAddress. Hooking
-// GetProcAddress (installed once at attach) lets us hand back wrappers without patching vulkan-1.dll or
-// doing anything under the loader lock. Calls from outside the game module are untouched.
-using GetProcAddressFn = FARPROC(WINAPI*)(HMODULE, LPCSTR);
-GetProcAddressFn realGetProcAddress;
+}  // namespace
 
-FARPROC WINAPI hookGetProcAddress(HMODULE mod, LPCSTR name) {
-    FARPROC real = realGetProcAddress(mod, name);
-    if (!real || reinterpret_cast<uintptr_t>(name) < 0x10000 || !callerInGame(__builtin_return_address(0))) return real;
-    if (name[0] != 'v' || name[1] != 'k' || mod != GetModuleHandleW(L"vulkan-1.dll")) return real;
+// The engine loads vulkan-1.dll dynamically and resolves entry points with GetProcAddress (game-module
+// callers only, see se4/procaddr). Wrappers are handed back without patching vulkan-1.dll.
+FARPROC interceptProc(HMODULE mod, const char* name, FARPROC real) {
+    if (mod != GetModuleHandleW(L"vulkan-1.dll")) return real;
+    vkq::initLock();
     if (!strcmp(name, "vkGetInstanceProcAddr")) {
         realGIPA = reinterpret_cast<PFN_vkGetInstanceProcAddr>(real);
         return reinterpret_cast<FARPROC>(hookGIPA);
@@ -474,19 +468,6 @@ FARPROC WINAPI hookGetProcAddress(HMODULE mod, LPCSTR name) {
     }
     VRLOG("vk: game resolved %s by export (not intercepted)", name);
     return real;
-}
-}  // namespace
-
-bool install() {
-    vkq::initLock();
-    void* target = reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetProcAddress"));
-    if (!target || MH_CreateHook(target, reinterpret_cast<void*>(hookGetProcAddress), reinterpret_cast<void**>(&realGetProcAddress)) != MH_OK ||
-        MH_EnableHook(target) != MH_OK) {
-        VRLOG("vk: GetProcAddress hook FAILED");
-        return false;
-    }
-    VRLOG("vk: GetProcAddress hook installed");
-    return true;
 }
 
 }  // namespace vk_layer

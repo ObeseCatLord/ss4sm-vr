@@ -1,0 +1,120 @@
+#include "se4/gamepad.hpp"
+#include "se4/log.hpp"
+#include "se4/procaddr.hpp"
+#include "xr/input.hpp"
+#include "xr/runtime.hpp"
+#include <xinput.h>
+#include <cmath>
+#include <cstring>
+
+namespace gamepad {
+namespace {
+using GetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
+using SetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_VIBRATION*);
+using GetCapsFn = DWORD(WINAPI*)(DWORD, DWORD, XINPUT_CAPABILITIES*);
+GetStateFn realGetState;
+SetStateFn realSetState;
+GetCapsFn realGetCaps;
+
+SRWLOCK g_lock = SRWLOCK_INIT;
+XINPUT_GAMEPAD g_pad{};
+DWORD g_packet;
+// Connected (neutral) from the start: the engine enumerates gamepads early, before the XR session exists.
+bool g_active = true;
+LONG g_polled;
+
+SHORT axis(float v) {
+    v = v < -1 ? -1 : v > 1 ? 1 : v;
+    return SHORT(std::lround(v * 32767.0f));
+}
+BYTE trig(float v) { return BYTE(std::lround((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0f)); }
+
+DWORD WINAPI hookGetState(DWORD user, XINPUT_STATE* st) {
+    if (user != 0 || !g_active) return realGetState ? realGetState(user, st) : ERROR_DEVICE_NOT_CONNECTED;
+    if (!InterlockedExchange(&g_polled, 1)) VRLOG("gamepad: first game poll of user 0");
+    AcquireSRWLockShared(&g_lock);
+    st->dwPacketNumber = g_packet;
+    st->Gamepad = g_pad;
+    ReleaseSRWLockShared(&g_lock);
+    return ERROR_SUCCESS;
+}
+
+DWORD WINAPI hookGetCaps(DWORD user, DWORD flags, XINPUT_CAPABILITIES* c) {
+    if (user != 0 || !g_active) return realGetCaps ? realGetCaps(user, flags, c) : ERROR_DEVICE_NOT_CONNECTED;
+    memset(c, 0, sizeof *c);
+    c->Type = XINPUT_DEVTYPE_GAMEPAD;
+    c->SubType = XINPUT_DEVSUBTYPE_GAMEPAD;
+    c->Gamepad.wButtons = 0xF3FF;
+    c->Gamepad.bLeftTrigger = c->Gamepad.bRightTrigger = 0xFF;
+    c->Gamepad.sThumbLX = c->Gamepad.sThumbLY = c->Gamepad.sThumbRX = c->Gamepad.sThumbRY = SHORT(0xFFC0);
+    c->Vibration.wLeftMotorSpeed = c->Vibration.wRightMotorSpeed = 0xFFFF;
+    return ERROR_SUCCESS;
+}
+
+DWORD WINAPI hookSetState(DWORD user, XINPUT_VIBRATION* v) {
+    if (user != 0 || !g_active) return realSetState ? realSetState(user, v) : ERROR_DEVICE_NOT_CONNECTED;
+    auto& rt = xr::runtime();
+    if (rt.running()) {
+        // Native rumble: left (low-frequency) motor -> left hand, right motor -> right hand.
+        float l = v->wLeftMotorSpeed / 65535.0f, r = v->wRightMotorSpeed / 65535.0f;
+        if (l > 0.01f) xr::input().vibrate(rt.session(), 0, l, 0.05f);
+        if (r > 0.01f) xr::input().vibrate(rt.session(), 1, r, 0.05f);
+    }
+    return ERROR_SUCCESS;
+}
+}  // namespace
+
+FARPROC interceptProc(HMODULE, const char* name, FARPROC real) {
+    VRLOG("gamepad: game resolves %s", name);
+    if (!strcmp(name, "XInputGetState") || !strcmp(name, "XInputGetStateEx")) {
+        realGetState = reinterpret_cast<GetStateFn>(real);
+        return reinterpret_cast<FARPROC>(hookGetState);
+    }
+    if (!strcmp(name, "XInputSetState")) {
+        realSetState = reinterpret_cast<SetStateFn>(real);
+        return reinterpret_cast<FARPROC>(hookSetState);
+    }
+    if (!strcmp(name, "XInputGetCapabilities")) {
+        realGetCaps = reinterpret_cast<GetCapsFn>(real);
+        return reinterpret_cast<FARPROC>(hookGetCaps);
+    }
+    return real;
+}
+
+bool active() { return g_active; }
+
+void publishFromXr() {
+    const auto& L = xr::input().hand(0);
+    const auto& R = xr::input().hand(1);
+    XINPUT_GAMEPAD p{};
+    // Baseline layout over the game's default gamepad bindings (DefaultGamepadBindings.lua):
+    // LS move, RS-x turn, RT plcmdFire, LT plcmdAltFire (left weapon when dual wielding),
+    // A plcmdY+ (jump), B plcmdY- (crouch), X plcmdReload, Y plcmdGadgetQuickUse, LB weapon wheel,
+    // RB toggle dual wielding, LS click sprint, RS click use, Start menu.
+    p.sThumbLX = axis(L.stick.x);
+    p.sThumbLY = axis(L.stick.y);
+    p.sThumbRX = axis(R.stick.x);
+    p.bRightTrigger = trig(R.trigger);
+    p.bLeftTrigger = trig(L.trigger);
+    WORD b = 0;
+    if (R.buttons & xr::BtnPrimary) b |= XINPUT_GAMEPAD_A;
+    if (R.buttons & xr::BtnSecondary) b |= XINPUT_GAMEPAD_B;
+    if (L.buttons & xr::BtnPrimary) b |= XINPUT_GAMEPAD_X;
+    if (L.buttons & xr::BtnSecondary) b |= XINPUT_GAMEPAD_START;
+    if (L.buttons & xr::BtnStickClick) b |= XINPUT_GAMEPAD_LEFT_THUMB;
+    if (R.buttons & xr::BtnStickClick) b |= XINPUT_GAMEPAD_RIGHT_THUMB;
+    if (L.buttons & xr::BtnTrackpadPress) b |= XINPUT_GAMEPAD_LEFT_SHOULDER;
+    if (R.buttons & xr::BtnTrackpadPress) b |= XINPUT_GAMEPAD_RIGHT_SHOULDER;
+    if (L.buttons & xr::BtnMenu || R.buttons & xr::BtnMenu) b |= XINPUT_GAMEPAD_START;
+    p.wButtons = b;
+    AcquireSRWLockExclusive(&g_lock);
+    if (memcmp(&p, &g_pad, sizeof p)) {
+        g_pad = p;
+        ++g_packet;
+    }
+    static bool fed;
+    if (!fed) VRLOG("gamepad: fed from XR controllers");
+    fed = true;
+    ReleaseSRWLockExclusive(&g_lock);
+}
+}  // namespace gamepad
