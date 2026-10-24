@@ -104,15 +104,16 @@ void hookedStep(uint8_t* mode) {
     h.weapon = weapon;
     h.player = player;
     h.role = at<int32_t>(weapon, b.off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) ? 0 : 1;
-    h.zoomFactor = params ? at<float>(params, 0xd8) : 1.0f;  // swmp_fZoomFactor (R14 s2.1)
-    if (!(h.zoomFactor > 1.0f && h.zoomFactor < 100.0f)) h.zoomFactor = 4.0f;
+    const float raw = params ? at<float>(params, 0xd8) : 0.0f;  // swmp_fZoomFactor (R14 s2.1)
+    h.zoomFactor = raw > 1.0f && raw < 100.0f ? raw : 4.0f;
     h.zoomed = at<uint8_t>(mode, 0x28) != 0;  // swm_szhZoomHandler.szh_bZoomActive
     h.tick = GetTickCount64();
     AcquireSRWLockExclusive(&g_lock);
     static bool announced;
     if (!announced || g_held.weapon != weapon) {
         announced = true;
-        VRLOG("scope: scoped weapon %p in the %s hand (zoom factor %.2f)", weapon, h.role ? "left" : "right", h.zoomFactor);
+        VRLOG("scope: scoped weapon %p in the %s hand (zoom factor %.2f, params value %g)", weapon, h.role ? "left" : "right", h.zoomFactor,
+              double(raw));
     }
     g_held = h;
     ReleaseSRWLockExclusive(&g_lock);
