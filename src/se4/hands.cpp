@@ -4,6 +4,7 @@
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/arms.hpp"
 #include "xr/input.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -23,7 +24,9 @@ StepFn realStep;
 HandleFn handleEntity;
 BarrelFn barrelPlacement;
 CtxFn barrelCtx;
-void* g_gripIdent;      // LeftHandGripEffector (R15 s4.2)
+void**(__cdecl* g_identCtor)(void**, const char*);
+void* g_gripIdent;
+bool g_identReady;      // LeftHandGripEffector (R15 s4.2)
 uint32_t g_fireBits;    // player fire-button byte (Sam4 0x2338, SM 0x2340), read from the weapon step's own code
 
 // Weapon params / flags (R15 s4.1; same in SM).
@@ -44,6 +47,52 @@ struct OffHand {
 };
 OffHand g_off[2];  // by XR hand
 volatile LONG g_taken[2];
+
+// ---- lab probe (option hands_probe): the first-person arms skeleton and the held weapon's grip parameters ----
+const char* const kArmsBones[] = {"Root", "ViewMover", "L_UpperArm", "R_UpperArm", "L_LowerArm", "R_LowerArm", "L_Hand", "R_Hand",
+                                  "L_LowerArm_Twist", "R_LowerArm_Twist", "L_Thumb_01", "L_Thumb_02", "L_Thumb_03", "L_Index_01",
+                                  "L_Index_02", "L_Index_03", "L_Middle_01", "L_Middle_02", "L_Middle_03", "L_Ring_01", "L_Ring_02",
+                                  "L_Ring_03", "L_Pinky_01", "L_Pinky_02", "L_Pinky_03", "L_Weapon", "R_Thumb_01", "R_Thumb_02",
+                                  "R_Thumb_03", "R_Index_01", "R_Index_02", "R_Index_03", "R_Middle_01", "R_Middle_02", "R_Middle_03",
+                                  "R_Ring_01", "R_Ring_02", "R_Ring_03", "R_Pinky_01", "R_Pinky_02", "R_Pinky_03", "R_Weapon"};
+constexpr int kArmsBoneCount = int(sizeof(kArmsBones) / sizeof(kArmsBones[0]));
+void* g_armsIdent[kArmsBoneCount];
+bool g_probe;
+
+const char* armsName(void* ident) {
+    for (int i = 0; i < kArmsBoneCount; ++i)
+        if (g_armsIdent[i] == ident) return kArmsBones[i];
+    return "?";
+}
+
+// Skeleton LOD 0 of a model instance (R9 s2, as src/se4/body.cpp reads it).
+uint8_t* modelLod0(uint8_t* mi) {
+    uint8_t* cfg = mi ? at<uint8_t*>(mi, 0x18) : nullptr;
+    uint8_t* skel = cfg ? at<uint8_t*>(cfg, 0x68) : nullptr;
+    return skel && at<int32_t>(skel, 0x60) > 0 ? at<uint8_t*>(skel, 0x68) : nullptr;
+}
+
+void probeWeapon(uint8_t* weapon, uint8_t* params) {
+    VRLOG("hands probe: weapon %p vptr %p two-handed %d orientation %d snap %.3f single-arm anims %d", weapon, at<void*>(weapon, 0),
+          at<int32_t>(params, kTwoHanded), at<int32_t>(params, 0x1bc), at<float>(params, kSnapDistance), at<int32_t>(params, 0x1c4));
+    static bool dumped;
+    uint8_t* lod = modelLod0(at<uint8_t*>(weapon, 0x90));  // en_pmiWeapon
+    if (dumped || !lod) return;
+    dumped = true;
+    const int n = at<int32_t>(lod, 0x20);
+    auto* map = at<uint8_t*>(lod, 0x28);
+    VRLOG("hands probe: first-person skeleton, %d bones", n);
+    for (int m = 0; m < n && m < 64; ++m) {
+        void* ident = at<void*>(map, size_t(m) * 0x10);
+        const int idx = at<int32_t>(map, size_t(m) * 0x10 + 8);
+        if (idx < 0) continue;
+        uint8_t* bone = at<uint8_t*>(lod, 0x10) + size_t(idx) * 0xf0;
+        const float* q = &at<float>(bone, 0x48);
+        const float* p = &at<float>(bone, 0x58);
+        VRLOG("hands probe:   %-16s parent %-16s rest q %.3f %.3f %.3f %.3f p %.3f %.3f %.3f", armsName(ident), armsName(at<void*>(bone, 8)),
+              q[0], q[1], q[2], q[3], p[0], p[1], p[2]);
+    }
+}
 
 // The byte the grip test reads: the `test byte ptr [reg+disp32], reg8` of the step (R15 s4.2, both builds).
 uint32_t findFireBits(const uint8_t* fn) {
@@ -71,10 +120,23 @@ uint8_t* localOwner(uint8_t* weapon) {
 }
 
 void hookedStep(uint8_t* weapon, void* arg) {
+    if (!g_identReady) {
+        g_identReady = true;
+        // IDENTs are interned on the simulation thread, like the engine's own callers (not at attach time).
+        g_identCtor(&g_gripIdent, "LeftHandGripEffector");
+        if (g_probe)
+            for (int i = 0; i < kArmsBoneCount; ++i) g_identCtor(&g_armsIdent[i], kArmsBones[i]);
+    }
     uint8_t* player = weapon ? localOwner(weapon) : nullptr;
     uint8_t* params = player ? at<uint8_t*>(weapon, kParams) : nullptr;
+    static uint8_t* lastProbed;
+    if (g_probe && params && weapon != lastProbed) {
+        lastProbed = weapon;
+        probeWeapon(weapon, params);
+    }
     if (!params || !at<int32_t>(params, kTwoHanded) || !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire)) {
         realStep(weapon, arg);
+        if (params) arms::onWeaponStep(weapon, at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0, false);
         return;
     }
     const auto& b = se4::build();
@@ -111,6 +173,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
     if (gripping != o.gripping) VRLOG("hands: %s hand %s the two-handed weapon %p", offXr ? "right" : "left", gripping ? "grips" : "releases", weapon);
     o.gripping = gripping;
     InterlockedExchange(&g_taken[offXr], (o.inReach || gripping) ? 1 : 0);
+    arms::onWeaponStep(weapon, right, gripping);
 }
 }  // namespace
 
@@ -133,7 +196,8 @@ bool install() {
         VRLOG("hands: fire-button field not found in the weapon step - not installed");
         return false;
     }
-    identCtor(&g_gripIdent, "LeftHandGripEffector");
+    g_identCtor = identCtor;
+    g_probe = se4::options::get("hands_probe", 0) != 0;
     if (MH_CreateHook(step, reinterpret_cast<void*>(hookedStep), reinterpret_cast<void**>(&realStep)) != MH_OK || MH_EnableHook(step) != MH_OK) {
         VRLOG("hands: weapon step hook FAILED");
         return false;

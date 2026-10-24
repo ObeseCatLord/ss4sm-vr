@@ -41,6 +41,8 @@ CtxFn barrelCtx;
 FovFn fovBase;
 HeadWorldFn headWorld;
 void* g_emptyIdent;  // the engine's empty CName (= default shooting attachment)
+void**(__cdecl* g_identCtor)(void**, const char*);
+volatile bool g_identReady;
 
 int g_mode = 1;  // option scope
 int g_res = 768;
@@ -89,6 +91,10 @@ uint8_t* localOwner(uint8_t* weapon) {
 
 void hookedStep(uint8_t* mode) {
     realStep(mode);
+    if (!g_identReady) {
+        g_identCtor(&g_emptyIdent, "");  // interned on the simulation thread
+        g_identReady = true;
+    }
     uint8_t* weapon = at<uint8_t*>(mode, 8);
     uint8_t* player = weapon ? localOwner(weapon) : nullptr;
     if (!player) return;
@@ -131,7 +137,7 @@ void beginFrame() {
     h = g_held;
     ReleaseSRWLockShared(&g_lock);
     void* vrd = player_vr::localVrd();
-    if (!h.weapon || !vrd || GetTickCount64() - h.tick > 250) {  // not stepped recently: holstered or dropped
+    if (!h.weapon || !vrd || !g_identReady || GetTickCount64() - h.tick > 250) {  // not stepped recently: holstered or dropped
         g_shared.live = false;
         return;
     }
@@ -272,7 +278,7 @@ bool install() {
         VRLOG("scope: build lacks scope symbols - not installed");
         return false;
     }
-    identCtor(&g_emptyIdent, "");
+    g_identCtor = identCtor;
     if (MH_CreateHook(step, reinterpret_cast<void*>(hookedStep), reinterpret_cast<void**>(&realStep)) != MH_OK || MH_EnableHook(step) != MH_OK) {
         VRLOG("scope: hook FAILED");
         realStep = nullptr;

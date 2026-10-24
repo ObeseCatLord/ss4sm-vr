@@ -262,7 +262,11 @@ EyeHistory g_hist[2];
 uint32_t g_frame;
 int64_t g_frameTime;
 float g_jx, g_jy;
-float g_jitterSign[2] = {1, 1};  // lab: convention check of the jitter reported to the upscaler
+// Lab switches: the sign of the jitter reported to the upscaler (upscale_jitter_x/y), rendering without jitter
+// (upscale_jitter=0), and jitter without the upscaler (upscale_evaluate=0).
+float g_jitterSign[2] = {1, 1};
+bool g_jitterOn = true;
+bool g_evaluateOn = true;
 LARGE_INTEGER g_lastEval[2];
 
 float worldScale() {
@@ -318,6 +322,29 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
         if (moved > 1.0f || turned > 0.6f) reset = true;  // teleport / respawn / camera cut
     }
     if (reset) c2p = {};
+    {
+        // Lab diagnostics: camera motion per frame and history resets, once a second per eye.
+        static float maxMove[2], maxTurn[2];
+        static int resets[2], evals[2];
+        static LARGE_INTEGER last[2];
+        const float moved = std::sqrt(core::dot(c2p.p, c2p.p)) * worldScale() * 1000.0f;  // mm
+        const float turned = 2 * std::acos(std::min(1.0f, std::fabs(c2p.q.w))) * 180.0f / core::Pi;
+        maxMove[e] = std::max(maxMove[e], moved);
+        maxTurn[e] = std::max(maxTurn[e], turned);
+        resets[e] += reset;
+        ++evals[e];
+        LARGE_INTEGER t, fq;
+        QueryPerformanceCounter(&t);
+        QueryPerformanceFrequency(&fq);
+        if (t.QuadPart - last[e].QuadPart > fq.QuadPart) {
+            if (last[e].QuadPart)
+                VRLOG("upint: eye %d %d evaluations, %d resets, camera motion max %.2f mm %.3f deg per frame", eye, evals[e], resets[e],
+                      maxMove[e], maxTurn[e]);
+            last[e] = t;
+            maxMove[e] = maxTurn[e] = 0;
+            resets[e] = evals[e] = 0;
+        }
+    }
 
     // 1. canvas and depth to shader-read, our images to GENERAL.
     VkImageMemoryBarrier b[4];
@@ -435,7 +462,7 @@ void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
     const VkCommandBuffer cb = engineCommandBuffer(gfx);
     // The scene pass is usually still open here (the engine ends passes lazily): the work is recorded at the PP's
     // own first canvas barrier instead (onImageBarrier), where no pass can be open.
-    const bool want = g_evaluate && up::active() != up::Kind::Off && (flags & 1) == 0 && LONG(flags) == g_ppFlags &&
+    const bool want = g_evaluate && g_evaluateOn && up::active() != up::Kind::Off && (flags & 1) == 0 && LONG(flags) == g_ppFlags &&
                       (eye == 1 || eye == 2) && !t_ppDepth && cb && player_vr::localVrd();
     ++t_ppDepth;
     t_ppFlags = flags;
@@ -572,7 +599,7 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
     if (frameTime != g_frameTime) {
         g_frameTime = frameTime;
         ++g_frame;
-        if (g_evaluate && up::active() != up::Kind::Off && g_res.ready) up::jitter(g_frame, g_res.w, g_res.w, g_jx, g_jy);
+        if (g_evaluate && g_jitterOn && up::active() != up::Kind::Off && g_color.w) up::jitter(g_frame, g_color.w, g_color.w, g_jx, g_jy);
         else g_jx = g_jy = 0;
     }
     ProjRec& p = g_proj[eye - 1];
@@ -580,12 +607,14 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
     p.n = n, p.f = f;
     p.valid = true;
     if (!g_jx && !g_jy) return fov;
-    return core::angles(core::jittered(p.tan, g_jx, g_jy, g_res.w, g_res.h));
+    return core::angles(core::jittered(p.tan, g_jx, g_jy, g_color.w, g_color.h));
 }
 
 bool install() {
     g_evaluate = se4::options::get("upscaler", 0) != 0;
     if (!g_evaluate) return false;
+    g_jitterOn = se4::options::get("upscale_jitter", 1) != 0;
+    g_evaluateOn = se4::options::get("upscale_evaluate", 1) != 0;
     g_jitterSign[0] = se4::options::get("upscale_jitter_x", 1) < 0 ? -1.0f : 1.0f;
     g_jitterSign[1] = se4::options::get("upscale_jitter_y", 1) < 0 ? -1.0f : 1.0f;
     const auto& b = se4::build();

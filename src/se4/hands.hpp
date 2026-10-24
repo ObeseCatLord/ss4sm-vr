@@ -6,7 +6,7 @@
 //   - engage on a squeeze press edge while the off hand is within reach of LeftHandGripEffector,
 //   - hold while the squeeze stays down (hysteresis), release when it is let go.
 // While the off hand is in reach or gripping, its squeeze is kept out of the pad mapping (no gadget throw).
-// Option grip_squeeze (default 1).
+// Option grip_squeeze (default 1). The weapon step hook also feeds src/se4/arms.cpp.
 namespace hands {
 bool install();
 // Present thread: true when this XR hand (0 left, 1 right) is gripping a weapon or within reach of a grip.

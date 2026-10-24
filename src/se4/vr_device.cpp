@@ -205,6 +205,10 @@ float* sProjection(Object*, float* m, int eye, float n, float f) {
     }
     auto fov = [](const XrFovf& x) { return core::Fov{x.angleLeft, x.angleRight, x.angleUp, x.angleDown}; };
     const core::Fov shared = core::sharedVertical(fov(v.fov[eye - 1]), fov(v.fov[0]), fov(v.fov[1]));
+    static LONG logged[2];
+    if (!InterlockedExchange(&logged[eye - 1], 1))
+        VRLOG("vrdev: eye %d fov left %.4f right %.4f up %.4f down %.4f (near %.3f far %.1f)", eye, shared.left, shared.right, shared.up,
+              shared.down, n, f);
     core::engineProjection(upint::jitterProjection(eye, shared, n, f, v.time), n, f, m);
     return m;
 }
@@ -439,6 +443,70 @@ void hookedMouse(void* viewport, int* pos, int msg, int* size) {
     realMouse(viewport, pos, msg, size);
 }
 
+// VR menu pointer (R11 s5.4). While a menu is on top, the engine shows it on its cinema quad (viewer+0x54 size,
+// +0x5c quaternion, +0x6c position, in the play space of slot 0x080). The controller's aim ray is intersected
+// with that quad and the hit is sent to the viewport's mouse handler as window coordinates in a 4096x4096
+// window, which the handler rescales to the cinema texture: move every frame, left button from the trigger,
+// right button from B. The pointing hand switches to the other hand on its trigger press, as natively.
+struct Pointer {
+    int hand = 1;
+    bool trig[2]{}, back = false, wasMenu = false;
+} g_ptr;
+bool g_pointerOn = true;
+
+void menuPointer(void* pi) {
+    if (!g_pointerOn || !realMouse || !pi) return;
+    auto* p = static_cast<uint8_t*>(pi);
+    auto* mgr = *reinterpret_cast<uint8_t**>(p + 0xb8);
+    void* top = mgr ? *reinterpret_cast<void**>(mgr + 0x28) : nullptr;
+    auto* viewer = *reinterpret_cast<uint8_t**>(p + 0x360);
+    if (!top || !viewer) {
+        g_ptr.wasMenu = false;
+        return;
+    }
+    const float* f = reinterpret_cast<const float*>(viewer + 0x54);
+    const float w = f[0], h = f[1];
+    if (!(w > 0.01f && h > 0.01f && w < 100.0f && h < 100.0f)) return;
+    const core::Pose quad{core::normalize({f[2], f[3], f[4], f[5]}), {f[6], f[7], f[8]}};
+    bool trig[2];
+    for (int i = 0; i < 2; ++i) {
+        const auto& hs = xr::input().hand(i);
+        trig[i] = hs.active && hs.trigger > (g_ptr.trig[i] ? 0.4f : 0.6f);
+        if (trig[i] && !g_ptr.trig[i] && i != g_ptr.hand && g_ptr.wasMenu) g_ptr.hand = i;  // switch hands, no click
+    }
+    const auto& hs = xr::input().hand(g_ptr.hand);
+    const bool back = hs.active && (hs.buttons & xr::BtnSecondary);
+    const bool first = !g_ptr.wasMenu;
+    g_ptr.wasMenu = true;
+    if (!hs.active || first) {
+        g_ptr.trig[0] = trig[0], g_ptr.trig[1] = trig[1], g_ptr.back = back;
+        return;
+    }
+    core::Pose aim = toPose(hs.aim);
+    aim.p = aim.p * (1.0f / worldScale());
+    const core::Pose toQuad = core::inverse(quad);
+    const core::Vec3 o = toQuad.p + core::rotate(toQuad.q, aim.p);
+    const core::Vec3 d = core::rotate(toQuad.q, core::rotate(aim.q, {0, 0, -1}));
+    bool hit = false;
+    float u = 0, v = 0;
+    if (std::fabs(d.z) > 1e-4f) {
+        const float t = -o.z / d.z;
+        if (t > 0) {
+            const core::Vec3 x = o + d * t;
+            u = x.x / w + 0.5f, v = 0.5f - x.y / h;
+            hit = u >= 0 && u <= 1 && v >= 0 && v <= 1;
+        }
+    }
+    if (hit) {
+        int pos[2] = {int(u * 4096.0f), int(v * 4096.0f)}, size[2] = {4096, 4096};
+        realMouse(pi, pos, 1, size);
+        const bool t = trig[g_ptr.hand];
+        if (t != g_ptr.trig[g_ptr.hand]) realMouse(pi, pos, t ? 4 : 3, size);
+        if (back != g_ptr.back) realMouse(pi, pos, back ? 7 : 6, size);
+    }
+    g_ptr.trig[0] = trig[0], g_ptr.trig[1] = trig[1], g_ptr.back = back;
+}
+
 // The main loop calls CProjectInstance::Render (slot 0x50) every frame; SS4/SM were compiled to call it
 // instead of RenderVR (slot 0x58), which only Fusion's VR exe calls (R10). While our device is installed,
 // the main loop's call (inVR 0, returning to main_loop+0x25f) goes to RenderVR, which renders both eyes
@@ -455,6 +523,7 @@ int hookedRender(void* pi, void* dp, int inVR) {
         static LONG once;
         if (!InterlockedExchange(&once, 1)) VRLOG("vrdev: main loop renders through RenderVR");
         auto renderVR = reinterpret_cast<RenderFn>(se4::build().at<void>(se4::gen::viewport_render_vr));
+        menuPointer(pi);
         return renderVR(pi, dp, 0);
     }
     return realRender(pi, dp, inVR);
@@ -476,6 +545,7 @@ void hookedShutdown() {
 
 bool install() {
     if (g_installed) return true;
+    g_pointerOn = se4::options::get("menu_pointer", 1) != 0;
     void** global = se4::build().at<void*>(se4::gen::vr_device_global);
     if (!global || !xr::runtime().active()) return false;
     if (*global) {
