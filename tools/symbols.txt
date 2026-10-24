@@ -109,3 +109,6 @@ manual:wheel_pp                  # R16: wheel post-processing (world blur); skip
 manual:hud_canvas_flush          # R8 A6: HUD canvas queue flush; the mod flushes after each VR element so each keeps its own matrix
 manual:simple_element_draw       # R8 A6: simple HUD element draw (own object matrix); the mod puts the panel into the view for it
 manual:hud_render                # R8 A5: HUD render; its immersive-flag call (+0x1e1) can be gated to the 2D branch
+manual:vr_hand_use              # R8: native VR use path; device button 8 (right B) drives it for the kick; hooked for a log
+manual:generic_melee_step        # R12: generic melee weapon step
+manual:generic_melee_swing_test  # R12: generic melee canned swing test (skipped for VR owners)

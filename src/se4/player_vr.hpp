@@ -23,6 +23,9 @@ bool nativeVrAction();
 bool nativeTurn();
 // World placement of a controller (engine role 0 right, 1 left) as the engine computes it for vrd.
 void controllerWorld(void* vrd, int role, float out[7]);
+// Simulation thread: the engine's own VR use path for a hand (0 right, 1 left; 0x14043dcb0): the hand's ray target,
+// then the use action - doors, switches, pickups, and melee kicks/finishers (the desktop E).
+void useHand(int hand);
 // The local player's CPlayerVRData (last vrd_init with the local flag set), or nullptr.
 void* localVrd();
 }  // namespace player_vr

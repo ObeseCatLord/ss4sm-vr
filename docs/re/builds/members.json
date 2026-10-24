@@ -19,7 +19,12 @@
   "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
   "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
   "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
-  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0",
+  "CMacheteWeaponParams::mwp_fSwingRadius": "0x248",
+  "CGenericMeleeWeaponParams::gmwp_fDamageRayRadius": "0x240",
+  "CGenericMeleeWeaponParams::gmwp_slDamage": "0x244",
+  "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
+  "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248"
  },
  "Sam4_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -41,7 +46,12 @@
   "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
   "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
   "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
-  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0",
+  "CMacheteWeaponParams::mwp_fSwingRadius": "0x248",
+  "CGenericMeleeWeaponParams::gmwp_fDamageRayRadius": "0x240",
+  "CGenericMeleeWeaponParams::gmwp_slDamage": "0x244",
+  "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
+  "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248"
  },
  "SamSM": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -63,7 +73,12 @@
   "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
   "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
   "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
-  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0",
+  "CMacheteWeaponParams::mwp_fSwingRadius": "0x248",
+  "CGenericMeleeWeaponParams::gmwp_fDamageRayRadius": "0x240",
+  "CGenericMeleeWeaponParams::gmwp_slDamage": "0x244",
+  "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
+  "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248"
  },
  "SamSM_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -85,6 +100,11 @@
   "CGadgetHolderWeaponEntity::en_pgipUsedGadget": "0x380",
   "CGadgetHolderWeaponEntity::en_bQuickUse": "0x390",
   "CGadgetHolderWeaponEntity::en_bGadgetUsed": "0x378",
-  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0"
+  "CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson": "0xe0",
+  "CMacheteWeaponParams::mwp_fSwingRadius": "0x248",
+  "CGenericMeleeWeaponParams::gmwp_fDamageRayRadius": "0x240",
+  "CGenericMeleeWeaponParams::gmwp_slDamage": "0x244",
+  "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
+  "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248"
  }
 }

@@ -13,7 +13,7 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
 3. `eyes: eye 1/2 image ...` lines appear; `stereo:` lines confirm the projection layer.
 4. Head tracking: looking around moves the view without judder; IPD/scale look right.
 5. Controllers: A continues screens, sticks move/turn, triggers fire; haptics on firing.
-   Index layout: R A jump, R B crouch, L A reload, L B menu, L/R trackpad press (hold) that hand's weapon wheel,
+   Index layout: R A or R grip jump, R B use / melee kick (E), R stick click crouch, L A reload, L B menu, L/R trackpad press (hold) that hand's weapon wheel,
    L trackpad tap previous weapon, R trackpad tap dual wielding, L grip gadget in/out, R stick click use,
    L stick click sprint.
    Other profiles: `src/core/vr_controls.hpp`.

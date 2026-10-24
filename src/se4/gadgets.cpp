@@ -7,6 +7,7 @@
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
 #include "se4/hands.hpp"
+#include "se4/gamepad.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
@@ -333,6 +334,12 @@ void onTick(uint8_t* player) {
         }
     }
     pressed = down;
+    // Right B: the native use / melee kick (desktop E), through the engine's own VR use path for the right hand,
+    // so it does not depend on the saved pad layout (gamepad::kick is already off while a wheel is held).
+    static bool kickWas;
+    const bool kick = gamepad::kick();
+    if (kick && !kickWas) VRLOG("gadgets: right B - native use"), player_vr::useHand(0);
+    kickWas = kick;
     // While a weapon wheel is held (either trackpad press / Touch Y), the right A/B cycle the gadget ring through
     // the HUD's own next/previous commands (R12 s7) instead of pad buttons.
     static bool aWas, bWas;

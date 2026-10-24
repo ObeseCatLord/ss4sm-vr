@@ -19,3 +19,8 @@ CGadgetHolderWeaponEntity::en_pgipUsedGadget # R12: the holder's gadget item par
 CGadgetHolderWeaponEntity::en_bQuickUse      # R12: quick-use holder (auto-fires)
 CGadgetHolderWeaponEntity::en_bGadgetUsed    # R12: set by the holder use
 CAOETargetingWeaponModeParams::wmp_vTrajectoryStartOffsetFirstPerson # R12: arc start offset from the view (params = mode+0x10)
+CMacheteWeaponParams::mwp_fSwingRadius             # melee: native swing reach (arc rays from the head)
+CGenericMeleeWeaponParams::gmwp_fDamageRayRadius   # melee: generic melee weapons (R12 s2.2)
+CGenericMeleeWeaponParams::gmwp_slDamage
+CGenericMeleeWeaponParams::gmwp_dtDamageType
+CGenericMeleeWeaponParams::gmwp_fSwingRadius

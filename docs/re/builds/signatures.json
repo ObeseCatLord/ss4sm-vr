@@ -465,5 +465,20 @@
   "src": "0x1400d7be0",
   "len": 48,
   "_note": "CHud render (hud, viewId, viewEntity, fov): +0x1e1 calls the device+0x08 (immersive) getter that selects the 3D VR HUD branch (R8 A5, R16 s2.1)"
+ },
+ "vr_hand_use": {
+  "src": "0x14043dcb0",
+  "len": 48,
+  "_note": "CPlayerVRData hand use (vrd, hand): copies the hand ray hit into the aim target, sets player+0x2504 and runs the use action (plcmdUse / melee kills) (R8 s5)"
+ },
+ "generic_melee_step": {
+  "src": "0x14077a840",
+  "len": 48,
+  "_note": "CGenericMeleeWeaponEntity step (signs, poles): weapon step then the swing test (R12 s2.2)"
+ },
+ "generic_melee_swing_test": {
+  "src": "0x1407796d0",
+  "len": 48,
+  "_note": "CGenericMeleeWeaponEntity canned swing test (body/view arc; skipped for VR owners) (R12 s2.2)"
  }
 }

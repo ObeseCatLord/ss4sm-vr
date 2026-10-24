@@ -4,7 +4,9 @@
 //   LS move, RS look, RT plcmdFire, LT plcmdAltFire (left weapon when dual wielding), A plcmdY+ (jump),
 //   B plcmdY- (crouch), X plcmdReload, LB plcmdShowWeaponWheel (hold: native wheel,
 //   tap: previous weapon), RB plcmdToggleDualWielding, LS click plcmdToggleSprint, RS click plcmdUse,
-//   Start menu.
+//   Start menu. On Index/Touch the use/melee (kick, desktop E) is the right B, run through the engine's own VR use
+//   path for the right hand (ButtonB is plcmdUse in DefaultVRInputControllerBindings), so it does not depend on the
+//   saved pad layout; crouch is then the right stick click.
 // The native weapon wheel (R3 s6) selects with the right stick for the primary hand and the left stick for
 // the second hand. While the wheel button is held, each hand's displacement from where it was when the
 // button went down acts as that hand's stick (move the hand towards the item), unless the physical
@@ -14,9 +16,9 @@
 // The gadget (left grip) does not go through the pad: src/se4/gadgets.cpp issues the player's quick-use HUD command
 // directly, because pad Y's meaning depends on the saved gamepad layout.
 // Per-profile layout (semantic action -> button):
-//   Valve Index: wheel per hand (L/R trackpad hold; L tap previous weapon, R tap dual-wield toggle), jump R A, crouch R B, reload L A,
-//                menu L B, gadget L grip, use R stick click, sprint L stick click.
-//   Oculus Touch: wheel Y, jump A, crouch B, reload X, menu left menu, gadget L grip, use R stick click,
+//   Valve Index: wheel per hand (L/R trackpad hold; L tap previous weapon, R tap dual-wield toggle), jump R A or R grip,
+//                use/melee kick R B, crouch R stick click, reload L A, menu L B, gadget L grip, sprint L stick click.
+//   Oculus Touch: wheel Y, jump A or R grip, use/melee kick B, crouch R stick click, reload X, menu left menu, gadget L grip,
 //                sprint L stick click (dual wielding through the wheel's second-hand selection).
 //   HTC Vive (trackpads are the axes): wheel L trackpad click, jump R trackpad click, crouch R grip,
 //                use R menu, menu L menu, gadget L grip (reload is automatic when empty).
@@ -56,6 +58,7 @@ struct Frame {
 
 struct Pad {
     uint16_t buttons = 0;
+    bool kick = false;  // the use/melee (kick) button: src/se4/gadgets.cpp runs the engine's VR use path (not a pad button)
     float lt = 0, rt = 0;
     float lx = 0, ly = 0, rx = 0, ry = 0;
 };
@@ -110,20 +113,22 @@ struct Mapper {
         case Kind::Index:
             perHand(on(L, TrackpadPress), on(R, TrackpadPress));
             if (on(R, Primary)) b |= PadA;
-            if (on(R, Secondary)) b |= PadB;
+            p.kick = on(R, Secondary);
+            if (grip[1]) b |= PadA;  // the right grip jumps too (user default); a busy grip reads as released here
             if (on(L, Primary)) b |= PadX;
             if (on(L, Secondary) || on(L, Menu) || on(R, Menu)) b |= PadStart;
             if (on(L, StickClick)) b |= PadLeftThumb;
-            if (on(R, StickClick)) b |= PadRightThumb;
+            if (on(R, StickClick)) b |= PadB;
             break;
         case Kind::Touch:
             wheel = on(L, Secondary);
             if (on(R, Primary)) b |= PadA;
-            if (on(R, Secondary)) b |= PadB;
+            p.kick = on(R, Secondary);
+            if (grip[1]) b |= PadA;  // the right grip jumps too
             if (on(L, Primary)) b |= PadX;
             if (on(L, Menu)) b |= PadStart;
             if (on(L, StickClick)) b |= PadLeftThumb;
-            if (on(R, StickClick)) b |= PadRightThumb;
+            if (on(R, StickClick)) b |= PadB;
             break;
         case Kind::Vive:
             wheel = on(L, TrackpadPress);
@@ -146,7 +151,7 @@ struct Mapper {
             break;
         }
         if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch))
-            b &= uint16_t(~(PadA | PadB));  // A/B cycle the gadget ring (src/se4/gadgets.cpp), not jump/crouch
+            b &= uint16_t(~PadA), p.kick = false;  // A/B cycle the gadget ring (src/se4/gadgets.cpp), not jump/kick
         if (wheel) {
             b |= PadLB;
             if (!wheelHeld || selL != wheelSel[0] || selR != wheelSel[1]) {  // (re)anchor when the wheel opens or a hand joins

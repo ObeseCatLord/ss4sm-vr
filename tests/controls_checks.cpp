@@ -27,10 +27,19 @@ int main() {
         f.hand[0].buttons = Primary;
         Pad p = m.update(f);
         assert(p.rt == 0.7f && p.lx == 0.5f);
-        assert(p.buttons == (PadA | PadRightThumb | PadX));
+        assert(p.buttons == (PadA | PadB | PadX) && !p.kick);  // right stick click crouches
+        f.hand[1].buttons = Secondary;  // right B: the native use/melee (kick), not a pad button
+        p = m.update(f);
+        assert(p.kick && !(p.buttons & PadB));
         // the left squeeze is the gadget, issued as a HUD command (src/se4/gadgets.cpp), never a pad button
         f.hand[1].buttons = f.hand[0].buttons = 0;
         f.hand[0].squeeze = 1.0f;
+        assert(m.update(f).buttons == 0);
+        // the right squeeze jumps
+        f.hand[0].squeeze = 0;
+        f.hand[1].squeeze = 0.8f;
+        assert(m.update(f).buttons == PadA);
+        f.hand[1].squeeze = 0;
         assert(m.update(f).buttons == 0);
     }
     // Vive: the right grip crouches, with hysteresis: on above 0.5, still on at 0.35, off below 0.3
@@ -139,9 +148,11 @@ int main() {
         f.hand[1].buttons = Primary;
         assert(m.update(f).buttons == PadLB);
         f.hand[1].buttons = Secondary;
-        assert(m.update(f).buttons == PadLB);
+        Pad q = m.update(f);
+        assert(q.buttons == PadLB && !q.kick);  // B cycles the gadget ring, no kick
         f.hand[0].buttons = 0;
-        assert(m.update(f).buttons == PadB);
+        q = m.update(f);
+        assert(q.buttons == 0 && q.kick);
     }
     // Vive: trackpad press is not also reported as a stick click (sprint)
     {

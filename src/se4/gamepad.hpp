@@ -8,4 +8,6 @@ bool active();
 void logStats();
 // The hand whose wheel is held: 0 left, 1 right, -1 both (or none).
 int wheelHand();
+// The use/melee (kick) button state from the controller mapping, for the device's button 8 (src/se4/vr_device.cpp).
+bool kick();
 }

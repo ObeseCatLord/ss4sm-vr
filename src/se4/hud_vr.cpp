@@ -6,6 +6,7 @@
 #include "se4/patch.hpp"
 #include "se4/vr_device.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/melee.hpp"
 #include "se4/wheel_panel.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -175,9 +176,20 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp) {
     return true;
 }
 
+// No crosshair for melee weapons (knife, generic melee): the HUD's viewing player's right weapon (+0xf90, SM +0xf98).
+bool meleeInHand(void** ctx) {
+    uint8_t* player = ctx[3] ? *static_cast<uint8_t**>(ctx[3]) : nullptr;
+    const unsigned vrdOff = player_vr::vrdOffset();
+    auto handle = reinterpret_cast<uint8_t*(__cdecl*)(int32_t)>(se4::build().at<void>(se4::gen::handle_entity));
+    if (!player || !vrdOff || !handle || !*reinterpret_cast<void**>(player + vrdOff)) return false;
+    const int delta = int(vrdOff) - 0x25c8;
+    return melee::isMeleeWeapon(handle(*reinterpret_cast<int32_t*>(player + 0xf90 + delta)));
+}
+
 void hookedElement(void** ctx, uint8_t* e) {
     if (g_log && e) logElement(e, ctx);
     void** vt = e ? *reinterpret_cast<void***>(e) : nullptr;
+    if (vt && vt[0x80 / 8] == g_crosshairRender && meleeInHand(ctx)) return;
     uint8_t* params = e ? *reinterpret_cast<uint8_t**>(e + kParams) : nullptr;
     uint8_t* dp = ctx[9] ? *static_cast<uint8_t**>(ctx[9]) : nullptr;
     if (!vt || !params || !dp || !ctx[7] || !*static_cast<int32_t*>(ctx[7]) || !ctx[8]) {

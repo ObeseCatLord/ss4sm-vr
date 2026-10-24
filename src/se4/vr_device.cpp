@@ -2,6 +2,7 @@
 // so `this` is the first parameter (RCX) and MSVC's hidden struct-return pointer is the second (RDX).
 // Floats travel in the XMM register of their argument position. See docs/re/R1_vtable.md.
 #include "se4/vr_device.hpp"
+#include "se4/gamepad.hpp"
 #include "se4/wheel_panel.hpp"
 #include "up/integrate.hpp"
 #include "se4/scope.hpp"

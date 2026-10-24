@@ -47,6 +47,10 @@ void hookedVrdInit(void* vrd, void* player) {
     if (auto* layout = se4::build().at<int32_t>(se4::gen::prj_iGamepadButtonLayout))
         VRLOG("player_vr: gamepad button layout %d (the virtual pad assumes GBL_STANDARD 12)", *layout);
     if (local) g_localVrd = vrd;
+    {
+        const int32_t* b = reinterpret_cast<const int32_t*>(static_cast<uint8_t*>(vrd) + 0x288);
+        VRLOG("player_vr: vrd button indices +0x288..+0x2a4: %d %d %d %d %d %d %d %d", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
+    }
     // Lab only: give all weapons once the local VR player exists (needs +cht_bEnableCheats 1).
     if (local && se4::options::get("lab_giveall", 0)) {
         // Gadgets, upgrades and skills too: the give-all flags global (GACF_*: gadgets 4, upgrades 8, skills 0x10) found in the cheats menu's own handler
@@ -62,6 +66,15 @@ void hookedVrdInit(void* vrd, void* player) {
                 }
         se4::setIndex(se4::gen::cht_bGiveAll, 1);
     }
+}
+
+// --- native VR use path (vrd, hand 0 right / 1 left): the right B (gamepad::kick) runs it, see useHand() ---
+using HandUseFn = void(__cdecl*)(void* vrd, int hand);
+HandUseFn realHandUse;
+void hookedHandUse(void* vrd, int hand) {
+    static ULONGLONG last;
+    if (GetTickCount64() - last > 300) last = GetTickCount64(), VRLOG("player_vr: native VR use (hand %d)", hand);
+    realHandUse(vrd, hand);
 }
 
 // --- controller world placement: callers outside the player (VR view hand ray 0x1401d8430) pass the
@@ -273,6 +286,10 @@ void controllerWorld(void* vrd, int role, float out[7]) {
     else memset(out, 0, 7 * sizeof(float));
 }
 bool nativeVrAction() { return g_nativeAction; }
+void useHand(int hand) {
+    if (realHandUse && g_localVrd) realHandUse(g_localVrd, hand);
+    else VRLOG("player_vr: no VR use path (hook %p, vrd %p)", reinterpret_cast<void*>(realHandUse), g_localVrd);
+}
 bool nativeTurn() { return g_nativeTurn; }
 void* localVrd() { return g_localVrd; }
 
@@ -289,6 +306,9 @@ bool install(bool localVr) {
         return false;
     }
     g_vrdOff = findVrdOffset(cavr);
+    if (void* use = b.at<void>(se4::gen::vr_hand_use); use && localVr &&
+        (MH_CreateHook(use, reinterpret_cast<void*>(hookedHandUse), reinterpret_cast<void**>(&realHandUse)) != MH_OK || MH_EnableHook(use) != MH_OK))
+        VRLOG("player_vr: VR use hook FAILED");
     g_bindRet = findCallRet(bind, 0x200, setter);
     VRLOG("player_vr: vrd offset 0x%x, local-user setter call returns to %p (%s)", g_vrdOff,
           static_cast<void*>(g_bindRet), localVr ? "VR player" : "desktop peer guards only");

@@ -298,6 +298,15 @@
   - Gadgets: throws need the native target check (too close / invalid: kept in hand, aiming hand buzzes); the
     activation's own targeting pass is steered by the aiming hand; refused activations re-arm. SM: injection,
     tosses and a Nerve Gas launch verified; Mini Nuke refused when aimed 2 m ahead (native too-close check).
+- **Melee, kick and grips (2026-10-24):**
+  - Right B = use / melee kick (desktop E): the mod calls the engine's own VR use path for the right hand on the press
+    (independent of the saved pad layout); lab: the call happens, a kick on an enemy is unverified. Crouch moved to
+    the right stick click; the right grip also jumps (a grip busy with a two-hand hold does not).
+  - Physical melee covers the knife and the generic melee weapons: five blade points swept frame to frame plus head
+    rays through the swung arc out to the weapon's native swing radius (melee_arc). Unverified on enemies.
+  - No crosshair while a melee weapon is in the right hand.
+  - Open: Sirian Artifact of Might crush (hold the native "Use" artefact animation before its ArtifactBroken event
+    until trigger / Index squeeze force / Frame grip second stage); Steam Frame controller profile (grip stages).
 - Gadgets (`src/se4/gadgets.cpp`, R12):
   - Pad buttons depend on the player's saved layout: pad Y opened Netricsa in the lab profile.
     - The left squeeze now issues the player's own quick-use HUD command (OnHudCommand(1, 0xc), the path
