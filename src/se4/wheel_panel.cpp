@@ -14,13 +14,13 @@
 
 namespace wheel_panel {
 namespace {
-using ElementFn = void(__cdecl*)(void** ctx, uint8_t* element);
-ElementFn realElement;
-void* g_wheelRender;
 void* g_dummyCommand;
 bool g_enabled = true;
-float g_scale = 1.0f;
-constexpr size_t kParams = 0x18, kPlaceQ = 0x18, kPlaceP = 0x28, kStretch = 0x34;  // element / params (R16 s2.1)
+// The wheel's post-processing preset blurs and tints the whole world while it is open (vt+0xc8, R16 s2.3). In VR
+// the world stays sharp behind the hand panel (user request); option wheel_blur=1 keeps the native blur.
+using PpFn = void(__cdecl*)(uint8_t* wheel);
+PpFn realPp;
+void hookedPp(uint8_t*) {}
 
 struct Panel {
     volatile LONG valid = 0;
@@ -65,42 +65,6 @@ void latch() {
           h == 0 ? "left hand" : h == 1 ? "right hand" : "both hands", p.x, p.y, p.z, head.x, head.y, head.z);
 }
 
-void hookedElement(void** ctx, uint8_t* e) {
-    void** vt = e ? *reinterpret_cast<void***>(e) : nullptr;
-    if (!vt || vt[0x80 / 8] != g_wheelRender || !g_panel.valid || !ctx[7] || !*static_cast<int32_t*>(ctx[7]) || !ctx[8]) {
-        realElement(ctx, e);
-        return;
-    }
-    uint8_t* params = *reinterpret_cast<uint8_t**>(e + kParams);
-    float* anchor = static_cast<float*>(ctx[8]);
-    if (!params) {
-        realElement(ctx, e);
-        return;
-    }
-    // anchor * placement = panel  =>  anchor = panel * inverse(placement)
-    const float* pq = reinterpret_cast<const float*>(params + kPlaceQ);
-    const float* pp = reinterpret_cast<const float*>(params + kPlaceP);
-    const core::Pose place{core::normalize({pq[0], pq[1], pq[2], pq[3]}), {pp[0], pp[1], pp[2]}};
-    const core::Pose a = core::compose(g_panel.pose, core::inverse(place));
-    if (!core::finite(a)) {
-        realElement(ctx, e);
-        return;
-    }
-    float saved[7];
-    memcpy(saved, anchor, sizeof saved);
-    float& stretch = *reinterpret_cast<float*>(params + kStretch);
-    const float savedStretch = stretch;
-    anchor[0] = a.q.x, anchor[1] = a.q.y, anchor[2] = a.q.z, anchor[3] = a.q.w, anchor[4] = a.p.x, anchor[5] = a.p.y, anchor[6] = a.p.z;
-    stretch = savedStretch * g_scale;
-    realElement(ctx, e);
-    stretch = savedStretch;
-    memcpy(anchor, saved, sizeof saved);
-    static ULONGLONG last;
-    if (GetTickCount64() - last > 3000) {
-        last = GetTickCount64();
-        VRLOG("wheel_panel: wheel drawn on the hand panel (native placement %.2f %.2f %.2f, stretch %.3f)", pp[0], pp[1], pp[2], savedStretch);
-    }
-}
 }  // namespace
 
 bool wheelOpen(void* pi) {
@@ -114,25 +78,26 @@ bool wheelOpen(void* pi) {
     return open;
 }
 
+bool panel(float out[7]) {
+    if (!g_panel.valid) return false;
+    const core::Pose& p = g_panel.pose;
+    out[0] = p.q.x, out[1] = p.q.y, out[2] = p.q.z, out[3] = p.q.w, out[4] = p.p.x, out[5] = p.p.y, out[6] = p.p.z;
+    return true;
+}
+
 bool install() {
     g_enabled = se4::options::get("wheel_panel", 1) != 0;
-    g_scale = se4::options::get("wheel_panel_scale", 100) / 100.0f;
-    const auto& b = se4::build();
-    g_wheelRender = b.at<void>(se4::gen::wheel_render);
-    g_dummyCommand = b.at<void>(se4::gen::wheel_dummy_command);
-    void* element = b.at<void>(se4::gen::hud_element_render);
-    if (!g_enabled || !g_wheelRender || !g_dummyCommand || !element) {
+    g_dummyCommand = se4::build().at<void>(se4::gen::wheel_dummy_command);
+    if (!g_enabled || !g_dummyCommand) {
         VRLOG("wheel_panel: %s - the wheel stays on the cinema screen", g_enabled ? "build lacks wheel symbols" : "disabled by option");
         g_enabled = false;
         return false;
     }
-    if (MH_CreateHook(element, reinterpret_cast<void*>(hookedElement), reinterpret_cast<void**>(&realElement)) != MH_OK ||
-        MH_EnableHook(element) != MH_OK) {
-        VRLOG("wheel_panel: HUD element hook FAILED");
-        g_enabled = false;
-        return false;
-    }
-    VRLOG("wheel_panel: weapon wheel on a hand panel (scale %.2f)", g_scale);
+    const bool blur = se4::options::get("wheel_blur", 0) != 0;
+    if (void* pp = se4::build().at<void>(se4::gen::wheel_pp); pp && !blur &&
+        (MH_CreateHook(pp, reinterpret_cast<void*>(hookedPp), reinterpret_cast<void**>(&realPp)) != MH_OK || MH_EnableHook(pp) != MH_OK))
+        VRLOG("wheel_panel: wheel blur hook FAILED");
+    VRLOG("wheel_panel: the weapon wheel keeps the world in stereo and opens on a hand panel (world blur %s)", blur ? "native" : "off");
     return true;
 }
 }  // namespace wheel_panel

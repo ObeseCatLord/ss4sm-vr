@@ -34,8 +34,12 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    - Serious Rage: to the mouth; Extra Life: to the chest.
    Log: `gadgets: <use> -> use`, `gadgets: holder use`, `gadgets: launch`. `gadget_motion=0` makes the trigger set
    off any gadget.
-7b. Crosshair: the game's crosshair should sit where the right-hand gun points, and its spread ring should
-   match the native spread. Turn it off with `native_crosshair=0` in options.txt to compare.
+7b. Crosshair and HUD: the game's crosshair should sit where the right-hand gun points, at the depth of what it
+   hits (close one eye, then the other: it stays on the target), and its spread ring should match the native
+   spread. Health, armour, ammo and the objective show around the view; check they are readable and not too far
+   out at the lens edges. Turn the crosshair off with `native_crosshair=0` to compare.
+7j. Weapon wheel panel: the wheel opens on a panel in front of the hand whose trackpad opened it, the world stays
+   sharp (no blur) and in stereo. Note the weapon's look vs where it shoots (known: the visible gun is pitched up).
 7c. Vehicles (ATV): the left stick drives. Squeeze both grips on the handlebars; turning the hands should turn the
    real bars 1:1 and steer the ATV in the same direction. Log: `vehicles: grabbed the steering wheel`.
 7d. Body IK (`body_ik=1` in options.txt): in a mirror, third-person view (`plcmdThirdPersonView`) or another

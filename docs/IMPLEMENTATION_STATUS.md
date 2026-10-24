@@ -277,6 +277,28 @@
     left, so u is flipped for rays from its −Z side.
   - **Siberian Mayhem Refinery:** the free left hand, two-hand grip (the pistol counts as two-handable: foregrip
     0.16 m) and the crossbow's PiP scope all work. Fire bits are at +0x2340 and the player spawns after 46 s.
+- **HUD, crosshair and wheel panel in VR (2026-10-24, lab SS4 Pompeii):**
+  - Cause of the missing HUD (R8 A5/A6): with the device immersive, the HUD render takes a 3D "VR panel" branch whose
+    per-element placements SS4/SM never authored (identity, 0, stretch 1: pixels became metres), simple elements set
+    their own matrix, and queued elements share the first entry's matrix. Also the show predicate hid the crosshair
+    for every player with vrd.
+  - Default now (`src/se4/hud_vr.cpp`, hud_vr_mode=0): the HUD render's immersive-flag call (+0x1e1) answers 0, so
+    the HUD draws in 2D per eye like on desktop: armour, health, ammo, gadget bar, objective, portraits and the
+    beacon marker show in both eyes; world markers project per eye. Pulling edge elements in is open (the safe
+    area cvars did not move the layout).
+  - Crosshair (`src/se4/crosshair.cpp`): show predicate's vrd test NOPed; its view call gets the eye offset, so the
+    game's own crosshair is drawn where the barrel ray hits, at that depth (seen on the hut, small disparity).
+  - Weapon wheel (`src/se4/wheel_panel.cpp`): its dummy menu screen no longer sends the view to the cinema screen
+    (immersive forced for those frames); while it is open the HUD keeps its 3D branch and the wheel is drawn on a
+    panel in front of the opening hand (both trackpads: between the hands). The world blur/tint post-process is
+    skipped (user request; `wheel_blur=1` restores it).
+  - **Weapon visuals vs aim (open, important):** the barrel (shooting attachment) is exactly along the controller
+    -Z, 0.88 m ahead of the hand, but the visible first-person gun is held in the flat-screen animation pose
+    (pitched about 55-60 deg up from the controller). SS4 has no VR weapon models; the arms model's R_Weapon pose
+    needs correcting so the gun lines up with the controller and the barrel.
+  - Gadgets: throws need the native target check (too close / invalid: kept in hand, aiming hand buzzes); the
+    activation's own targeting pass is steered by the aiming hand; refused activations re-arm. SM: injection,
+    tosses and a Nerve Gas launch verified; Mini Nuke refused when aimed 2 m ahead (native too-close check).
 - Gadgets (`src/se4/gadgets.cpp`, R12):
   - Pad buttons depend on the player's saved layout: pad Y opened Netricsa in the lab profile.
     - The left squeeze now issues the player's own quick-use HUD command (OnHudCommand(1, 0xc), the path

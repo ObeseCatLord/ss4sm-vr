@@ -104,3 +104,8 @@ var:prj_iGameOptionCrosshair
 manual:wheel_render              # R16: weapon wheel element render (vt+0x80); identifies the wheel element
 manual:wheel_dummy_command       # R16: the wheel's dummy menu screen (vt+0x138); identifies it as top screen
 manual:hud_element_render        # R16: per-element HUD render; the mod re-anchors the wheel to a hand panel
+var:hud_bAllowBatching         # R8 A5: off for the crosshair element draw only (drawn per eye in 2D)
+manual:wheel_pp                  # R16: wheel post-processing (world blur); skipped in VR
+manual:hud_canvas_flush          # R8 A6: HUD canvas queue flush; the mod flushes after each VR element so each keeps its own matrix
+manual:simple_element_draw       # R8 A6: simple HUD element draw (own object matrix); the mod puts the panel into the view for it
+manual:hud_render                # R8 A5: HUD render; its immersive-flag call (+0x1e1) can be gated to the 2D branch

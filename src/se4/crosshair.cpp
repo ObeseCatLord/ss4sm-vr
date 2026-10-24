@@ -33,8 +33,17 @@ float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
         auto* show = se4::build().at<int32_t>(se4::gen::hud_bShowCrosshair);
         auto* opt = se4::build().at<int32_t>(se4::gen::prj_iGameOptionCrosshair);
         auto pred = reinterpret_cast<int(__cdecl*)(uint8_t*)>(se4::build().at<void>(se4::gen::crosshair_show));
-        VRLOG("crosshair: render reaches the view (eye %d, show predicate %d, hud_bShowCrosshair %d, prj_iGameOptionCrosshair %d)",
-              vrdev::currentEye(), pred ? pred(player) : -1, show ? *show : -1, opt ? *opt : -1);
+        // Early-outs after the view call (R8 A6): puppet flags bit 13, wheel bit, weapon handle, +0x2568. SM's player
+        // fields sit 8 bytes later, like its vrd.
+        const int d = int(player_vr::vrdOffset()) - 0x25c8;
+        VRLOG("crosshair: render reaches the view (eye %d, show predicate %d, hud_bShowCrosshair %d, flag13 %d, wheel bit %d, weapon %x, +0x2568 %llx)",
+              vrdev::currentEye(), pred ? pred(player) : -1, show ? *show : -1, (*reinterpret_cast<uint32_t*>(player + 0xfa8 + d) >> 13) & 1,
+              *reinterpret_cast<uint32_t*>(player + 0x269c + d) & 1, *reinterpret_cast<uint32_t*>(player + 0xf90 + d),
+              static_cast<unsigned long long>(*reinterpret_cast<uint64_t*>(player + 0x2568 + d)));
+        (void)opt;
+        const float* hit = reinterpret_cast<const float*>(player + 0x2188 + d);
+        VRLOG("crosshair:   aim hit %.2f %.2f %.2f dist %.2f, view %.2f %.2f %.2f", hit[0], hit[1], hit[2], hit[3], r ? r[4] : 0.f, r ? r[5] : 0.f,
+              r ? r[6] : 0.f);
     }
     const unsigned off = player_vr::vrdOffset();
     float e[7];

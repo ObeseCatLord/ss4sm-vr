@@ -425,3 +425,214 @@ rendered once per eye with `device+0x18` = eye (EYE_TARGETS). In that mode:
 Confidence: A1 high, because the unconditional vrd test in the predicate shows statically that no crosshair can be
 drawn for a VR player. A2 medium-high: the two-pass per-eye HUD and the per-eye projection come from code, the
 2D shader's use of cb+0x58 is inferred. A3 high.
+
+### A5. Lab after A1/A2 (2026-10-24, static follow-up)
+
+Lab facts: the show predicate now returns 1 and render 0x140120b60 reaches the view thunk, but neither eye image
+shows a crosshair or ring. No other HUD element shows either (health, armour, ammo). The only on-screen 2D is the
+console notice "CHEATS ENABLED", printed through 0x1404270a0 → 0x140aa7a20 (console). The console draws inside
+`Render`, not in the HUD. The weapon wheel shows only while the frame goes through the cinema path. New private
+decompile: `lab/r8j.c` (CPlayerController vt+0x28 0x140415200, player views 0x14005be70, canvas flush 0x1400ea890,
+`lab/r8j.txt`). `lab/r8_content/` holds a private extract of `Databases/HudParams.rsc` (from 70_616154_00_All_edit.gro),
+which is gitignored.
+
+#### Cause: in immersive VR the whole HUD, crosshair included, goes through an unauthored 3D "VR panel" path (high)
+1. **The HUD render switches to 3D on `device+0x08`.** 0x1400d7be0 stores `0x140b6af60()` (= `device+0x08`, which is 1 on
+   the immersive path, R10 §3) in `[rbp-0x64]`. The call is at **0x1400d7dc1**; SM 0x1400d7cc0 has it at **0x1400d7ea1**
+   (→ 0x140b6b540). With the flag set:
+   * the render builds a head-relative, lazily following panel (`hud+0x90`, thresholds 0x142247540..54c) and loads
+     the **eye** matrices: two-pass uses slot 0x070 projection and slot 0x078 head→eye view, single-pass uses the union
+     frustum and both eyes;
+   * each element (0x1400d6920, SM 0x1400d6a00) clears the drawport's 2D flag (`mov [dp+0x30],0` at **0x1400d6a21**,
+     SM 0x1400d6b01). It then sets the 2D object matrix (gfx+0xcd0.., +0xd90..) to
+     `panel ∘ hep_qvVRPlacement (params+0x18 quat, +0x28 pos) ∘ scale(hep_fVRStretch params+0x34, y flipped)`.
+     Element pixel coordinates therefore become head-space metres.
+2. **SS4 never authored those placements.** Every element in `HudParams.rsc`, "Weapon crosshair", "Health", "Armor",
+   "Current ammo" and the rest, has `hep_qvVRPlacement = { q 0,0,0,1; v 0,0,0 }` and `hep_fVRStretch = 1`. The panel origin is
+   the head (the decompile of 0x1400d7be0 cancels the head position). So a quad at pixel (17, 440) is drawn
+   17 m right and 440 m down, in the z = 0 plane through the eyes. That is outside the frustum and in front of the
+   near plane, so nothing is visible. Fusion's VR games authored these values. SS4 shipped without VR.
+3. **The crosshair cannot escape this by itself.** Render calls 0x140b94200 (pixel ortho) at 0x140120db7, but every
+   quad goes through the HUD canvas 0x1400e8d20 → 0x1400e8d50. With `hud_bAllowBatching` (0x142247568, default 1)
+   and an atlased texture, the quad is only **queued** (test at 0x1400e8e0f, SM 0x1400e8ee2). The queue entry is keyed by
+   the current drawport and keeps the object matrix that was current when the entry was created (+0x1c..+0x48).
+   The canvas flush **0x1400ea890** (SM 0x1400ea940), called at the end of the HUD render (0x1400d8e79), reads
+   `0x140b6af60()` again (0x1400ea9b3, SM 0x1400eaa63). For each entry whose drawport has `+0x30 == 0` (test at
+   0x1400eaaf5, SM 0x1400eaba5), which is the case after any VR element, it reloads the **eye** projection and head→eye
+   view and draws with the stored object matrix. Only `+0x30 != 0` takes the pixel-ortho reset (0x140b94200). The
+   crosshair's pixel coordinates are therefore also drawn as head-space metres, so they are invisible. This
+   applies whether the pixel is at the centre or at the barrel projection.
+4. **The cinema path works**, which is why the weapon wheel is visible. While the wheel is open the frame goes
+   through the cinema path (`device+0x08` = 0, R11 §2.1). The HUD then takes its 2D branch, `[dp+0x30] = 1` with a pixel
+   ortho, and the flush resets to 2D.
+
+Other early-outs from question (1), checked and not the cause:
+* camera mode: 0x1400d6920 skips `HCRM_NOT_RENDERED` elements (params+0x14 → element+0x20; checks at 0x1400d6987/0x1400d6991,
+  SM 0x1400d6a68/0x1400d6a71) only when the HUD's view entity is not a puppet (class 0x1422817a0). The crosshair render is
+  reached, so this check passes here.
+* projection: 0x141152ae0's visibility flag is ignored. A sky shot still has a finite target (aim ray max distance), and
+  with the eye offset the pixel lies in the image when the barrel points forward.
+* texture: index = profile `+0x58` from 0x140478950 (default 4), clamped to `[0, count-2]`, with the null terminator dropped. It
+  is never -1 or null for the shipped `cp_aptxCrosshairs`.
+* colour: 0xffffffff by default. With `plr_iHealthBarOption` == 1 and a live puppet target it is the
+  `cp_grCrosshairColorCoding` gradient. Neither colour makes it invisible.
+* `prj_iGameOptionCrosshair` is read only by the options menu (0x140863481). The renderer uses the profile object
+  above.
+
+#### Fix
+**Primary (cheapest, fixes the HUD and the crosshair at once):** in immersive VR, make the HUD render take its 2D
+branch.
+* Retarget the `E8` at **Sam4 0x1400d7dc1 / SM 0x1400d7ea1** (verify `E8 rel32` → 0x140b6af60 / 0x140b6b540) to a gate that
+  returns 0 while the mod renders immersive stereo, and the original value otherwise.
+* Leave the flush's own call alone. After the 2D branch the drawport has `+0x30 = 1`, so the flush takes 0x140b94200 (pixel
+  ortho of the current eye drawport, 1344×1512 in two-pass).
+* Result: the HUD loop runs once per eye pass. Every element is drawn screen-locked into each eye image, at
+  infinity in two-pass. The crosshair is drawn at its per-eye projection (A2 eye view + slot-0x070 projection), so
+  both eyes get the right disparity and depth.
+* Optional comfort: pull elements in from the lens edges with `hud_fCustomHudScale` (0x142247550) or a safe-area
+  margin. A later step can move the HUD to an XR layer (R11 §3).
+
+**Alternative (true 3D HUD panel, more work):** keep the VR branch and write VR placements into each loaded
+`CHudElementParams` at runtime: `+0x18` quat, `+0x28` pos, `+0x34` stretch, e.g. `v = (-W/2·s, H/2·s, -D)` with
+`s = 2·D·tan(vfov/2)/H`. This writes in memory only, never to the file. The crosshair then still needs its own path,
+because batching gives its quads an entry object matrix in head metres. Per eye, either disable batching around the
+crosshair element or set the object matrix to `eyeInHead ∘ pixel→plane(depth D)` before its first draw. Use this
+only if a head-locked 3D panel is wanted. It is not needed for a visible, depth-correct crosshair.
+
+| item | Sam4 616154 | SamSM 628492 |
+|---|---|---|
+| HUD render | 0x1400d7be0 | 0x1400d7cc0 |
+| **VR-flag call to redirect** (`E8` → device+0x08 getter) | **0x1400d7dc1** → 0x140b6af60 | **0x1400d7ea1** → 0x140b6b540 |
+| per-element render / `mov [dp+0x30],0` | 0x1400d6920 / 0x1400d6a21 | 0x1400d6a00 / 0x1400d6b01 |
+| canvas flush / its VR call / `+0x30` test | 0x1400ea890 / 0x1400ea9b3 / 0x1400eaaf5 | 0x1400ea940 / 0x1400eaa63 / 0x1400eaba5 |
+| canvas draw / batching test (`hud_bAllowBatching`) | 0x1400e8d50 / 0x1400e8e0f (0x142247568) | – / 0x1400e8ee2 (0x142228458) |
+| flush call in HUD render | 0x1400d8e79 | 0x1400d8f59 |
+
+`port_check`: element render and flush match 1.000 with no field differences.
+
+#### Cheapest diagnostics for the next run
+1. In the new gate at 0x1400d7dc1: log once per 3 s `device+0x08`, `device+0x18`, and the drawport size
+   (`*(gfx+0x1c78)` box +0x10..+0x1c). Expect 1 / 1-or-2 / 1344×1512 before the fix.
+2. In the existing view thunk: log `*(int*)(*(gfx+0x1c78)+0x30)`. It is 0 when the 3D VR path is active (the cause)
+   and 1 after the fix. Also log the projected pixel of `+0x2188` for that eye: rebuild it with 0x141152ae0 from the
+   thunk's view and 0x140478b60.
+3. One-line A/B without code: console `hud_bAllowBatching 0`. The crosshair should then appear, because the canvas draws
+   immediately (0x1400e2560) with the crosshair's own pixel ortho. The rest of the HUD stays invisible, because its
+   object matrices are still the 3D ones. If this happens, the deferred VR flush is confirmed as the cause.
+
+Confidence: high for the cause. The VR branch, the zero placements in the shipped params and the flush's
+`+0x30`/VR test are all read directly. The weapon wheel appearing only on the cinema path agrees with it. Medium for
+the A/B test in diagnostic 3, because the immediate path's 2D vertex flush timing was not traced.
+
+### A6. Lab after the HUD panel (2026-10-24, static follow-up)
+
+Setup read from `src/se4/hud_vr.cpp`. A MinHook detour on the per-element render 0x1400d6920 temporarily writes
+identity/(-W/2·s, H/2·s, 0)/s into `hep_qvVRPlacement`/`hep_fVRStretch` and replaces the anchor `*ctx[8]` with
+`inverse(head)·panelWorld`. The crosshair is rendered with `*ctx[7] = 0` and `hud_bAllowBatching = 0`. Lab result: the
+weapon wheel (render 0x1401298c0) is drawn correctly on the hand panel, while nothing else shows. New private decompiles:
+`lab/r8k.c` (wheel, simple elements, canvas functions) and `lab/r8l.c` (the render functions from the lab log).
+
+#### How the HUD canvas queue works (read from code, high)
+* Every element has the HUD canvas `*(hud+0xb0)`, where `hud = ctx[10]`. Elements put quads and text into it through the
+  texture draw 0x1400e8d20 → 0x1400e8d50 (SM 0x1400e8df0) and the text paths 0x1400e8290/0x1400e8340 →
+  0x1400e87f0 (SM 0x1400e88c0).
+* Textures are queued only while `hud_bAllowBatching` (0x142247568, SM 0x142228458) is set and the texture is
+  atlased (test at 0x1400e8e0f, SM 0x1400e8ee2). **Text (0x1400e87f0) is always queued**: it does not read the cvar.
+* A queue entry is found by **(current layer `canvas+0x10`, current drawport `gfx+0x1c78`)**. The 2D object matrix
+  `gfx+0xcd0..0xd28` is copied into the entry (+0x1c..+0x48) **only when the entry is created** (0x1400e9010 for
+  textures, 0x1400e8a43 for text). Later elements that queue into the same (layer, drawport) inherit that first
+  matrix. Within the HUD render nothing changes the layer (the flush resets it to 0).
+* Everything queued is drawn once, by the canvas flush **0x1400ea890** (SM 0x1400ea940) at the end of the HUD render
+  (call 0x1400d8e79, SM 0x1400d8f59). For each entry:
+  * if `entry.drawport+0x30` is 0 and `device+0x08` is set, the flush loads the eye projection (slot 0x070) and the
+    head→eye view (slot 0x078), then the **stored** object matrix;
+  * otherwise it calls 0x140b94200 (pixel ortho).
+
+  The flush pushes and pops the gfx state (0x140b57340 / 0x140b585f0), frees all entries and sets `canvas+0x10 = 0`.
+  **It can therefore be called again in the middle of the loop.**
+* Immediate draws, used when batching is off and by the direct gfx text and rect calls, draw at once with the
+  current matrices: 0x1400e2560 → 0x140b98570 → 2D cb 0x140c6c070 → gfx vt+0x228.
+
+#### Why the wheel works and the others don't
+1. **Simple elements cannot follow the panel (high).** Health, Armor, Lives, Netricsa notifier and the other
+   `CSimpleHudElementParams` elements use render **0x1400cf310** → **0x1400ceb10** (SM 0x1400cf410 → 0x1400cec10).
+   0x1400ceb10 saves `gfx+0xcd0..`, **overwrites** the object matrix with its own transform (rotation from the
+   unnamed globals 0x142247514/518 = π, π, scaled by 1/1024, plus translation from the item's quat/pos) and draws
+   immediately with gfx text (0x140b90e30/0x140b96160). Afterwards it restores the saved matrix. The panel matrix
+   that 0x1400d6920 built is never used, so with the VR eye view these elements land in head space at "pixel"
+   metres, which is invisible. Writing params cannot fix this.
+2. **Shared queue entries (medium).** The wheel queues text through the canvas (0x1400e8290 ×2 in 0x1401298c0) and
+   is drawn correctly by the flush, so the 3D flush path works. Other queued elements (canvas text in 0x1400cc7a0,
+   0x1400f5390, 0x1400c8390; textures in 0x1400ee540, 0x1400c8390) are drawn with the matrix of whichever element
+   created the (layer, drawport) entry first in that HUD pass. If that element is one the detour leaves alone,
+   because its placement is not the default or the box test fails, or one that changes `gfx+0xcd0` before
+   queueing, every later element inherits a wrong matrix. In wheel frames the wheel is effectively alone, since the
+   crosshair and most elements return early while the wheel bit `+0x269c` is set, so its entry is right. Not
+   proven: it needs the log below.
+3. **Many "visible" elements draw nothing.** `he_bIsVisible` is only the element's state. For example 0x140052890 is
+   `xor eax,eax; ret`, and several renders in the lab list contain no draw call. Judge success by the health, armour,
+   ammo and crosshair elements only.
+4. **Crosshair (open).** With batching off, its quads are drawn immediately in the pixel ortho its own 0x140b94200 sets
+   up. If they are drawn, they land in the eye image. But the lab diagnostic runs at the view call 0x140120c42, which
+   comes **before** these early-outs:
+   * `en_ulPlayerPuppetFlags` bit 13 (`+0xfa8`, SM `+0xfb0`), test at 0x140120df8;
+   * wheel bit `+0x269c` bit 0 (SM `+0x26a4`), 0x140120e07. The mod's wheel and menu-dummy machinery could leave it set;
+   * no weapon `+0xf90` (SM `+0xf98`) and no ride `+0x75c`;
+   * empty `cp_aptxCrosshairs`;
+   * `+0x2568` (0x14049c010; SM `+0x2570`, 0x14049c600);
+   * in the ring function, the show predicate.
+
+   So "render reaches the view" does not show that anything was drawn.
+
+#### Fix
+1. **Flush per element.** In `hookedElement`, call the flush right after `realElement`, **before** restoring params,
+   anchor and `dp+0x30`:
+   `flush(*(void**)((uint8_t*)ctx[10] + 0xb0), gfx)` with flush = Sam4 **0x1400ea890**, SM **0x1400ea940**, and
+   gfx = the gfx global (Sam4 0x1422aa9b0).
+   * Each element's queued quads then use its own object matrix and its own 2D/3D flag.
+   * The end-of-HUD flush finds an empty queue.
+   * Do this for every element on the VR path, including the wheel and the crosshair. The crosshair flushes with
+     `+0x30 = 1`, i.e. pixel ortho.
+   * The cheaper `hud_bAllowBatching = 0` for the whole VR HUD is not enough, because text ignores it.
+2. **Simple elements.** Leave their placement params at the default. Wrap 0x1400ceb10 (SM 0x1400cec10), or the element
+   while its render is 0x1400cf310 (SM 0x1400cf410), so that the panel goes into the **view** instead of the
+   object:
+   * save `gfx+0xc70..+0xcc8` (3×4 doubles);
+   * write `view = eyeView(slot 0x078) · inverse(head) · panelWorld · S`, where `S` = scale s, y flipped, origin
+     moved to the drawport centre, the same mapping as the mod's placement;
+   * clear the cached-matrix bits `gfx+0x16c0 &= 0xfffff3c0` (as 0x140b94200 does) and call `0x140b603d0(gfx, gfx+0xdf0, gfx+0xc70)`;
+   * call the original, then restore the view.
+
+   The element's own object matrix then maps its local space to pixels as on desktop, and the view carries the panel.
+   Check the 1/1024 and π,π convention against the first capture: if the item comes out mirrored or tiny, fold the
+   correction into `S`.
+3. **Crosshair.** Keep `crosshair2d`. Add the per-element flush, which costs nothing because there are no queued
+   textures. Fix whichever early-out the log below shows; most likely the wheel bit is left set by the wheel code.
+
+| item | Sam4 616154 | SamSM 628492 |
+|---|---|---|
+| canvas flush (clears the queue, resets the layer) | 0x1400ea890 | 0x1400ea940 |
+| end-of-HUD flush call | 0x1400d8e79 | 0x1400d8f59 |
+| texture draw (wrapper → body) / batching test | 0x1400e8d20 → 0x1400e8d50 / 0x1400e8e0f | 0x1400e8df0 → ? / 0x1400e8ee2 |
+| queued text (not gated by the cvar) | 0x1400e87f0 | 0x1400e88c0 |
+| matrix capture at entry creation | 0x1400e9010 (tex), 0x1400e8a43 (text) | not ported |
+| simple-element draw (overwrites the object matrix) / its element render | 0x1400ceb10 / 0x1400cf310 | 0x1400cec10 / 0x1400cf410 |
+| 2D reset | 0x140b94200 | 0x140b94860 |
+| crosshair early-outs | +0xfa8 b13, +0x269c b0, +0xf90/+0x75c, 0x14049c010 (+0x2568) | +0xfb0, +0x26a4, +0xf98/+0x75c, 0x14049c600 (+0x2570) |
+
+SM ports come from unique 48-byte signatures (`sigscan`). The flush and element render also pass `port_check` at 1.000.
+
+#### Cheapest logs
+1. After `realElement`, per element (deduplicated like `logElement`), log the canvas layer count `*(int*)(canvas+0x20)`
+   and, for layer 0, the entry count `*(int*)(*(canvas+0x18)+0x10)`. When the count grows, also log the new entry's
+   translation column (+0x28, +0x38, +0x48 as floats). This shows which element creates the first entry and with
+   which matrix.
+2. In the crosshair view thunk, log the early-out fields `+0xfa8 & 0x2000`, `+0x269c & 1`, the `+0xf90` handle and
+   `+0x2568`. Also log a counter incremented by a hook on the crosshair's texture draws: retarget the two `E8` to
+   0x1400e8d20 inside 0x140121410, or count in a wrapper around 0x1400e2560 while the crosshair element runs.
+3. Log whether 0x1400ceb10 runs (a counter) to confirm that health and armour take the simple path.
+
+Confidence:
+- High: the canvas-queue mechanics and the simple-element matrix overwrite (read from code).
+- Medium: shared entries explain the canvas-drawn elements.
+- Low: the crosshair cause (needs log 2).

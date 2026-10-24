@@ -84,7 +84,11 @@
   "crosshair_show": "0x1404947c0",
   "wheel_render": "0x1401298c0",
   "wheel_dummy_command": "0x1401339c0",
-  "hud_element_render": "0x1400d6920"
+  "hud_element_render": "0x1400d6920",
+  "wheel_pp": "0x140125850",
+  "hud_canvas_flush": "0x1400ea890",
+  "simple_element_draw": "0x1400ceb10",
+  "hud_render": "0x1400d7be0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -171,7 +175,11 @@
   "crosshair_show": "0x140496ef0",
   "wheel_render": "0x14012c210",
   "wheel_dummy_command": "0x140136310",
-  "hud_element_render": "0x1400d9270"
+  "hud_element_render": "0x1400d9270",
+  "wheel_pp": "0x1401281a0",
+  "hud_canvas_flush": "0x1400ed1e0",
+  "simple_element_draw": "0x1400d1460",
+  "hud_render": "0x1400da530"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -258,7 +266,11 @@
   "crosshair_show": "0x140494eb0",
   "wheel_render": "0x14012a260",
   "wheel_dummy_command": "0x140134390",
-  "hud_element_render": "0x1400d6a00"
+  "hud_element_render": "0x1400d6a00",
+  "wheel_pp": "0x140126250",
+  "hud_canvas_flush": "0x1400ea940",
+  "simple_element_draw": "0x1400cec10",
+  "hud_render": "0x1400d7cc0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -345,6 +357,10 @@
   "crosshair_show": "0x1404975d0",
   "wheel_render": "0x14012cba0",
   "wheel_dummy_command": "0x140136cd0",
-  "hud_element_render": "0x1400d9340"
+  "hud_element_render": "0x1400d9340",
+  "wheel_pp": "0x140128b90",
+  "hud_canvas_flush": "0x1400ed280",
+  "simple_element_draw": "0x1400d1550",
+  "hud_render": "0x1400da600"
  }
 }

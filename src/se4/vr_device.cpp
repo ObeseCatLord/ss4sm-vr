@@ -607,6 +607,14 @@ bool install() {
     return true;
 }
 
+bool eyeFov(int eye, float& left, float& right, float& up, float& down) {
+    const auto& v = xr::runtime().views();
+    if ((eye != 1 && eye != 2) || !v.valid) return false;
+    auto fov = [](const XrFovf& x) { return core::Fov{x.angleLeft, x.angleRight, x.angleUp, x.angleDown}; };
+    const core::Fov shared = core::sharedVertical(fov(v.fov[eye - 1]), fov(v.fov[0]), fov(v.fov[1]));
+    left = shared.left, right = shared.right, up = shared.up, down = shared.down;
+    return true;
+}
 int currentEye() { return g_installed ? field<int32_t>(0x18) : 0; }
 bool eyeInHead(int eye, float out[7]) {
     const auto& v = xr::runtime().views();

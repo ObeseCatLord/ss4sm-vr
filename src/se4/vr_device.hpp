@@ -20,6 +20,8 @@ int currentEye();
 // Eye-in-head pose of eye 1/2 (quaternion xyzw + position in engine units), as slot 0x078 inverts it. False when
 // the views are not valid.
 bool eyeInHead(int eye, float out[7]);
+// Tangents of eye 1/2's projection as slot 0x070 builds it (left/right/up/down angles in radians, no jitter).
+bool eyeFov(int eye, float& left, float& right, float& up, float& down);
 // Sends the main loop's desktop Render to RenderVR while the device is installed (R10).
 bool hookRender();
 // Periodic diagnostics: per-slot call counts since the last report.
