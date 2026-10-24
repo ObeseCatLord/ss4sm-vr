@@ -267,3 +267,9 @@
   - **Weapon wheel:** the Index left trackpad press opens the native wheel. As device button 6 it had opened
     Netricsa, so the press is no longer reported there. Lab weapon selection is in `tools/lab/to_sniper.sh`, and give-all
     needs `+cht_bEnableCheats 1`.
+- Lab, 2026-10-24:
+  - **VR menu pointer works.** The right controller's aim ray hits the cinema quad. Menu items highlight under it
+    and the trigger clicks: the main menu opened Options. Seen from the viewer, the quad's local +X runs right to
+    left, so u is flipped for rays from its −Z side.
+  - **Siberian Mayhem Refinery:** the free left hand, two-hand grip (the pistol counts as two-handable: foregrip
+    0.16 m) and the crossbow's PiP scope all work. Fire bits are at +0x2340 and the player spawns after 46 s.

@@ -494,7 +494,16 @@ void menuPointer(void* pi) {
         if (t > 0) {
             const core::Vec3 x = o + d * t;
             u = x.x / w + 0.5f, v = 0.5f - x.y / h;
+            if (o.z < 0) u = 1.0f - u;  // seen from the quad's -Z side its local +X runs to the viewer's left (lab 2026-10-24)
             hit = u >= 0 && u <= 1 && v >= 0 && v <= 1;
+        }
+    }
+    {
+        static ULONGLONG last;
+        if (GetTickCount64() - last > 1000) {
+            last = GetTickCount64();
+            VRLOG("menu pointer: hand %d %s u %.3f v %.3f (quad %.2fx%.2f at %.2f %.2f %.2f)", g_ptr.hand, hit ? "hit" : "miss", u, v, w, h,
+                  quad.p.x, quad.p.y, quad.p.z);
         }
     }
     if (hit) {
