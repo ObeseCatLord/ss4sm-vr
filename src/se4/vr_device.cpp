@@ -472,7 +472,10 @@ bool install() {
     *global = &g_obj;
     g_installed = true;
     player_vr::onDeviceInstalled();
-    se4::setIndex(se4::gen::vr_bForceImmersiveMode, 1);  // stereo world view, not the cinema screen (R10)
+    // Menus and loading screens on the engine's world-locked cinema screen, gameplay immersive: the VR view picks
+    // the cinema path per frame when the top menu asks for it and this cvar is 0 (R11 s2). Option
+    // force_immersive=1 draws menus head-locked in the world view instead.
+    if (se4::options::get("force_immersive", 0)) se4::setIndex(se4::gen::vr_bForceImmersiveMode, 1);
     // Stereo path: vr_iUsingSinglePassStereo is recomputed every frame from vr_bSinglePrepareRendering
     // (0x140b6b5b0). Single pass renders into an engine-owned double-width target (vr_eye_render), which came
     // back NULL in the first lab run and crashed Render; two-pass uses the device's per-eye targets.

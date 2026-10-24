@@ -172,3 +172,12 @@
   and the menu renders correctly.
 - Lab fix: a lingering lab wineserver kept the mod log locked. `killgame.sh` now stops lab wineservers, and the
   log falls back to a per-process name.
+- Lab, 2026-10-24:
+  - VR gameplay works in SS4 Pompeii: the local CPlayerVRData exists, the weapon follows the right controller, the
+    left arm steadies two-handed weapons, the head turns the view, and the trigger fires.
+  - Menus, loading screens and cutscenes use the engine's cinema screen now that immersive mode is no longer
+    forced (`force_immersive=1` restores the old behaviour). The screen re-centres on head yaw. A comfort-anchored
+    OpenXR layer is still to do (R11 s3).
+  - Siberian Mayhem reaches its menu in stereo.
+  - The pad is polled, and A passes the loading screen's Continue.
+  - New goals: picture-in-picture scopes (R14) and separate hands with finger tracking (R15).
