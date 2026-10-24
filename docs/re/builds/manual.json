@@ -36,7 +36,8 @@
   "vrd_tick": "0x1404399c0",
   "bpf_ctor": "0x1400766c0",
   "mh_register": "0x140bf6b20",
-  "mh_base_ctor": "0x140c25cb0"
+  "mh_base_ctor": "0x140c25cb0",
+  "vr_ctrl_model_pose": "0x140722f30"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -75,7 +76,8 @@
   "vrd_tick": "0x14043c0f0",
   "bpf_ctor": "0x140079010",
   "mh_register": "0x140bf9700",
-  "mh_base_ctor": "0x140c28890"
+  "mh_base_ctor": "0x140c28890",
+  "vr_ctrl_model_pose": "0x140725660"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -114,7 +116,8 @@
   "vrd_tick": "0x140439b40",
   "bpf_ctor": "0x1400769c0",
   "mh_register": "0x140bf7420",
-  "mh_base_ctor": "0x140c263e0"
+  "mh_base_ctor": "0x140c263e0",
+  "vr_ctrl_model_pose": "0x140722690"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -153,6 +156,7 @@
   "vrd_tick": "0x14043c260",
   "bpf_ctor": "0x140079300",
   "mh_register": "0x140bf9ff0",
-  "mh_base_ctor": "0x140c28fb0"
+  "mh_base_ctor": "0x140c28fb0",
+  "vr_ctrl_model_pose": "0x140724db0"
  }
 }

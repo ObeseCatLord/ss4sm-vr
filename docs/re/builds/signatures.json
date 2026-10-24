@@ -175,5 +175,10 @@
   "src": "0x1404399c0",
   "len": 64,
   "_note": "CPlayerVRData per-tick step (vrd): hands, handlers (R3 s6, R9 s1)"
+ },
+ "vr_ctrl_model_pose": {
+  "src": "0x140722f30",
+  "len": 64,
+  "_note": "per-hand VR controller model pose/draw (hand obj, drawport, ?, ?, alt): reads the model at +0x70/+0x78 without a null check (lab crash 2026-10-24)"
  }
 }

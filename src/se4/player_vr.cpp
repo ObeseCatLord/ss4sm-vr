@@ -102,6 +102,15 @@ void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn,
              henMover, reset1, reset2);
 }
 
+// Per-hand VR controller model pose (0x140722f30): reads the hand's model (+0x70, or +0x78 for the alternate
+// pose) and passes it on without a null check; content without that controller model crashed here.
+using CtrlModelFn = void(__cdecl*)(uint8_t* hand, void* dp, int a, int b, int alt);
+CtrlModelFn realCtrlModel;
+void hookedCtrlModel(uint8_t* hand, void* dp, int a, int b, int alt) {
+    if (!hand || !*reinterpret_cast<void**>(hand + (alt ? 0x78 : 0x70))) return;
+    realCtrlModel(hand, dp, a, b, alt);
+}
+
 bool hook(void* target, void* detour, void** real, const char* what) {
     if (!target || MH_CreateHook(target, detour, real) != MH_OK || MH_EnableHook(target) != MH_OK) {
         VRLOG("player_vr: %s hook FAILED (%p)", what, target);
@@ -274,6 +283,8 @@ bool install(bool localVr) {
     ok &= hook(ctrl, reinterpret_cast<void*>(hookedCtrlWorld), reinterpret_cast<void**>(&realCtrlWorld), "controller placement");
     ok &= hook(cavr, reinterpret_cast<void*>(hookedCavr), reinterpret_cast<void**>(&realCavr), "ClientActionVR");
     ok &= hook(init, reinterpret_cast<void*>(hookedVrdInit), reinterpret_cast<void**>(&realVrdInit), "vrd_init");
+    if (auto* cm = b.at<uint8_t>(se4::gen::vr_ctrl_model_pose))
+        ok &= hook(cm, reinterpret_cast<void*>(hookedCtrlModel), reinterpret_cast<void**>(&realCtrlModel), "controller model");
     if (!localVr) return ok;
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
     g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;

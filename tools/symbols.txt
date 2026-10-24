@@ -48,3 +48,4 @@ manual:bpf_ctor                  # R9: CBonePathFollower ctor
 manual:mh_register               # R9: register a motion handler on a renderable's anim queue
 manual:mh_base_ctor              # R9: CMotionHandler base ctor (base vtable read from its lea)
 manual:vrd_tick                  # R9: CPlayerVRData per-tick step
+manual:vr_ctrl_model_pose         # lab: per-hand VR controller model pose; guarded against a NULL model
