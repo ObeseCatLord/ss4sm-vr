@@ -79,6 +79,18 @@ int main() {
         p = m.update(f);
         assert(p.rx == 0 && p.ry == 0);
     }
+    // Wheel held: right face buttons cycle the gadget ring instead of jump/crouch
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.hand[0].buttons = TrackpadPress;
+        f.hand[1].buttons = Primary;
+        assert(m.update(f).buttons == (PadLB | PadDpadUp));
+        f.hand[1].buttons = Secondary;
+        assert(m.update(f).buttons == (PadLB | PadDpadDown));
+        f.hand[0].buttons = 0;
+        assert(m.update(f).buttons == PadB);
+    }
     // Vive: trackpad press is not also reported as a stick click (sprint)
     {
         Mapper m;

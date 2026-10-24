@@ -103,7 +103,8 @@ static_assert(uint32_t(xr::BtnPrimary) == core::controls::Primary && uint32_t(xr
               uint32_t(xr::BtnStickClick) == core::controls::StickClick && uint32_t(xr::BtnMenu) == core::controls::Menu &&
               uint32_t(xr::BtnTrackpadPress) == core::controls::TrackpadPress, "button bits must match");
 static_assert(XINPUT_GAMEPAD_LEFT_SHOULDER == core::controls::PadLB && XINPUT_GAMEPAD_Y == core::controls::PadY &&
-              XINPUT_GAMEPAD_START == core::controls::PadStart, "XInput bits must match");
+              XINPUT_GAMEPAD_START == core::controls::PadStart && XINPUT_GAMEPAD_DPAD_UP == core::controls::PadDpadUp &&
+              XINPUT_GAMEPAD_DPAD_DOWN == core::controls::PadDpadDown, "XInput bits must match");
 core::controls::Mapper g_mapper;
 
 void publishFromXr() {

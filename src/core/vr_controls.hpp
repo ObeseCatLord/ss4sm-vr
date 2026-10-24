@@ -8,7 +8,9 @@
 // The native weapon wheel (R3 s6) selects with the right stick for the primary hand and the left stick for
 // the second hand. While the wheel button is held, each hand's displacement from where it was when the
 // button went down acts as that hand's stick (move the hand towards the item), unless the physical
-// stick is pushed further.
+// stick is pushed further. While the wheel is held, the right hand's two face buttons (Index/Touch A, B)
+// become D-pad up/down, which cycle the wheel's gadget ring (syscmdUp/Down; the gamepad mapping of those
+// system commands is assumed to be the D-pad, runtime check pending) instead of jumping/crouching.
 // Per-profile layout (semantic action -> button):
 //   Valve Index: wheel L trackpad press, dual-wield R trackpad press, jump R A, crouch R B, reload L A,
 //                menu L B, gadget L grip, use R stick click, sprint L stick click.
@@ -31,7 +33,7 @@ enum : uint32_t { Primary = 1u << 0, Secondary = 1u << 1, StickClick = 1u << 2, 
 
 // XInput wButtons bit values (kept local so this header stays portable).
 enum : uint16_t {
-    PadStart = 0x0010, PadLeftThumb = 0x0040, PadRightThumb = 0x0080, PadLB = 0x0100, PadRB = 0x0200,
+    PadDpadUp = 0x0001, PadDpadDown = 0x0002, PadStart = 0x0010, PadLeftThumb = 0x0040, PadRightThumb = 0x0080, PadLB = 0x0100, PadRB = 0x0200,
     PadA = 0x1000, PadB = 0x2000, PadX = 0x4000, PadY = 0x8000,
 };
 
@@ -127,6 +129,11 @@ struct Mapper {
         case Kind::Unknown:
             if (on(L, Menu) || on(R, Menu)) b |= PadStart;
             break;
+        }
+        if (wheel && (f.kind == Kind::Index || f.kind == Kind::Touch)) {
+            b &= uint16_t(~(PadA | PadB));
+            if (on(R, Primary)) b |= PadDpadUp;
+            if (on(R, Secondary)) b |= PadDpadDown;
         }
         if (wheel) {
             b |= PadLB;
