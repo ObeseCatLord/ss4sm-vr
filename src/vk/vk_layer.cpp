@@ -102,7 +102,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
     onGameVulkan();
     VRLOG("vk: game vkCreateInstance (%u extensions)", ci->enabledExtensionCount);
     auto& rt = xr::runtime();
-    if (!rt.active() && !rt.initialize()) {
+    if (!rt.ensure()) {
         VRLOG("vk: no OpenXR system - flat passthrough");
         VkResult r = realCreateInstance(ci, a, out);
         if (r == VK_SUCCESS) g.instance = *out;
@@ -601,7 +601,7 @@ FARPROC interceptProc(HMODULE mod, const char* name, FARPROC real) {
         realGIPA = reinterpret_cast<PFN_vkGetInstanceProcAddr>(real);
         // The Vulkan backend is initialising on a game thread: bring up OpenXR and install the VR device
         // now, because the backend queries the device during init (R1: install before gfx init).
-        if (!(se4::g_debugSkip & 8) && (xr::runtime().active() || xr::runtime().initialize())) vrdev::install();
+        if (!(se4::g_debugSkip & 8) && xr::runtime().ensure()) vrdev::install();
         return reinterpret_cast<FARPROC>(hookGIPA);
     }
     if (!strcmp(name, "vkCreateInstance")) {

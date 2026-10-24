@@ -289,6 +289,6 @@ void onDeviceInstalled() {
     // non-emulated device only with this cvar or an active "VRController" input device. SS4/SM have no such
     // input device, and the engine switches to it whenever device+0xb3c is set (game loop 0x140058800), so
     // the device keeps +0xb3c at 0 and this cvar (read only there) is forced instead (R3 follow-up).
-    se4::setIndex(se4::gen::vr_bVRControllerExclusiveInput, 1);
+    if (se4::options::get("vr_exclusive_input", 1)) se4::setIndex(se4::gen::vr_bVRControllerExclusiveInput, 1);
 }
 }  // namespace player_vr

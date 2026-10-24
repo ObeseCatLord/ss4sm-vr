@@ -29,6 +29,20 @@ const char* resultName(XrResult r) {
     return "XR_?";
 }
 
+bool Runtime::ensure() {
+    static int state;  // 0 untried, 1 ok, -1 failed
+    if (active()) return true;
+    if (state) return state > 0;
+    state = initialize() ? 1 : -1;
+    return state > 0;
+}
+
+bool Runtime::hasExtension(const char* name) const {
+    for (const auto& e : enabled_)
+        if (e == name) return true;
+    return false;
+}
+
 bool Runtime::initialize() {
     uint32_t n = 0;
     if (!check(xrEnumerateInstanceExtensionProperties(nullptr, 0, &n, nullptr), "enumerate extensions")) return false;
@@ -45,8 +59,10 @@ bool Runtime::initialize() {
     }
     std::vector<const char*> want = {XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME};
     for (const char* e : {XR_KHR_VISIBILITY_MASK_EXTENSION_NAME, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME,
-                          XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME, XR_EXT_HAND_TRACKING_EXTENSION_NAME})
+                          XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME, XR_EXT_HAND_TRACKING_EXTENSION_NAME,
+                          XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME})
         if (has(e)) want.push_back(e);
+    enabled_.assign(want.begin(), want.end());
 
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
     strcpy(ci.applicationInfo.applicationName, "Serious Sam 4 VR");

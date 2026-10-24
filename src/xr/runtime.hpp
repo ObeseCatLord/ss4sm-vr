@@ -5,6 +5,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace xr {
@@ -29,6 +30,10 @@ class Runtime {
 public:
     // Creates the XR instance and finds the HMD system. False: no runtime/HMD; caller passes through flat.
     bool initialize();
+    // initialize() once per process (cached result); safe to call from any early game hook.
+    bool ensure();
+    // Instance extensions that were enabled (e.g. XR_EXT_eye_gaze_interaction for eye-tracked foveation).
+    bool hasExtension(const char* name) const;
     bool active() const { return system_ != XR_NULL_SYSTEM_ID; }
 
     // Called from the hooked vkCreateInstance / vkCreateDevice instead of the real functions.
@@ -67,6 +72,7 @@ private:
     Views views_;
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
     bool running_ = false;
+    std::vector<std::string> enabled_;
     std::vector<int64_t> formats_;
     PFN_xrGetVulkanGraphicsRequirements2KHR getRequirements_ = nullptr;
     PFN_xrCreateVulkanInstanceKHR createInstance_ = nullptr;

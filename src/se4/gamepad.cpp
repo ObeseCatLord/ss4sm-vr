@@ -75,6 +75,14 @@ DWORD WINAPI hookSetState(DWORD user, XINPUT_VIBRATION* v) {
 
 FARPROC interceptProc(HMODULE, const char* name, FARPROC real) {
     VRLOG("gamepad: game resolves %s", name);
+    // The engine enumerates pads right after resolving XInput, seconds before its Vulkan init (where the XR
+    // runtime used to start). Bring the runtime up now so the virtual pad is connected at that enumeration;
+    // a pad reported missing there is never polled again.
+    static bool tried;
+    if (!tried) {
+        tried = true;
+        VRLOG("gamepad: XR runtime %s at XInput resolution", xr::runtime().ensure() ? "up" : "unavailable");
+    }
     if (!strcmp(name, "XInputGetState") || !strcmp(name, "XInputGetStateEx")) {
         realGetState = reinterpret_cast<GetStateFn>(real);
         return reinterpret_cast<FARPROC>(hookGetState);

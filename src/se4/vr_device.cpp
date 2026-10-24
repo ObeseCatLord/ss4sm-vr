@@ -427,7 +427,8 @@ RenderFn realRender;
 const uint8_t* g_mainLoopRet;
 int hookedRender(void* pi, void* dp, int inVR) {
     void** global = se4::build().at<void*>(se4::gen::vr_device_global);
-    if (!inVR && g_installed && g_mainLoopRet && __builtin_return_address(0) == g_mainLoopRet && global &&
+    static const bool enabled = se4::options::get("render_vr", 1) != 0;
+    if (enabled && !inVR && g_installed && g_mainLoopRet && __builtin_return_address(0) == g_mainLoopRet && global &&
         *global == &g_obj) {
         static LONG once;
         if (!InterlockedExchange(&once, 1)) VRLOG("vrdev: main loop renders through RenderVR");
