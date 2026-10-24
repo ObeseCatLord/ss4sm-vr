@@ -27,3 +27,12 @@
       velocities, trigger/squeeze/stick/buttons with edges, haptics; verified with simulated Index controllers.
 - [ ] Device seam (`COpenXRDevice` at the VR device global) — needs R1 slot semantics
 - [ ] Engine stereo rendering into the projection layer (R2)
+
+## Phase 2 — input (in progress)
+- [x] Virtual XInput pad from VR controllers through the game's own gamepad bindings: title/menu
+      navigation, chapter screen, and in Pompeii: move (left stick), turn (right stick), fire (right
+      trigger) — `docs/evidence/2026-10-23_pompeii_move_turn_fire_vr_controllers.png`
+- [x] Game window kept "active" while VR runs (engine ignores input when its window is inactive)
+- [x] Lab: `+level <path>` loads a level directly; `tools/lab/xkey.py`/`xfocus.py` for the private display
+- [ ] Hand-tracked aiming and head-tracked view (needs the device seam, R1 table in `docs/re/R1_vtable.md`)
+- [ ] Final controller layout with native weapon/gadget wheels (Phase 3)
