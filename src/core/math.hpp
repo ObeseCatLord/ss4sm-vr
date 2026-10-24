@@ -1,6 +1,8 @@
 #pragma once
 // Small vector/quaternion/pose helpers. Adapted from SS2 VR src/common/math.hpp (MIT, SS2VR contributors).
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace core {
 constexpr float Pi = 3.14159265358979323846f;
@@ -32,6 +34,10 @@ inline Pose compose(Pose a, Pose b) { return {multiply(a.q, b.q), a.p + rotate(a
 inline Pose inverse(Pose a) {
     Quat q = inverse(a.q);
     return {q, rotate(q, a.p * -1)};
+}
+inline bool finite(Pose p) {
+    return std::isfinite(p.p.x) && std::isfinite(p.p.y) && std::isfinite(p.p.z) && std::isfinite(p.q.x) && std::isfinite(p.q.y) &&
+           std::isfinite(p.q.z) && std::isfinite(p.q.w);
 }
 inline float yawAngle(Quat q) { return std::atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z)); }
 // Row-major 3x4 [r00 r01 r02 tx | r10 r11 r12 ty | r20 r21 r22 tz] (Serious Engine Matrix3x4 layout).
