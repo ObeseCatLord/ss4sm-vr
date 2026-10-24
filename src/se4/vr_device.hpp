@@ -13,6 +13,8 @@ void updateFromInput();
 bool hookShutdown();
 // Makes sure engine objects the device presence implies exist before they are used (viewport VR viewer).
 bool hookViewport();
+// Device-local head placement (quaternion xyzw + position in engine units), as slot 0x080 returns it.
+void headPlacement(float out[7]);
 // Periodic diagnostics: per-slot call counts since the last report.
 void logStats();
 }  // namespace vrdev

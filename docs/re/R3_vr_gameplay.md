@@ -331,3 +331,27 @@ Runtime checks (headset or lab), in order:
    works.
 3. Turn with the right stick and check whether the view yaw changes once (pad) or twice.
 4. Check that the ini is unchanged after a clean exit (`vr_bVRControllerExclusiveInput`, FPS caps).
+
+### 10.1 More follow-up findings
+* Device slot 0x118 (controller type per role) decides how the engine reads the stick (0x140444a20).
+  "Vive" means a trackpad that only counts while touched or pressed, and "WindowsMR" means the same unless
+  `vr_bWindowsMRJoystickMovement` is set. "Knuckles" reads as a thumbstick unless slot 0x210
+  (hand skeleton) is non-zero; "Rift" always reads as a thumbstick. The device now reports Knuckles,
+  Rift, WindowsMR or Vive per hand from the OpenXR interaction profile. Slot 0x110 reports Rift,
+  WindowsMR or Vive.
+* `vr_iRotationController` (0x142248730) picks the turning hand in 0x14043ed10. Value 1 means role 1 (left),
+  2 means role 0 (right), and 3 means both unless `vr_bStepMovement`. The per-hand stick fields are
+  vrd+0x14 + role·0xd0 (x) and +0x18 + role·0xd0 (y).
+* The VR locomotion handlers (two objects in vrd+0x278, ticked by 0x1404399c0) only run when
+  `vrd+0x2bc & 0x18 == 0x18`. Those bits come from `CPlayerVRParams` +0xac. The handlers include the turn
+  handler 0x14044e880.
+* 0x14043dcb0 writes **player+0x2188 (target point)** and +0x2190/+0x2194 from the per-hand vrd entry
+  (+0x5c + role·0xd0), and sets player+0x2504 = (role == 0). In VR the aim target therefore comes from the
+  hand ray. See R8.
+* The native VR sender 0x14048b730 and SM's 0x14048bd50 use the same vrd offsets (+0x288 fire bits, +0x628
+  movement front, +0x634 relative move, +0x658). Player-side fields shift by 8 in SM (vrd pointer
+  +0x25c8 → +0x25d0, +0x2308 → +0x2310).
+* Mod option `native_vr_action=1` (ss4smvr/options.txt) turns the local VR player's desktop
+  `ClientAction` into `ClientActionVR` with the same arguments plus head and hands. That is what lets a
+  multiplayer server place a VR client's weapons. It needs `native_turn=1` (implied) because the look then
+  follows the head. Both options are off until a headset test.

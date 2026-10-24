@@ -4,6 +4,7 @@
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include "core/vr_controls.hpp"
+#include "se4/player_vr.hpp"
 #include <xinput.h>
 #include <cmath>
 #include <cstring>
@@ -126,7 +127,8 @@ void publishFromXr() {
     XINPUT_GAMEPAD p{};
     p.sThumbLX = axis(m.lx);
     p.sThumbLY = axis(m.ly);
-    p.sThumbRX = axis(m.rx);
+    // With native_turn the engine turns the VR anchor from the device stick; the pad must not turn as well.
+    p.sThumbRX = (player_vr::nativeTurn() && !g_mapper.wheelHeld) ? 0 : axis(m.rx);
     p.sThumbRY = g_mapper.wheelHeld ? axis(m.ry) : 0;  // pitch comes from the head outside the wheel
     p.bRightTrigger = trig(m.rt);
     p.bLeftTrigger = trig(m.lt);

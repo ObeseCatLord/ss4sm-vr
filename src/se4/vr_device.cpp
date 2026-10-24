@@ -271,8 +271,28 @@ void sConsume(Object*, int button) {
     }
     ReleaseSRWLockExclusive(&g_btnLock);
 }
-void* sName(Object*, void* ret) { NOTE(0x110); return makeString(ret, "Vive"); }
-void* sCtrlTypeName(Object*, void* ret, int) { NOTE(0x118); return makeString(ret, "Vive"); }
+// Device and controller names the engine branches on (R1 0x110/0x118). Fusion's SteamVR device reports "Rift"
+// for Oculus, "WindowsMR" for Windows MR, else "Vive", and "Knuckles" per hand for Index controllers. The
+// stick reader 0x140444a20 treats "Vive" (and "WindowsMR" without vr_bWindowsMRJoystickMovement) as a
+// trackpad that only counts while touched/pressed, so thumbstick controllers must not be reported as "Vive".
+const char* nameForKind(xr::ControllerKind k, bool perHand) {
+    switch (k) {
+    case xr::ControllerKind::Index: return perHand ? "Knuckles" : "Vive";
+    case xr::ControllerKind::Touch: return "Rift";
+    case xr::ControllerKind::WMR: return "WindowsMR";
+    default: return "Vive";
+    }
+}
+void* sName(Object*, void* ret) {
+    NOTE(0x110);
+    auto k = xr::input().hand(1).kind != xr::ControllerKind::Unknown ? xr::input().hand(1).kind : xr::input().hand(0).kind;
+    return makeString(ret, nameForKind(k, false));
+}
+void* sCtrlTypeName(Object*, void* ret, int role) {
+    NOTE(0x118);
+    int hand = role == 1 ? 0 : 1;  // engine role 0 = right, 1 = left
+    return makeString(ret, nameForKind(xr::input().hand(hand).kind, true));
+}
 const char* sRoleSerial(Object*, int) { NOTE(0x0b0); return ""; }
 int sOne(Object*) { return 1; }
 int sApi(Object*) { NOTE(0x148); return 1; }  // "SteamVR" code paths
@@ -422,10 +442,11 @@ bool install() {
 
 bool installed() { return g_installed; }
 
-// Stick axes (buttons 2/3) feed the engine's own VR turning (0x14044e880, anchor yaw) and VR movement
-// (0x140442f80). Locomotion stays on the virtual gamepad until a runtime test shows whether pad turning
-// already rotates the VR anchor; reporting both would turn twice (R3 follow-up).
-constexpr bool kNativeStickLocomotion = false;
+void headPlacement(float out[7]) { sHead(&g_obj, out); }
+
+// Stick x (button 2) feeds the engine's own VR turning (0x14044e880, anchor yaw) only with the native_turn
+// option; otherwise the virtual pad turns and the engine sees centred sticks (reporting both turns twice).
+// Stick y (button 3) stays 0: VR movement (0x140442f80) is only consumed by the native VR sender.
 
 void updateFromInput() {
     if (!g_installed) return;
@@ -433,7 +454,7 @@ void updateFromInput() {
     for (int role = 0; role < 2; ++role) {
         const auto& h = xr::input().hand(role == 0 ? 1 : 0);
         const uint32_t b = h.buttons;
-        const float sx = kNativeStickLocomotion ? h.stick.x : 0.f, sy = kNativeStickLocomotion ? h.stick.y : 0.f;
+        const float sx = player_vr::nativeTurn() ? h.stick.x : 0.f, sy = 0.f;
         const float v[kButtons] = {h.trigger, h.squeeze, sx, sy,
                                    (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
                                    (b & (xr::BtnStickClick | xr::BtnTrackpadPress)) ? 1.f : 0.f,

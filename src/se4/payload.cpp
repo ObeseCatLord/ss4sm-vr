@@ -8,6 +8,7 @@
 #include "se4/focus.hpp"
 #include "se4/vr_device.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -62,6 +63,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     unsigned skip = readSkipMask(path);
     if (skip) VRLOG("attach: debug skip mask 0x%x", skip);
     se4::g_debugSkip = skip;
+    se4::options::load(path);
     {
         wchar_t flag[MAX_PATH];
         wcscpy(flag, path);

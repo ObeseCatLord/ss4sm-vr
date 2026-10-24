@@ -30,3 +30,4 @@ manual:bind_local_user_psd       # R3: binds the local user to its psd; calls se
 manual:vrd_init                  # R3: CPlayerVRData init; two unguarded device slot 0x208 calls
 manual:vrd_controller_world      # R3: CPlayerVRData controller world placement (vrd, P7* out, role)
 manual:client_action_vr          # R3: ClientActionVR net stub + apply (writes the player's vrd unguarded)
+manual:client_action             # R3: desktop ClientAction net stub + apply (player vt+0x1298)

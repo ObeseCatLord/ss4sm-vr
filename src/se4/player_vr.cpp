@@ -5,6 +5,7 @@
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
 #include "se4/log.hpp"
+#include "se4/options.hpp"
 #include "se4/vr_device.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -69,6 +70,33 @@ void hookedCavr(uint8_t* player, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintp
         return;
     }
     realCavr(player, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13);
+}
+
+// --- ClientAction (desktop) -> ClientActionVR for the local VR player (option native_vr_action). The desktop
+// sender (0x14048b160) computed every argument; ClientActionVR takes the same ones (lock-on aim is not part of
+// it) plus the device-local head and both world controller placements, as the native VR sender 0x14048b730
+// builds them, and the VR movement front Euler (vrd+0x628, same offset in SS4 and SM). ---
+using CaFn = void(__cdecl*)(uint8_t*, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
+                            uintptr_t, uintptr_t, uintptr_t);
+CaFn realCa;
+bool g_nativeAction, g_nativeTurn;
+void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn, uintptr_t relMove, uintptr_t clientPos,
+              uintptr_t clientH, uintptr_t henFloor, uintptr_t henMover, uintptr_t reset1, uintptr_t reset2) {
+    void* vrd = player ? *reinterpret_cast<void**>(player + g_vrdOff) : nullptr;
+    if (!g_nativeAction || !vrd || vrd != g_localVrd || !vrdev::installed()) {
+        realCa(player, fire, look, lockOn, relMove, clientPos, clientH, henFloor, henMover, reset1, reset2);
+        return;
+    }
+    float head[7], right[7], left[7], front[3];
+    vrdev::headPlacement(head);
+    realCtrlWorld(vrd, right, 0);
+    realCtrlWorld(vrd, left, 1);
+    memcpy(front, static_cast<uint8_t*>(vrd) + 0x628, sizeof front);
+    static LONG once;
+    if (!InterlockedExchange(&once, 1)) VRLOG("player_vr: local VR player sends ClientActionVR");
+    realCavr(player, fire, reinterpret_cast<uintptr_t>(head), reinterpret_cast<uintptr_t>(right),
+             reinterpret_cast<uintptr_t>(left), relMove, clientPos, clientH, reinterpret_cast<uintptr_t>(front), henFloor,
+             henMover, reset1, reset2);
 }
 
 bool hook(void* target, void* detour, void** real, const char* what) {
@@ -174,6 +202,8 @@ bool patchSlot208(uint8_t* fn, void** global) {
 }  // namespace
 
 unsigned vrdOffset() { return g_vrdOff; }
+bool nativeVrAction() { return g_nativeAction; }
+bool nativeTurn() { return g_nativeTurn; }
 void* localVrd() { return g_localVrd; }
 
 bool install() {
@@ -197,6 +227,11 @@ bool install() {
     ok &= hook(ctrl, reinterpret_cast<void*>(hookedCtrlWorld), reinterpret_cast<void**>(&realCtrlWorld), "controller placement");
     ok &= hook(cavr, reinterpret_cast<void*>(hookedCavr), reinterpret_cast<void**>(&realCavr), "ClientActionVR");
     ok &= hook(init, reinterpret_cast<void*>(hookedVrdInit), reinterpret_cast<void**>(&realVrdInit), "vrd_init");
+    g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
+    g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;
+    if (auto* ca = b.at<uint8_t>(se4::gen::client_action))
+        ok &= hook(ca, reinterpret_cast<void*>(hookedCa), reinterpret_cast<void**>(&realCa), "ClientAction");
+    else ok = !g_nativeAction;
     if (!ok) return false;  // never enable VR players without every guard
     return hook(setter, reinterpret_cast<void*>(hookedSetPlaying), reinterpret_cast<void**>(&realSetPlaying), "SetPlayingInVR");
 }

@@ -12,6 +12,14 @@ bool install();
 void onDeviceInstalled();
 // Byte offset of the player's CPlayerVRData* in this build (SS4 0x25c8, SM 0x25d0), 0 when unknown.
 unsigned vrdOffset();
+// Options (ss4smvr/options.txt), both off until verified on the headset:
+//   native_vr_action=1  the local VR player sends ClientActionVR (head and both hands reach the server, which
+//                       multiplayer needs for hand-placed weapons of VR clients) instead of ClientAction; the
+//                       look direction then follows the head and turning moves the VR anchor (native_turn).
+//   native_turn=1       stick x is reported to the engine's VR rotation (vr_iRotationMethod/Controller) and the
+//                       virtual pad sends no look-turn. Defaults to native_vr_action.
+bool nativeVrAction();
+bool nativeTurn();
 // The local player's CPlayerVRData (last vrd_init with the local flag set), or nullptr.
 void* localVrd();
 }  // namespace player_vr
