@@ -26,6 +26,7 @@ export DISPLAY=$D
 export STEAM_COMPAT_DATA_PATH=$ROOT/compatdata/$APP STEAM_COMPAT_CLIENT_INSTALL_PATH=$HOME/.local/share/Steam
 export SteamAppId=$APP SteamGameId=$APP PROTON_LOG=0 WINEDEBUG=-all
 export SS4SMVR_VR=1
+export XDG_RUNTIME_DIR=/tmp/ss4vr-xr   # the lab Monado's private IPC directory (tools/lab/monado.sh)
 if [ "${XR:-1}" = 1 ]; then
   export XR_RUNTIME_JSON=${XR_RUNTIME_JSON:-$HOME/ss2-vr-private/monado-exact-prefix/share/openxr/1/openxr_monado.json}
   export VR_OVERRIDE=${VR_OVERRIDE:-$HOME/.local/share/envision/ovr_comp/target/release}
@@ -34,7 +35,7 @@ T=$(date +%s)
 cd "$G/Bin/x64"
 setsid "$HOME/.local/share/Steam/compatibilitytools.d/GE-Proton11-9-x86_64/proton" run ./$EXE +gfx_strAPI Vulkan \
   +prj_strDisabledCompatibilityCheckMessages GPUDetect +gfx_bFullScreen 0 +gfx_pixResWidth 1280 +gfx_pixResHeight 720 \
-  +gfx_pixWinWidth 1280 +gfx_pixWinHeight 720 +sfx_fMasterVolume 0 "$@" > "/tmp/claude-1000/${EXE%.exe}_proton.out" 2>&1 < /dev/null &
+  +gfx_pixWinWidth 1280 +gfx_pixWinHeight 720 +sfx_fMasterVolume 0 +prj_bAutoSaveAtChapters 0 "$@" > "/tmp/claude-1000/${EXE%.exe}_proton.out" 2>&1 < /dev/null &
 for ((i=0;i<TO;i+=2)); do
   if [ -f "$G/Log/$LOG" ] && [ "$(stat -c %Y "$G/Log/$LOG")" -gt "$T" ] && grep -q 'User interaction stage reached' "$G/Log/$LOG"; then echo "MENU after ${i}s (display $D)"; exit 0; fi
   sleep 2

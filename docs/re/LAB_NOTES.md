@@ -21,3 +21,13 @@
 - **Never stop the user's runtime.** On 2026-10-23 the old `monado.sh` ran `pkill -x monado-service` and
   stopped the user's Envision Monado. `tools/lab/monado.sh` now only stops the process in its own pid file
   when its exe is the private lab build, and refuses to start while any other Monado is running.
+
+## Lab Monado isolation (2026-10-23, second incident)
+The lab Monado had been left running. When the user started their own Monado afterwards, the lab instance
+still owned `/run/user/1000/monado_comp_ipc`, so the user's runtime had no socket. Stopping the lab instance
+then removed the socket, and the user had to restart their Monado.
+Fix:
+- `tools/lab/monado.sh` and `run_game.sh` use the private `XDG_RUNTIME_DIR=/tmp/ss4vr-xr`, so the lab socket
+  and pid file never touch `/run/user/1000`.
+- `tools/lab/stop_lab.sh` ends every lab session. Never leave the lab runtime running.
+- The lab still refuses to start while the user's Monado runs.
