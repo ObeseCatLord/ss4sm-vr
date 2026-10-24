@@ -16,6 +16,15 @@ struct Swapchain {
     std::vector<VkImage> images;
 };
 
+struct Views {
+    bool valid = false;
+    XrTime time = 0;
+    XrView inView[2]{};   // eyes relative to the head (VIEW space): IPD and eye rotation
+    XrPosef head{};       // VIEW in the play space (STAGE: y = height above the floor)
+    XrFovf fov[2]{};
+    uint32_t recommendedWidth = 0, recommendedHeight = 0;
+};
+
 class Runtime {
 public:
     // Creates the XR instance and finds the HMD system. False: no runtime/HMD; caller passes through flat.
@@ -41,6 +50,10 @@ public:
     bool waitBeginFrame(XrFrameState& fs);
     bool endFrame(const XrFrameState& fs, const XrCompositionLayerBaseHeader* const* layers, uint32_t count);
     bool locateHead(XrTime t, XrPosef& head);
+    // Locate head and eyes for the predicted display time of the current frame (call after waitBeginFrame).
+    void updateViews(XrTime t);
+    const Views& views() const { return views_; }
+    XrSpace playSpace() const { return stage_ ? stage_ : local_; }
 
     XrInstance instance() const { return instance_; }
     XrSession session() const { return session_; }
@@ -50,7 +63,8 @@ private:
     XrInstance instance_ = XR_NULL_HANDLE;
     XrSystemId system_ = XR_NULL_SYSTEM_ID;
     XrSession session_ = XR_NULL_HANDLE;
-    XrSpace local_ = XR_NULL_HANDLE, view_ = XR_NULL_HANDLE;
+    XrSpace local_ = XR_NULL_HANDLE, view_ = XR_NULL_HANDLE, stage_ = XR_NULL_HANDLE;
+    Views views_;
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
     bool running_ = false;
     std::vector<int64_t> formats_;

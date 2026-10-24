@@ -17,4 +17,7 @@ struct Build {
 // the recorded file CRC. Returns false (and the payload stays inert) for any unknown or modified build.
 bool identifyBuild(Build& out);
 const Build& build();
+// Lab bisect mask from ss4smvr/debug_skip.txt (0 in normal use). Bits: 2 procaddr hook, 4 focus hooks,
+// 8 VR device install.
+extern unsigned g_debugSkip;
 }  // namespace se4

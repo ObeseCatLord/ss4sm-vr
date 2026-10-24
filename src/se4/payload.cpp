@@ -6,6 +6,7 @@
 #include "se4/log.hpp"
 #include "se4/procaddr.hpp"
 #include "se4/focus.hpp"
+#include "se4/vr_device.hpp"
 #include "vk/vk_layer.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -59,6 +60,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     VRLOG("ss4smvr payload attached");
     unsigned skip = readSkipMask(path);
     if (skip) VRLOG("attach: debug skip mask 0x%x", skip);
+    se4::g_debugSkip = skip;
     se4::Build b;
     if (!se4::identifyBuild(b)) return;
     if (MH_Initialize() != MH_OK) {
@@ -67,6 +69,10 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     }
     if (!(skip & 2)) se4::installProcAddressHook();
     if (!(skip & 4)) focus::install();
+    if (!(skip & 8)) {
+        vrdev::hookShutdown();
+        vrdev::hookViewport();
+    }
 }
 
 BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {

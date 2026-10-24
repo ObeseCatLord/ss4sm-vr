@@ -13,3 +13,9 @@ var:gfx_iMaxFPSActive
 var:gfx_iMaxFPSInactive
 var:men_iMaxAllowedFPS
 var:gfx_iWaitVSyncs
+manual:vr_device_shutdown        # engine VR device teardown (frees with engine allocator)
+manual:cstring_ctor              # CString::CString(const char*)
+manual:viewport_mouse_event      # viewport vtable slot 0x78: mouse events (reads VR viewer at +0x360 when a device exists)
+manual:engine_alloc              # engine allocator (size, tag)
+manual:vr_viewer_ctor            # VR viewer object ctor (0x138 bytes)
+manual:viewport_render_vr        # viewport vtable slot 0x58: lazily creates the viewer, renders VR view

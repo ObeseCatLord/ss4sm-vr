@@ -17,3 +17,7 @@
   before writing its log. Bisected with `ss4smvr/debug_skip.txt`; MinHook init and
   LdrRegisterDllNotification are fine. Threads start from the vulkan-1.dll load notification.
 - monado-service exits when stdin closes; the script keeps stdin open.
+
+- **Never stop the user's runtime.** On 2026-10-23 the old `monado.sh` ran `pkill -x monado-service` and
+  stopped the user's Envision Monado. `tools/lab/monado.sh` now only stops the process in its own pid file
+  when its exe is the private lab build, and refuses to start while any other Monado is running.

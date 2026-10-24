@@ -15,6 +15,7 @@
 #include "xr/input.hpp"
 #include "se4/gamepad.hpp"
 #include "se4/focus.hpp"
+#include "se4/vr_device.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <intrin.h>
@@ -312,7 +313,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     }
 
     TRACE("mirror: frame begun (shouldRender %d), acquire", fs.shouldRender);
-    xr::input().sync(rt.session(), rt.localSpace(), fs.predictedDisplayTime);
+    rt.updateViews(fs.predictedDisplayTime);
+    xr::input().sync(rt.session(), rt.playSpace(), fs.predictedDisplayTime);
     gamepad::publishFromXr();
     {
         static XrTime lastLog;
@@ -416,6 +418,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         windowStart = fs.predictedDisplayTime;
         windowFrames = 0;
         gamepad::logStats();
+        vrdev::logStats();
     }
     return result;
 }
@@ -467,6 +470,9 @@ FARPROC interceptProc(HMODULE mod, const char* name, FARPROC real) {
     vkq::initLock();
     if (!strcmp(name, "vkGetInstanceProcAddr")) {
         realGIPA = reinterpret_cast<PFN_vkGetInstanceProcAddr>(real);
+        // The Vulkan backend is initialising on a game thread: bring up OpenXR and install the VR device
+        // now, because the backend queries the device during init (R1: install before gfx init).
+        if (!(se4::g_debugSkip & 8) && (xr::runtime().active() || xr::runtime().initialize())) vrdev::install();
         return reinterpret_cast<FARPROC>(hookGIPA);
     }
     if (!strcmp(name, "vkCreateInstance")) {

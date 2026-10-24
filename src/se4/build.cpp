@@ -4,6 +4,7 @@
 #include <cstring>
 
 namespace se4 {
+unsigned g_debugSkip;
 namespace {
 Build g_build;
 

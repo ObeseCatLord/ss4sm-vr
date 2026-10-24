@@ -128,6 +128,17 @@ bool Runtime::createSession(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, 
     check(xrCreateReferenceSpace(session_, &rs, &local_), "LOCAL space");
     rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
     check(xrCreateReferenceSpace(session_, &rs, &view_), "VIEW space");
+    rs.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+    if (XR_FAILED(xrCreateReferenceSpace(session_, &rs, &stage_))) {
+        stage_ = XR_NULL_HANDLE;
+        VRLOG("xr: no STAGE space; head height will be relative to LOCAL");
+    }
+    uint32_t vc = 0;
+    XrViewConfigurationView cv[2] = {{XR_TYPE_VIEW_CONFIGURATION_VIEW}, {XR_TYPE_VIEW_CONFIGURATION_VIEW}};
+    if (XR_SUCCEEDED(xrEnumerateViewConfigurationViews(instance_, system_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 2, &vc, cv)) && vc == 2) {
+        views_.recommendedWidth = cv[0].recommendedImageRectWidth;
+        views_.recommendedHeight = cv[0].recommendedImageRectHeight;
+    }
     uint32_t n = 0;
     xrEnumerateSwapchainFormats(session_, 0, &n, nullptr);
     formats_.resize(n);
@@ -236,4 +247,33 @@ bool Runtime::locateHead(XrTime t, XrPosef& head) {
     return true;
 }
 
+}  // namespace xr
+
+namespace xr {
+void Runtime::updateViews(XrTime t) {
+    XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};
+    li.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    li.displayTime = t;
+    li.space = view_;
+    XrViewState vs{XR_TYPE_VIEW_STATE};
+    XrView v[2] = {{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
+    uint32_t n = 0;
+    if (XR_FAILED(xrLocateViews(session_, &li, &vs, 2, &n, v)) || n != 2 ||
+        !(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
+        views_.valid = false;
+        return;
+    }
+    XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+    if (XR_FAILED(xrLocateSpace(view_, playSpace(), t, &loc)) || !(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+        views_.valid = false;
+        return;
+    }
+    views_.inView[0] = v[0];
+    views_.inView[1] = v[1];
+    views_.fov[0] = v[0].fov;
+    views_.fov[1] = v[1].fov;
+    views_.head = loc.pose;
+    views_.time = t;
+    views_.valid = true;
+}
 }  // namespace xr
