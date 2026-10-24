@@ -31,6 +31,14 @@ def nth_call(img, va, index, limit=0x200):
 
 
 for name, s in [(k, v) for k, v in sigs.items() if 'call_of' not in v] + [(k, v) for k, v in sigs.items() if 'call_of' in v]:
+    if 'script' in s:  # a registered script function, from each build's harvest
+        for b in imgs:
+            va = harvested(b, s['script'])
+            if va: manual.setdefault(b, {})[name] = va if isinstance(va, str) else hex(va)
+            else:
+                ok = False
+                print('FAIL', name, b, file=sys.stderr)
+        continue
     if 'call_of' in s:
         for b, img in imgs.items():
             base = manual.get(b, {}).get(s['call_of']) or harvested(b, s['call_of'])

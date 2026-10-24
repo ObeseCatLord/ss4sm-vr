@@ -64,7 +64,10 @@
   "new_model": "0x140c0e9b0",
   "model_set_config": "0x140c112d0",
   "hide_controller": "0x140721af0",
-  "model_set_stretch": "0x140c11370"
+  "model_set_stretch": "0x140c11370",
+  "hide_right_ctrl_script": "0x1404385d0",
+  "hide_left_ctrl_script": "0x140438610",
+  "entity_time": "0x140ba78c0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -131,7 +134,10 @@
   "model_set_config": "0x140c13eb0",
   "hide_controller": "0x140724220",
   "controller_draw": "0x140725580",
-  "model_set_stretch": "0x140c13f50"
+  "model_set_stretch": "0x140c13f50",
+  "hide_right_ctrl_script": "0x14043ad00",
+  "hide_left_ctrl_script": "0x14043ad40",
+  "entity_time": "0x140baa270"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -198,7 +204,10 @@
   "model_set_config": "0x140c11a50",
   "hide_controller": "0x140721250",
   "controller_draw": "0x1407225b0",
-  "model_set_stretch": "0x140c11af0"
+  "model_set_stretch": "0x140c11af0",
+  "hide_right_ctrl_script": "0x140438750",
+  "hide_left_ctrl_script": "0x140438790",
+  "entity_time": "0x140ba7f90"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -265,6 +274,9 @@
   "model_set_config": "0x140c14620",
   "hide_controller": "0x140723970",
   "controller_draw": "0x140724cd0",
-  "model_set_stretch": "0x140c146c0"
+  "model_set_stretch": "0x140c146c0",
+  "hide_right_ctrl_script": "0x14043ae70",
+  "hide_left_ctrl_script": "0x14043aeb0",
+  "entity_time": "0x140baa930"
  }
 }

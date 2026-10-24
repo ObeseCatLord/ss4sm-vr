@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 // Hands separate from the guns (docs/re/R15_hands.md). Today: the native two-hand grip driven by the off hand's
 // squeeze, as in eduke32_vr. The weapon step (R15 s4.2) grips a two-handed weapon while the other hand's fire bit
 // is held and its controller is within the snap distance of the weapon's grip attachment; the mod substitutes that
@@ -11,4 +12,8 @@ namespace hands {
 bool install();
 // Present thread: true when this XR hand (0 left, 1 right) is gripping a weapon or within reach of a grip.
 bool squeezeTaken(int hand);
+// Weapon placement (src/se4/arms.cpp): while a weapon is gripped by the mod's two-hand rule, its params carry
+// wp_bTwoHanded for the placement call so the native two-hand blend runs. Returns true when raised.
+bool raiseTwoHanded(uint8_t* weapon, uint8_t* params, int32_t& savedFlag, float& savedSnap);
+void restoreTwoHanded(uint8_t* params, int32_t savedFlag, float savedSnap);
 }  // namespace hands

@@ -81,3 +81,6 @@ manual:new_model  # R15
 manual:model_set_config  # R15
 manual:model_set_stretch  # R15
 manual:hide_controller  # R15
+manual:hide_right_ctrl_script  # R15: right CVRController offset read from its add rcx, imm32
+manual:hide_left_ctrl_script   # R15: left CVRController offset
+manual:entity_time               # R15: entity time getter used for the two-hand grip lerp stamp

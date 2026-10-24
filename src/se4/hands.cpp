@@ -10,6 +10,7 @@
 #include <MinHook.h>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 namespace hands {
 namespace {
@@ -24,6 +25,8 @@ StepFn realStep;
 HandleFn handleEntity;
 BarrelFn barrelPlacement;
 CtxFn barrelCtx;
+using TimeFn = void*(__cdecl*)(void* entity, void* out);
+TimeFn entityTime;
 void**(__cdecl* g_identCtor)(void**, const char*);
 void* g_gripIdent;
 bool g_identReady;      // LeftHandGripEffector (R15 s4.2)
@@ -119,6 +122,60 @@ uint8_t* localOwner(uint8_t* weapon) {
     return owner && at<void*>(owner, vrdOff) == local ? owner : nullptr;
 }
 
+// SS4/SM content sets wp_bTwoHanded on no weapon (lab probe 2026-10-24), which leaves the native grip dormant. A
+// weapon counts as two-handable when its foregrip (LeftHandGripEffector) sits at least 12 cm from the main hand;
+// the flag is then raised only around the two engine functions that grip with it (this step and the weapon
+// placement), so IsTwoHanded elsewhere (dual-wield rules) stays native.
+struct TwoHandable {
+    uint8_t* weapon;
+    int state;  // 0 unknown, 1 yes, 2 no
+};
+TwoHandable g_two[16];
+bool g_gripAll = true;
+
+int& twoHandState(uint8_t* weapon) {
+    for (auto& t : g_two)
+        if (t.weapon == weapon) return t.state;
+    static int next;
+    TwoHandable& t = g_two[next++ % 16];
+    t = {weapon, 0};
+    return t.state;
+}
+
+bool decideTwoHandable(uint8_t* weapon, int mainRole) {
+    int& st = twoHandState(weapon);
+    if (st) return st == 1;
+    float grip7[7] = {}, hand7[7] = {};
+    barrelPlacement(weapon, grip7, barrelCtx(), g_gripIdent, 0, 0, 1);
+    player_vr::controllerWorld(player_vr::localVrd(), mainRole, hand7);
+    if (!(hand7[0] || hand7[1] || hand7[2] || hand7[3])) return false;
+    const core::Vec3 d{grip7[4] - hand7[4], grip7[5] - hand7[5], grip7[6] - hand7[6]};
+    float ws = 1.0f;
+    if (auto* sc = se4::build().at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) ws = *sc;
+    const float dist = std::sqrt(core::dot(d, d)) * ws;
+    st = dist >= 0.12f ? 1 : 2;
+    const core::Vec3 local = core::rotate(core::inverse(core::normalize({hand7[0], hand7[1], hand7[2], hand7[3]})), d) * ws;
+    VRLOG("hands: weapon %p foregrip %.2f m from the hand (hand frame %.3f %.3f %.3f): %s", weapon, dist, local.x, local.y, local.z,
+          st == 1 ? "two-handable" : "one-handed");
+    return st == 1;
+}
+
+// Raises wp_bTwoHanded (and a usable snap distance) for one engine call.
+struct TwoHandScope {
+    uint8_t* params = nullptr;
+    int32_t savedFlag = 0;
+    float savedSnap = 0;
+    void raise(uint8_t* p) {
+        params = p;
+        savedFlag = at<int32_t>(p, kTwoHanded), savedSnap = at<float>(p, kSnapDistance);
+        at<int32_t>(p, kTwoHanded) = 1;
+        if (!(savedSnap >= 0.0f && savedSnap < 2.0f)) at<float>(p, kSnapDistance) = kDefaultSnap;
+    }
+    ~TwoHandScope() {
+        if (params) at<int32_t>(params, kTwoHanded) = savedFlag, at<float>(params, kSnapDistance) = savedSnap;
+    }
+};
+
 void hookedStep(uint8_t* weapon, void* arg) {
     if (!g_identReady) {
         g_identReady = true;
@@ -134,7 +191,20 @@ void hookedStep(uint8_t* weapon, void* arg) {
         lastProbed = weapon;
         probeWeapon(weapon, params);
     }
-    if (!params || !at<int32_t>(params, kTwoHanded) || !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire)) {
+    const bool rightHand = params && at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0;
+    const bool native = params && at<int32_t>(params, kTwoHanded) != 0;
+    // Only a right-hand weapon takes the left hand as its support hand (a left weapon is the dual-wield one).
+    const bool twoHand = params && (native || (g_gripAll && rightHand && decideTwoHandable(weapon, 0)));
+    {
+        const int offXr = rightHand ? 0 : 1;
+        const auto& hs = xr::input().hand(offXr);
+        static ULONGLONG last;
+        if (params && hs.squeeze > 0.5f && GetTickCount64() - last > 1000) {
+            last = GetTickCount64();
+            VRLOG("hands: squeeze on weapon %p (two-hand %d native %d flags %x)", weapon, int(twoHand), int(native), at<uint32_t>(weapon, kFlags));
+        }
+    }
+    if (!params || !twoHand || !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire)) {
         realStep(weapon, arg);
         if (params) arms::onWeaponStep(weapon, at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0, false);
         return;
@@ -153,6 +223,13 @@ void hookedStep(uint8_t* weapon, void* arg) {
     float snap = at<float>(params, kSnapDistance);
     if (!(snap >= 0.0f && snap < 2.0f)) snap = kDefaultSnap;
     o.inReach = core::dot(d, d) <= snap * snap;
+    {
+        static ULONGLONG last;
+        if (xr::input().hand(offXr).squeeze > 0.5f && GetTickCount64() - last > 1000) {
+            last = GetTickCount64();
+            VRLOG("hands:   off hand %.3f from the foregrip (snap %.3f), in reach %d", std::sqrt(core::dot(d, d)), snap, int(o.inReach));
+        }
+    }
 
     const auto& hs = xr::input().hand(offXr);
     const float s = hs.active ? hs.squeeze : 0.0f;
@@ -165,17 +242,43 @@ void hookedStep(uint8_t* weapon, void* arg) {
     uint8_t& bits = at<uint8_t>(player, g_fireBits);
     const uint8_t saved = bits;
     bits = o.engaged ? uint8_t(saved | mask) : uint8_t(saved & ~mask);
-    realStep(weapon, arg);
+    {
+        TwoHandScope th;
+        if (!native) th.raise(params);
+        realStep(weapon, arg);
+    }
     bits = saved;
 
-    const bool gripping = (at<uint32_t>(weapon, kFlags) & kGripped) != 0;
-    if (o.engaged && !gripping && !o.gripping) o.engaged = false;  // the native test refused: wait for a new press
+    bool gripping = (at<uint32_t>(weapon, kFlags) & kGripped) != 0;
+    if (o.engaged && !gripping && o.inReach && entityTime) {
+        // The native grab test places the grip attachment through a weapon virtual (vt+0x6d8) that finds nothing
+        // on SS4 weapons (lab 2026-10-24), so it never grabs. Grab exactly as it would (0x1402df227..0x1402df25d):
+        // keep the one-hand pose for the blend (+0x26c P7), stamp the time (+0x288), set the flag.
+        float main7[7] = {};
+        player_vr::controllerWorld(player_vr::localVrd(), right ? 0 : 1, main7);
+        memcpy(static_cast<uint8_t*>(weapon) + 0x26c, main7, sizeof main7);
+        uint64_t t = 0;
+        if (auto* pt = static_cast<uint64_t*>(entityTime(weapon, &t))) at<uint64_t>(weapon, 0x288) = *pt;
+        at<uint32_t>(weapon, kFlags) |= kGripped;
+        gripping = true;
+    }
+    if (o.engaged && !gripping && !o.gripping) o.engaged = false;  // out of reach: wait for a new press
     if (gripping != o.gripping) VRLOG("hands: %s hand %s the two-handed weapon %p", offXr ? "right" : "left", gripping ? "grips" : "releases", weapon);
     o.gripping = gripping;
     InterlockedExchange(&g_taken[offXr], (o.inReach || gripping) ? 1 : 0);
     arms::onWeaponStep(weapon, right, gripping);
 }
 }  // namespace
+
+bool raiseTwoHanded(uint8_t* weapon, uint8_t* params, int32_t& savedFlag, float& savedSnap) {
+    if (!weapon || !params || at<int32_t>(params, kTwoHanded) || !(at<uint32_t>(weapon, kFlags) & kGripped)) return false;
+    savedFlag = at<int32_t>(params, kTwoHanded), savedSnap = at<float>(params, kSnapDistance);
+    at<int32_t>(params, kTwoHanded) = 1;
+    return true;
+}
+void restoreTwoHanded(uint8_t* params, int32_t savedFlag, float savedSnap) {
+    at<int32_t>(params, kTwoHanded) = savedFlag, at<float>(params, kSnapDistance) = savedSnap;
+}
 
 bool squeezeTaken(int hand) { return (hand == 0 || hand == 1) && g_taken[hand] != 0; }
 
@@ -198,6 +301,8 @@ bool install() {
     }
     g_identCtor = identCtor;
     g_probe = se4::options::get("hands_probe", 0) != 0;
+    g_gripAll = se4::options::get("grip_all", 1) != 0;
+    entityTime = reinterpret_cast<TimeFn>(b.at<void>(se4::gen::entity_time));
     if (MH_CreateHook(step, reinterpret_cast<void*>(hookedStep), reinterpret_cast<void**>(&realStep)) != MH_OK || MH_EnableHook(step) != MH_OK) {
         VRLOG("hands: weapon step hook FAILED");
         return false;

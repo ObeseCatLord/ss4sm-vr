@@ -248,3 +248,22 @@
     - Make a deterministic static capture: freeze foliage/time and read the eye image back directly instead of the
       desktop mirror.
   - Until then `upscaler` stays 0 by default. Lab switches are listed in src/up/integrate.cpp.
+- Lab, 2026-10-24, SS4 Pompeii, hands and scope working:
+  - **PiP scope:** the sniper's scope view is a circular, magnified image with a reticle at the eyepiece, in the
+    weapon's hand. The engine renders it as eye 3.
+    - Fixes needed: gfx vt+0x288 takes `*rt`, and the layer is premultiplied. Monado showed nothing with
+      unpremultiplied blending.
+  - **Free off hand:** the left arm reaches its controller (IK from a virtual shoulder, finger curls) and replaces
+    the native controller model. The controller objects are found at vrd+0x4e0/+0x3d8 from the Hide*VRController
+    scripts.
+  - **Two-hand grip:** squeezing the left hand at a rifle's foregrip engages the engine's own two-hand blend; the
+    rifle follows the main-hand→off-hand line, and releasing the squeeze returns it to one hand.
+    - No SS4 weapon has `wp_bTwoHanded` set, so the mod raises it only around the weapon step and placement. That
+      applies to weapons whose LeftHandGripEffector is at least 12 cm from the hand, so dual-wield rules are
+      unchanged.
+    - The native grab test never grabs: its attachment virtual finds nothing. The mod grabs exactly as the engine
+      would, with the one-hand pose, the time stamp (entity time 0x140ba78c0) and flag 0x20, and the native release
+      path is kept.
+  - **Weapon wheel:** the Index left trackpad press opens the native wheel. As device button 6 it had opened
+    Netricsa, so the press is no longer reported there. Lab weapon selection is in `tools/lab/to_sniper.sh`, and give-all
+    needs `+cht_bEnableCheats 1`.

@@ -334,5 +334,19 @@
   "src": "0x140721af0",
   "len": 48,
   "_note": "CVRController hide (+0x94 = 0, laser dot) (R15 s5)"
+ },
+ "hide_right_ctrl_script": {
+  "script": "CPlayerVRData::HideRightVRController",
+  "_note": "add rcx, <right CVRController offset>; call hide_controller (R15 s5)"
+ },
+ "hide_left_ctrl_script": {
+  "script": "CPlayerVRData::HideLeftVRController",
+  "_note": "left CVRController offset (R15 s5)"
+ },
+ "entity_time": {
+  "call_of": "weapon_step",
+  "index": 25,
+  "limit": 4608,
+  "_note": "entity simulation time (entity, out) -> &out; the weapon step stamps grip changes with it (+0x288) (R15 s4.2); 26th direct call of the weapon step"
  }
 }

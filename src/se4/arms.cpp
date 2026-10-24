@@ -5,6 +5,7 @@
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
+#include "se4/hands.hpp"
 #include "core/hand_pose.hpp"
 #include "xr/input.hpp"
 #include <windows.h>
@@ -24,6 +25,16 @@ using IdentFn = void**(__cdecl*)(void** out, const char* name);
 template <class T> T& at(void* base, size_t off) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(base) + off); }
 
 QueueFn animQueue;
+using HideFn = void(__cdecl*)(void* controller);
+HideFn hideController;
+uint32_t g_ctrlOff[2];  // CVRController in CPlayerVRData: [0] left, [1] right (from the Hide*VRController scripts)
+
+// The script wrappers end in `add rcx, imm32; call hide_controller` (R15 s5).
+uint32_t addRcxImm(const uint8_t* fn) {
+    for (int i = 0; i < 0x40; ++i)
+        if (fn[i] == 0x48 && fn[i + 1] == 0x81 && fn[i + 2] == 0xC1) return *reinterpret_cast<const uint32_t*>(fn + i + 3);
+    return 0;
+}
 AddFn addHandler;
 PlacementFn realPlacement;
 HeadWorldFn headWorld;
@@ -221,7 +232,12 @@ int __cdecl apply(Handler* h, void*, uint8_t* pose) {
 void* __cdecl dtor(Handler* h, unsigned) { return h; }  // static storage (R9 s3)
 
 void* hookedPlacement(uint8_t* weapon, const float* in, float* out) {
+    uint8_t* params = weapon ? at<uint8_t*>(weapon, 0xa8) : nullptr;  // en_pwpWeaponParams
+    int32_t savedFlag;
+    float savedSnap;
+    const bool raised = hands::raiseTwoHanded(weapon, params, savedFlag, savedSnap);
     void* r = realPlacement(weapon, in, out);
+    if (raised) hands::restoreTwoHanded(params, savedFlag, savedSnap);
     if (Handler* h = weapon ? find(weapon) : nullptr; h && out) {
         InterlockedIncrement(&h->seq);
         memcpy(h->root, out, sizeof h->root);
@@ -328,6 +344,8 @@ void onWeaponStep(uint8_t* weapon, bool rightHand, bool gripped) {
         h->shoulderWorld = head.p + side + down * 0.2f + core::rotate(head.q, {0, 0, 0.05f / ws});
         h->poleWorld = h->shoulderWorld + down * 0.35f + side * 1.2f;
         if (haveCtrl) h->handWorld = {core::normalize({c7[0], c7[1], c7[2], c7[3]}), {c7[4], c7[5], c7[6]}};
+        // The free hand replaces that controller's model (re-asserted every tick; nothing native shows it again).
+        if (freeArm && haveCtrl && hideController && g_ctrlOff[off - 1]) hideController(static_cast<uint8_t*>(vrd) + g_ctrlOff[off - 1]);
         core::smooth(h->fingers, fingers, 1.0f / 60.0f);
         h->tick = now;
         InterlockedIncrement(&h->seq);
@@ -372,6 +390,11 @@ bool install() {
         return false;
     }
     g_free = se4::options::get("hands_free", 1) != 0;
+    hideController = reinterpret_cast<HideFn>(b.at<void>(se4::gen::hide_controller));
+    if (auto* l = b.at<uint8_t>(se4::gen::hide_left_ctrl_script)) g_ctrlOff[0] = addRcxImm(l);
+    if (auto* r = b.at<uint8_t>(se4::gen::hide_right_ctrl_script)) g_ctrlOff[1] = addRcxImm(r);
+    if (g_ctrlOff[0] > 0x2000 || g_ctrlOff[1] > 0x2000) g_ctrlOff[0] = g_ctrlOff[1] = 0;
+    VRLOG("arms: VR controllers at vrd+0x%x (left) / +0x%x (right)", g_ctrlOff[0], g_ctrlOff[1]);
     VRLOG("arms: off arm %s on first-person weapons", g_free ? "follows its controller" : "parked");
     return true;
 }
