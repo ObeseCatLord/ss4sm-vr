@@ -368,6 +368,9 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     }
 
     TRACE("mirror: frame begun (shouldRender %d), acquire", fs.shouldRender);
+    // The eye images submitted below were rendered with the views located at the previous present;
+    // keep those for the projection layer before locating views for the next game frame.
+    const xr::Views renderedWith = rt.views();
     rt.updateViews(fs.predictedDisplayTime);
     xr::input().sync(rt.session(), rt.playSpace(), fs.predictedDisplayTime);
     gamepad::publishFromXr();
@@ -384,7 +387,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         }
     }
     eyes::Frame ef = eyes::take();
-    bool stereo = ef.ready && !pj.failed && fs.shouldRender && rt.views().valid && setupProjection(ef);
+    bool stereo = ef.ready && !pj.failed && fs.shouldRender && renderedWith.valid && setupProjection(ef);
     uint32_t pidx = 0;
     if (stereo) stereo = rt.acquire(pj.sc, pidx);
     VkImage src = sw.images[pi->pImageIndices[0]];
@@ -493,7 +496,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     XrCompositionLayerProjectionView pv[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}, {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
     XrCompositionLayerProjection proj{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     if (stereo) {
-        const auto& v = rt.views();
+        const auto& v = renderedWith;
         float up = std::max(v.fov[0].angleUp, v.fov[1].angleUp), down = std::min(v.fov[0].angleDown, v.fov[1].angleDown);
         for (int e = 0; e < 2; ++e) {
             core::Pose head{{v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w},
