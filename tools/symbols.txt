@@ -59,3 +59,25 @@ manual:damage_ctor               # R12: CDamage ctor
 manual:weapon_params             # R12: weapon params getter
 manual:ref_release               # refcounted object Release(obj, owner slot)
 var:cht_bGiveAll                 # lab: give all weapons (lab_giveall option)
+manual:hdr_targets               # R13: allocate the HDR 3D canvas (+ MSAA twin) drawports
+manual:pp_dispatch               # R13: HDR canvas -> post-processing -> destination drawport
+manual:hdr_canvas                # R13: drawport* of the HDR 3D canvas (pp_dispatch +0x113 lea)
+manual:vrd_head_world           # R3: head world placement (vrd, P7 out) = anchor o slot 0x80; upscaler MVs
+manual:sniping_step              # R14: CSnipingWeaponMode step (this = mode; mode+8 weapon, +0x28 zoom active, +0x8c aim ratio)
+manual:barrel_placement          # R14: GetBarrelPlacement(weapon, P7 out, ctx, CName, 0, 0, 1)
+manual:barrel_ctx                # R14: GetBarrelPlacement context getter
+manual:fov_base                  # R14: player base FOV (degrees)
+var:vr_iMixedRealityOutput       # R14: renders eye 3 after both eyes (the scope view)
+var:vr_iRenderMixedRealityVideo  # R14: must stay 0 for eye 3
+var:vr_bSkipMixedRealityWeaponRendering  # R14: weapons hidden in eye 3
+manual:mode_params               # R14: weapon mode params getter (sniping params: +0xd8 swmp_fZoomFactor)
+manual:weapon_step               # R15: weapon step; two-hand grip test reads player fire bits (+0x2338 / SM +0x2340)
+manual:mi_anim_queue  # R15
+manual:queue_add_handler  # R15
+manual:weapon_placement  # R15
+manual:controller_draw  # R15
+manual:draw_model  # R15
+manual:new_model  # R15
+manual:model_set_config  # R15
+manual:model_set_stretch  # R15
+manual:hide_controller  # R15

@@ -1,0 +1,28 @@
+#version 450
+// Scope image for the eyepiece quad (src/vk/scope_layer.cpp): circular alpha with a soft rim, a lens vignette and
+// an optional fine reticle. In place on the mod's copy of the engine's scope view (8-bit, sRGB-encoded bytes).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0, rgba8) uniform image2D img;
+layout(push_constant) uniform PC {
+    vec4 p;  // x: size in pixels, y: reticle, z: swap red/blue (BGRA source)
+} pc;
+
+void main() {
+    ivec2 c = ivec2(gl_GlobalInvocationID.xy);
+    int n = int(pc.p.x);
+    if (c.x >= n || c.y >= n) return;
+    vec2 uv = (vec2(c) + 0.5) / float(n) * 2.0 - 1.0;
+    float r = length(uv);
+    vec4 v = imageLoad(img, c);
+    if (pc.p.z > 0.5) v = v.bgra;
+    v.rgb *= 1.0 - 0.55 * smoothstep(0.7, 1.0, r);
+    if (pc.p.y > 0.5) {
+        float px = 2.0 / float(n);
+        vec2 a = abs(uv);
+        bool line = (a.x < px * 0.75 && a.y > 0.03) || (a.y < px * 0.75 && a.x > 0.03);
+        bool post = (a.x < px * 3.0 && a.y > 0.55) || (a.y < px * 3.0 && a.x > 0.55);
+        if (line || post) v.rgb = vec3(0.0);
+    }
+    v.a = 1.0 - smoothstep(0.95, 1.0, r);
+    imageStore(img, c, v);
+}

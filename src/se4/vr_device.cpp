@@ -2,6 +2,8 @@
 // so `this` is the first parameter (RCX) and MSVC's hidden struct-return pointer is the second (RDX).
 // Floats travel in the XMM register of their argument position. See docs/re/R1_vtable.md.
 #include "se4/vr_device.hpp"
+#include "up/integrate.hpp"
+#include "se4/scope.hpp"
 #include "core/math.hpp"
 #include "core/stereo.hpp"
 #include "se4/build.hpp"
@@ -122,6 +124,7 @@ void eyeSize(int& w, int& h) {
 
 void* sEyeRT(Object*, void* gfx, int eye) {
     NOTE(0x028);
+    if (eye == 3) return scope::target(gfx);
     if (eye != 1 && eye != 2) return nullptr;
     const auto& b = se4::build();
     auto alloc = reinterpret_cast<AllocFn2>(b.at<void>(se4::gen::engine_alloc));
@@ -161,8 +164,14 @@ void* sEyeRT(Object*, void* gfx, int eye) {
               *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(t.holder) + 0x7c));
     return rt;
 }
-void sBeginFrame(Object*) { NOTE(0x030); }
-void sPhase1(Object*) { NOTE(0x038); }
+void sBeginFrame(Object*) {
+    NOTE(0x030);
+    scope::beginFrame();
+}
+void sPhase1(Object*) {
+    NOTE(0x038);
+    scope::endFrame();
+}
 void sPhase3(Object*, void*) { NOTE(0x040); }
 void sPhase4(Object*) { NOTE(0x048); }
 void sStep(Object*) { NOTE(0x050); }
@@ -184,6 +193,10 @@ int* sMaxSize(Object* self, int* ret) {
 }
 float* sProjection(Object*, float* m, int eye, float n, float f) {
     NOTE(0x070);
+    if (eye == 3) {
+        scope::projection(m, n, f);
+        return m;
+    }
     const auto& v = xr::runtime().views();
     if ((eye != 1 && eye != 2) || !v.valid) {
         memset(m, 0, 16 * sizeof(float));
@@ -191,11 +204,16 @@ float* sProjection(Object*, float* m, int eye, float n, float f) {
         return m;
     }
     auto fov = [](const XrFovf& x) { return core::Fov{x.angleLeft, x.angleRight, x.angleUp, x.angleDown}; };
-    core::engineProjection(core::sharedVertical(fov(v.fov[eye - 1]), fov(v.fov[0]), fov(v.fov[1])), n, f, m);
+    const core::Fov shared = core::sharedVertical(fov(v.fov[eye - 1]), fov(v.fov[0]), fov(v.fov[1]));
+    core::engineProjection(upint::jitterProjection(eye, shared, n, f, v.time), n, f, m);
     return m;
 }
 float* sEyeTransform(Object*, float* m, int eye) {
     NOTE(0x078);
+    if (eye == 3) {
+        scope::eyeTransform(m);
+        return m;
+    }
     const auto& v = xr::runtime().views();
     core::Pose p{};
     if ((eye == 1 || eye == 2) && v.valid) {

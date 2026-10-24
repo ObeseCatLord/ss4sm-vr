@@ -12,7 +12,8 @@
   "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94",
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
-  "CMacheteWeaponParams::mwp_slDamage": "0x244"
+  "CMacheteWeaponParams::mwp_slDamage": "0x244",
+  "CWeaponEntity::en_henOwner": "0x98"
  },
  "Sam4_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -27,7 +28,8 @@
   "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94",
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
-  "CMacheteWeaponParams::mwp_slDamage": "0x244"
+  "CMacheteWeaponParams::mwp_slDamage": "0x244",
+  "CWeaponEntity::en_henOwner": "0x98"
  },
  "SamSM": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -42,7 +44,8 @@
   "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94",
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
-  "CMacheteWeaponParams::mwp_slDamage": "0x244"
+  "CMacheteWeaponParams::mwp_slDamage": "0x244",
+  "CWeaponEntity::en_henOwner": "0x98"
  },
  "SamSM_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -57,6 +60,7 @@
   "CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation": "0x94",
   "CWeaponEntity::en_bRightHandWeapon": "0x118",
   "CMacheteWeaponParams::mwp_fDamageRayRadius": "0x240",
-  "CMacheteWeaponParams::mwp_slDamage": "0x244"
+  "CMacheteWeaponParams::mwp_slDamage": "0x244",
+  "CWeaponEntity::en_henOwner": "0x98"
  }
 }

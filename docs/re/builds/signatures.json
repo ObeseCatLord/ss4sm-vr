@@ -217,5 +217,122 @@
   "index": 16,
   "limit": 4096,
   "_note": "CDamage ctor: 17th direct call of the knife swing test (R12 s3)"
+ },
+ "hdr_targets": {
+  "src": "0x140c88a10",
+  "len": 64,
+  "_note": "HDR 3D canvas allocation (gfx...): creates 'HDR 3D canvas' into drawport global 0x1422d7358 (R13 s4.1)"
+ },
+ "pp_dispatch": {
+  "src": "0x140c89010",
+  "len": 64,
+  "_note": "post-processing dispatch (gfx, hdrCanvas, flags, ...): last point at render resolution before post FX (R13 s4.4)"
+ },
+ "vrd_head_world": {
+  "src": "0x14043cb50",
+  "len": 64,
+  "_note": "CPlayerVRData head world placement (vrd, out P7) = anchor o device slot 0x80 (R3 s3)"
+ },
+ "sniping_step": {
+  "src": "0x140a73a20",
+  "len": 64,
+  "_note": "CSnipingWeaponMode step (vt+0x20): aim ratio, zoom handler on/off (R14 s2.1)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140a73f90",
+   "len": 64
+  }
+ },
+ "barrel_placement": {
+  "src": "0x1402d7220",
+  "len": 64,
+  "_note": "GetBarrelPlacement(weapon, P7 out, ctx, CName attachment, 0, 0, 1) (R14 s4)"
+ },
+ "fov_base": {
+  "src": "0x140477aa0",
+  "len": 64,
+  "_note": "player base FOV in degrees (desktop; R14 s2.5)"
+ },
+ "barrel_wrapper": {
+  "src": "0x1402d1ab0",
+  "len": 48,
+  "_note": "script GetBarrelPlacement wrapper (calls: 0x14008ec30, barrel_ctx, barrel_placement)"
+ },
+ "barrel_ctx": {
+  "call_of": "barrel_wrapper",
+  "index": 1,
+  "limit": 256,
+  "_note": "no-argument getter whose result is GetBarrelPlacement's 3rd argument (script wrapper 0x1402d1ab0)"
+ },
+ "mode_params": {
+  "call_of": "sniping_step",
+  "index": 1,
+  "limit": 128,
+  "_note": "weapon mode params getter (mode) (2nd call of the sniping step; R14 s2.1)"
+ },
+ "weapon_step": {
+  "src": "0x1402de9a0",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1402de4d0",
+   "len": 64
+  },
+  "_note": "CWeaponEntity step: native two-hand grip from the other hand's fire bit (R15 s4.2)"
+ },
+ "mi_anim_queue": {
+  "src": "0x140c10420",
+  "len": 48,
+  "_note": "model instance -> animation queue (mi, create) (R15 s1.2)"
+ },
+ "queue_add_handler": {
+  "src": "0x140bac1c0",
+  "len": 48,
+  "_note": "add a CMotionHandler to an animation queue (R15 s1.4)"
+ },
+ "weapon_placement": {
+  "src": "0x1402d8ad0",
+  "len": 48,
+  "_note": "weapon model world matrix (VR: controller / two-hand blend) (R15 s1.3)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1402d8720",
+   "len": 48
+  }
+ },
+ "controller_draw": {
+  "src": "0x140722e50",
+  "len": 24,
+  "_note": "CVRController draw (ctrl, r, a, b) (R15 s2)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1407225b0",
+   "len": 24
+  }
+ },
+ "draw_model": {
+  "src": "0x140724620",
+  "len": 48,
+  "_note": "draw a model instance at a P7 (r, a, b, mi, P7, world) (R15 s1.4)"
+ },
+ "new_model": {
+  "src": "0x140c0e9b0",
+  "len": 48,
+  "_note": "allocate + construct a model instance (R15 s1.4)"
+ },
+ "model_set_config": {
+  "src": "0x140c112d0",
+  "len": 48,
+  "_note": "model instance: set configuration (mi, cfg) (R15 s1.2)"
+ },
+ "model_set_stretch": {
+  "src": "0x140c11370",
+  "len": 192,
+  "_note": "model instance: set stretch (mi, &vec3) (R15 s1.4)"
+ },
+ "hide_controller": {
+  "src": "0x140721af0",
+  "len": 48,
+  "_note": "CVRController hide (+0x94 = 0, laser dot) (R15 s5)"
  }
 }

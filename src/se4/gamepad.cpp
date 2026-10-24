@@ -6,6 +6,7 @@
 #include "core/vr_controls.hpp"
 #include "se4/player_vr.hpp"
 #include "se4/vehicles.hpp"
+#include "se4/hands.hpp"
 #include <xinput.h>
 #include <cmath>
 #include <cstring>
@@ -123,7 +124,8 @@ void publishFromXr() {
         const auto& x = xr::input().hand(h);
         Hand& o = f.hand[h];
         o.active = x.active;
-        o.trigger = x.trigger, o.squeeze = x.squeeze;
+        o.trigger = x.trigger;
+        o.squeeze = hands::squeezeTaken(h) ? 0.0f : x.squeeze;  // the off hand is on (or at) a two-handed weapon
         o.sx = x.stick.x, o.sy = x.stick.y;
         o.buttons = x.buttons;
         o.pos = {x.grip.position.x, x.grip.position.y, x.grip.position.z};

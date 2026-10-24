@@ -1,0 +1,26 @@
+#version 450
+// Camera motion vectors from the engine's reverse-Z scene depth (GPU twin of core::reprojectPixel).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D depthTex;
+layout(binding = 1, rgba16f) uniform writeonly image2D motionOut;
+layout(push_constant) uniform PC {
+    mat4 curToPrev;  // previous eye space <- current eye space
+    vec4 cur;        // tangents l, r, u, d of this frame (unjittered)
+    vec4 prev;       // tangents of the previous frame
+    vec4 size;       // width, height, near, far
+    vec4 origin;     // render sub-rect origin in the depth image
+} pc;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= int(pc.size.x) || p.y >= int(pc.size.y)) return;
+    vec2 uv = (vec2(p) + 0.5) / pc.size.xy;
+    float d = texelFetch(depthTex, p + ivec2(pc.origin.xy), 0).r;
+    float n = pc.size.z, f = pc.size.w;
+    float dist = f * n / (n + d * (f - n));
+    vec4 pv = vec4(mix(pc.cur.x, pc.cur.y, uv.x) * dist, mix(pc.cur.z, pc.cur.w, uv.y) * dist, -dist, 1.0);
+    vec4 q = pc.curToPrev * pv;
+    vec2 t = q.xy / max(-q.z, 1e-4);
+    vec2 uvPrev = vec2((t.x - pc.prev.x) / (pc.prev.y - pc.prev.x), (t.y - pc.prev.z) / (pc.prev.w - pc.prev.z));
+    imageStore(motionOut, p, vec4((uvPrev - uv) * pc.size.xy, 0.0, 0.0));
+}

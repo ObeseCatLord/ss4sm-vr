@@ -17,12 +17,12 @@ struct Capture {
 struct Pending {
     uint32_t w = 0, h = 0;
     ULONGLONG deadline = 0;
-} g_pending[2];
+} g_pending[3];
 constexpr ULONGLONG kPendingMs = 2000;
-VkImage g_image[2]{};
-VkFormat g_format = VK_FORMAT_UNDEFINED;
-uint32_t g_w, g_h;
-bool g_submitted[2];
+VkImage g_image[3]{};  // eyes 1, 2 and the scope view (eye 3)
+VkFormat g_format = VK_FORMAT_UNDEFINED, g_scopeFormat = VK_FORMAT_UNDEFINED;
+uint32_t g_w, g_h, g_scopeW, g_scopeH;
+bool g_submitted[3];
 
 bool eyeCandidate(const VkImageCreateInfo& ci, uint32_t w, uint32_t h) {
     return ci.imageType == VK_IMAGE_TYPE_2D && ci.extent.width == w && ci.extent.height == h &&
@@ -30,10 +30,17 @@ bool eyeCandidate(const VkImageCreateInfo& ci, uint32_t w, uint32_t h) {
 }
 void record(int eye, VkImage image, const VkImageCreateInfo& ci, const char* how) {
     g_image[eye - 1] = image;
-    g_format = ci.format;
-    g_w = ci.extent.width;
-    g_h = ci.extent.height;
-    VRLOG("eyes: eye %d image %p %ux%u format %d usage %x (%s)", eye, (void*)image, g_w, g_h, int(ci.format), ci.usage, how);
+    if (eye == 3) {
+        g_scopeFormat = ci.format;
+        g_scopeW = ci.extent.width;
+        g_scopeH = ci.extent.height;
+    } else {
+        g_format = ci.format;
+        g_w = ci.extent.width;
+        g_h = ci.extent.height;
+    }
+    VRLOG("eyes: eye %d image %p %ux%u format %d usage %x (%s)", eye, (void*)image, ci.extent.width, ci.extent.height, int(ci.format),
+          ci.usage, how);
 }
 }  // namespace
 
@@ -66,9 +73,11 @@ void onImageCreated(VkImage image, const VkImageCreateInfo& ci) {
         }
     } else {
         ULONGLONG now = GetTickCount64();
-        for (int e = 0; e < 2; ++e) {
+        for (int e = 0; e < 3; ++e) {
             Pending& p = g_pending[e];
-            if (!p.deadline || now > p.deadline || !eyeCandidate(ci, p.w, p.h) || image == g_image[1 - e]) continue;
+            if (!p.deadline || now > p.deadline || !eyeCandidate(ci, p.w, p.h) || image == g_image[(e + 1) % 3] ||
+                image == g_image[(e + 2) % 3])
+                continue;
             record(e + 1, image, ci, "deferred");
             p = {};
             break;
@@ -85,7 +94,7 @@ void onImageDestroyed(VkImage image) {
 }
 
 void submitted(int eye) {
-    if (eye != 1 && eye != 2) return;
+    if (eye < 1 || eye > 3) return;
     AcquireSRWLockExclusive(&g_lock);
     g_submitted[eye - 1] = true;
     ReleaseSRWLockExclusive(&g_lock);
@@ -101,6 +110,19 @@ Frame take() {
     f.height = g_h;
     f.ready = g_submitted[0] && g_submitted[1] && g_image[0] && g_image[1];
     g_submitted[0] = g_submitted[1] = false;
+    ReleaseSRWLockExclusive(&g_lock);
+    return f;
+}
+
+ScopeFrame takeScope() {
+    ScopeFrame f;
+    AcquireSRWLockExclusive(&g_lock);
+    f.image = g_image[2];
+    f.format = g_scopeFormat;
+    f.width = g_scopeW;
+    f.height = g_scopeH;
+    f.ready = g_submitted[2] && g_image[2];
+    g_submitted[2] = false;
     ReleaseSRWLockExclusive(&g_lock);
     return f;
 }

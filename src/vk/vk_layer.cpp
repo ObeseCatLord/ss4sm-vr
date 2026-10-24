@@ -18,6 +18,9 @@
 #include "se4/vr_device.hpp"
 #include "vk/eye_images.hpp"
 #include "vk/foveation.hpp"
+#include "up/integrate.hpp"
+#include "vk/scope_layer.hpp"
+#include "se4/scope.hpp"
 #include "up/upscaler.hpp"
 #include "core/math.hpp"
 #include <windows.h>
@@ -49,6 +52,9 @@ PFN_vkCreateSwapchainKHR realCreateSwapchain;
 PFN_vkGetSwapchainImagesKHR realGetSwapchainImages;
 PFN_vkGetDeviceQueue realGetDeviceQueue;
 PFN_vkCreateImage realCreateImage;
+PFN_vkBeginCommandBuffer realBeginCB;
+PFN_vkCmdPipelineBarrier realBarrier;
+PFN_vkCmdPipelineBarrier2 realBarrier2;
 PFN_vkDestroyImage realDestroyImage;
 
 struct GameVk {
@@ -220,6 +226,10 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realGetSwapchainImages = DFN(vkGetSwapchainImagesKHR);
     realGetDeviceQueue = DFN(vkGetDeviceQueue);
     realCreateImage = DFN(vkCreateImage);
+    realBeginCB = DFN(vkBeginCommandBuffer);
+    realBarrier = DFN(vkCmdPipelineBarrier);
+    realBarrier2 = DFN(vkCmdPipelineBarrier2);
+    if (!realBarrier2) realBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(realGDPA(g.device, "vkCmdPipelineBarrier2KHR"));
     realDestroyImage = DFN(vkDestroyImage);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
     fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
@@ -227,6 +237,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
         wchar_t dir[MAX_PATH];
         se4::payloadDirectory(dir, MAX_PATH);
         up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
+        upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
+        scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
     }
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
     else se4::applyVrFramePacing();
@@ -272,9 +284,66 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateSwapchain(VkDevice d, const VkSwapchain
 
 // ---- engine image tracking (eye render targets) ----
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateImage(VkDevice d, const VkImageCreateInfo* ci, const VkAllocationCallbacks* a, VkImage* out) {
+    VkImageCreateInfo c = *ci;
+    upint::patchImage(c);
+    ci = &c;
     VkResult r = realCreateImage(d, ci, a, out);
-    if (r == VK_SUCCESS) eyes::onImageCreated(*out, *ci);
+    if (r == VK_SUCCESS) {
+        eyes::onImageCreated(*out, *ci);
+        upint::onImageCreated(*out, *ci);
+    }
     return r;
+}
+VKAPI_ATTR VkResult VKAPI_CALL hookBeginCB(VkCommandBuffer cb, const VkCommandBufferBeginInfo* bi) {
+    VkResult r = realBeginCB(cb, bi);
+    if (r == VK_SUCCESS) upint::onBeginCommandBuffer(cb);
+    return r;
+}
+VKAPI_ATTR void VKAPI_CALL hookBarrier(VkCommandBuffer cb, VkPipelineStageFlags ss, VkPipelineStageFlags ds, VkDependencyFlags df,
+                                       uint32_t nm, const VkMemoryBarrier* m, uint32_t nb, const VkBufferMemoryBarrier* b, uint32_t ni,
+                                       const VkImageMemoryBarrier* im) {
+    for (uint32_t i = 0; i < ni; ++i) upint::onImageBarrier(cb, im[i].image, im[i].oldLayout, im[i].newLayout);
+    realBarrier(cb, ss, ds, df, nm, m, nb, b, ni, im);
+}
+VKAPI_ATTR void VKAPI_CALL hookBarrier2(VkCommandBuffer cb, const VkDependencyInfo* di) {
+    for (uint32_t i = 0; i < di->imageMemoryBarrierCount; ++i)
+        upint::onImageBarrier(cb, di->pImageMemoryBarriers[i].image, di->pImageMemoryBarriers[i].oldLayout,
+                              di->pImageMemoryBarriers[i].newLayout);
+    realBarrier2(cb, di);
+}
+PFN_vkCreateRenderPass nextCreateRenderPass;
+PFN_vkCreateRenderPass2 nextCreateRenderPass2;
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateRenderPassObs(VkDevice d, const VkRenderPassCreateInfo* ci, const VkAllocationCallbacks* a,
+                                                       VkRenderPass* out) {
+    VkRenderPassCreateInfo c = *ci;
+    std::vector<VkAttachmentDescription> att;
+    return nextCreateRenderPass(d, upint::patchPass(c, att) ? &c : ci, a, out);
+}
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateRenderPass2Obs(VkDevice d, const VkRenderPassCreateInfo2* ci, const VkAllocationCallbacks* a,
+                                                        VkRenderPass* out) {
+    VkRenderPassCreateInfo2 c = *ci;
+    std::vector<VkAttachmentDescription2> att;
+    return nextCreateRenderPass2(d, upint::patchPass2(c, att) ? &c : ci, a, out);
+}
+PFN_vkCmdEndRenderPass realEndPass;
+PFN_vkCmdEndRenderPass2 realEndPass2;
+VKAPI_ATTR void VKAPI_CALL hookEndPass(VkCommandBuffer cb) {
+    upint::onEndPass(cb);
+    realEndPass(cb);
+}
+VKAPI_ATTR void VKAPI_CALL hookEndPass2(VkCommandBuffer cb, const VkSubpassEndInfo* ei) {
+    upint::onEndPass(cb);
+    realEndPass2(cb, ei);
+}
+PFN_vkCmdBeginRenderPass nextBeginPass;
+PFN_vkCmdBeginRenderPass2 nextBeginPass2;
+VKAPI_ATTR void VKAPI_CALL hookBeginPassObs(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, VkSubpassContents c) {
+    upint::onBeginPass(cb);
+    nextBeginPass(cb, bi, c);
+}
+VKAPI_ATTR void VKAPI_CALL hookBeginPass2Obs(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, const VkSubpassBeginInfo* si) {
+    upint::onBeginPass(cb);
+    nextBeginPass2(cb, bi, si);
 }
 VKAPI_ATTR void VKAPI_CALL hookDestroyImage(VkDevice d, VkImage img, const VkAllocationCallbacks* a) {
     eyes::onImageDestroyed(img);
@@ -451,6 +520,10 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     VkImage src = sw.images[pi->pImageIndices[0]];
     uint32_t idx = 0;
     bool haveImage = !stereo && rt.acquire(m.sc, idx);
+    // Scope view (engine eye 3) as a quad layer at the eyepiece of the weapon's hand.
+    const eyes::ScopeFrame scopeFrame = eyes::takeScope();
+    const scope::Layer scopeLayer = scope::layer(xr::input().hand(1).grip, xr::input().hand(0).grip);
+    const bool scopeOn = stereo && scopeLayer.visible && scopelayer::begin(scopeFrame);
     TRACE("mirror: acquired %d idx %u, submit", haveImage, idx);
     VkSemaphore waitOn = VK_NULL_HANDLE;
     VkResult result;
@@ -525,6 +598,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
             b.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
             DFN(vkCmdPipelineBarrier)(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
         }
+        if (scopeOn) scopelayer::record(cb, scopeFrame, scopeLayer.reticle);
         DFN(vkEndCommandBuffer)(cb);
         std::vector<VkPipelineStageFlags> stages(pi->waitSemaphoreCount, VK_PIPELINE_STAGE_TRANSFER_BIT);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -548,6 +622,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     TRACE("mirror: presented %d, release", int(result));
     if (haveImage) rt.release(m.sc);
     if (stereo) rt.release(pj.sc);
+    if (scopeOn) scopelayer::end();
     TRACE("mirror: endFrame");
 
     // Projection layer: the engine rendered each eye with that eye's horizontal FOV and the vertical FOV
@@ -586,9 +661,20 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
     quad.pose = m.pose;
     float w = 3.2f;
     quad.size = {w, w * float(m.sc.height) / float(m.sc.width)};
+    XrCompositionLayerQuad scopeQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if (scopeOn) {
+        scopeQuad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT;
+        scopeQuad.space = rt.playSpace();
+        scopeQuad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+        scopeQuad.subImage.swapchain = scopelayer::swapchain();
+        scopeQuad.subImage.imageRect = {{0, 0}, {int32_t(scopelayer::size()), int32_t(scopelayer::size())}};
+        scopeQuad.pose = scopeLayer.pose;
+        scopeQuad.size = {scopeLayer.size, scopeLayer.size};
+    }
     const XrCompositionLayerBaseHeader* layers[] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
-                                                           : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
-    bool ended = rt.endFrame(fs, layers, (stereo || (haveImage && m.placed)) ? 1 : 0);
+                                                           : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad),
+                                                    reinterpret_cast<XrCompositionLayerBaseHeader*>(&scopeQuad)};
+    bool ended = rt.endFrame(fs, layers, (stereo || (haveImage && m.placed)) ? (scopeOn ? 2 : 1) : 0);
     static uint32_t frames, imaged, submitted;
     ++frames;
     imaged += haveImage;
@@ -612,6 +698,38 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGDPA(VkDevice d, const char* name);
 
 PFN_vkVoidFunction deviceOverride(const char* name) {
+    // Render-pass observer in front of foveation's pass hooks (both chain to the next layer's function).
+    if (!strcmp(name, "vkCmdEndRenderPass")) {
+        realEndPass = DFN(vkCmdEndRenderPass);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookEndPass);
+    }
+    if (!strcmp(name, "vkCmdEndRenderPass2") || !strcmp(name, "vkCmdEndRenderPass2KHR")) {
+        realEndPass2 = reinterpret_cast<PFN_vkCmdEndRenderPass2>(realGDPA(g.device, name));
+        if (!realEndPass2) return nullptr;
+        return reinterpret_cast<PFN_vkVoidFunction>(hookEndPass2);
+    }
+    if (!strcmp(name, "vkCmdBeginRenderPass")) {
+        auto f = fov::override(name);
+        nextBeginPass = f ? reinterpret_cast<PFN_vkCmdBeginRenderPass>(f) : DFN(vkCmdBeginRenderPass);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookBeginPassObs);
+    }
+    if (!strcmp(name, "vkCmdBeginRenderPass2") || !strcmp(name, "vkCmdBeginRenderPass2KHR")) {
+        auto f = fov::override(name);
+        nextBeginPass2 = f ? reinterpret_cast<PFN_vkCmdBeginRenderPass2>(f) : reinterpret_cast<PFN_vkCmdBeginRenderPass2>(realGDPA(g.device, name));
+        if (!nextBeginPass2) return nullptr;
+        return reinterpret_cast<PFN_vkVoidFunction>(hookBeginPass2Obs);
+    }
+    if (!strcmp(name, "vkCreateRenderPass")) {
+        auto f = fov::override(name);
+        nextCreateRenderPass = f ? reinterpret_cast<PFN_vkCreateRenderPass>(f) : DFN(vkCreateRenderPass);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookCreateRenderPassObs);
+    }
+    if (!strcmp(name, "vkCreateRenderPass2") || !strcmp(name, "vkCreateRenderPass2KHR")) {
+        auto f = fov::override(name);
+        nextCreateRenderPass2 = f ? reinterpret_cast<PFN_vkCreateRenderPass2>(f) : reinterpret_cast<PFN_vkCreateRenderPass2>(realGDPA(g.device, name));
+        if (!nextCreateRenderPass2) return nullptr;
+        return reinterpret_cast<PFN_vkVoidFunction>(hookCreateRenderPass2Obs);
+    }
     if (auto f = fov::override(name)) return f;
     if (!strcmp(name, "vkQueueSubmit")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueueSubmit);
     if (!strcmp(name, "vkQueueSubmit2") || !strcmp(name, "vkQueueSubmit2KHR")) return reinterpret_cast<PFN_vkVoidFunction>(hookQueueSubmit2);
@@ -620,6 +738,10 @@ PFN_vkVoidFunction deviceOverride(const char* name) {
     if (!strcmp(name, "vkDeviceWaitIdle")) return reinterpret_cast<PFN_vkVoidFunction>(hookDeviceWaitIdle);
     if (!strcmp(name, "vkCreateSwapchainKHR")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateSwapchain);
     if (!strcmp(name, "vkCreateImage")) return reinterpret_cast<PFN_vkVoidFunction>(hookCreateImage);
+    if (!strcmp(name, "vkBeginCommandBuffer")) return reinterpret_cast<PFN_vkVoidFunction>(hookBeginCB);
+    if (!strcmp(name, "vkCmdPipelineBarrier")) return reinterpret_cast<PFN_vkVoidFunction>(hookBarrier);
+    if (realBarrier2 && (!strcmp(name, "vkCmdPipelineBarrier2") || !strcmp(name, "vkCmdPipelineBarrier2KHR")))
+        return reinterpret_cast<PFN_vkVoidFunction>(hookBarrier2);
     if (!strcmp(name, "vkDestroyImage")) return reinterpret_cast<PFN_vkVoidFunction>(hookDestroyImage);
     if (!strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(hookGDPA);
     return nullptr;

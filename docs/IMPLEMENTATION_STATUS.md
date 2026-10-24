@@ -193,3 +193,39 @@
   the game. NGX extensions are now added only when an upscaler is selected.
 - R13 done: CNMScriptRPC raw byte channel for the mod handshake and poses; upscaler insertion before post FX
   at 0x140c89010 on the HDR canvas; motion vectors to be synthesized per eye from depth.
+
+## Lab session 2026-10-24 (continued): upscalers in the eye render, scopes, two-hand grip
+- Upscalers (`src/up/integrate.cpp`, R13 phase A), working in the lab:
+  - DLSS (DLAA, preset K) and FSR 3.1 native AA run per eye inside the engine's command buffer and the game keeps
+    running.
+  - Runtime facts behind the integration:
+    - The HDR canvas (RGBA16F) and the scene depth (D32, **reverse-Z**: cleared to 0) are created inside
+      0x140c88a10. The mod adds SAMPLED usage to the depth.
+    - The engine's command buffer is at `gfx+0x1ea8`, validated by the loader's dispatch magic. It isn't bound to
+      the calling thread.
+    - Each eye makes two post-processing dispatches; only the `flags 0x1e` one reads the canvas, and the mod learns
+      which one at runtime.
+    - The scene pass is still open at dispatch entry, because the engine ends passes lazily. The mod therefore
+      records its work at that dispatch's first canvas barrier (COLOR_ATTACHMENT → SHADER_READ).
+    - Scene depth passes already store depth and stay in DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
+  - Motion vectors: camera-only, from depth (`src/up/shaders/motion.comp`, `core/reproject.hpp`). The camera is the
+    head world placement (0x14043cb50) composed with the eye in head, and depth decodes with the slot-0x070
+    near/far. Host tests cover the depth decode, reprojection and jitter.
+  - Jitter: Halton(2,3), applied in device slot 0x070 by shifting the frustum tangents. Lab option
+    `upscale_jitter_x/y` flips the sign reported to the upscaler for the convention check.
+  - Lab images: a still view and a mid head-turn view, with no ghosting on edges. A stability/sharpness matrix
+    (`tools/lab/upscale_matrix.sh`) settles the jitter sign.
+- Picture-in-picture scopes (`src/se4/scope.cpp`, `src/vk/scope_layer.cpp`, R14), built, lab check pending:
+  - The engine's third view (eye 3) renders the scope camera. The device raises `vr_iMixedRealityOutput` only in
+    frames with a live scope and answers slots 0x028/0x070/0x078 for eye 3.
+  - Camera: barrel placement. FOV: player base FOV / `swmp_fZoomFactor`.
+  - The image is transitioned with gfx vt+0x288 and shown as a circular OpenXR quad at the eyepiece of the
+    weapon's hand, with a reticle.
+  - Live when natively zoomed or when the eyepiece is within 20 cm of the head (option `scope=2`: always).
+- Two-hand grip by squeeze (`src/se4/hands.cpp`, R15 s4.3), built, lab check pending:
+  - The weapon step's grip bit (the other hand's fire bit, player +0x2338 / SM +0x2340, read from the step's code)
+    is replaced for the step only with the grip intent. The grip engages on a squeeze press edge within the
+    weapon's snap distance of `LeftHandGripEffector` and holds until the squeeze is released.
+  - The off hand's squeeze is withheld from the pad while that hand is in reach or gripping.
+- Finger poses (`core/hand_pose.hpp`, host-tested): controller-state curls and OpenXR joint flexion, smoothing, and
+  the wire packing. Not yet applied to bones.

@@ -13,12 +13,12 @@ struct Fov { float left, right, up, down; };  // OpenXR angles in radians (left/
 inline Fov sharedVertical(const Fov& eye, const Fov& a, const Fov& b) {
     return {eye.left, eye.right, std::max(a.up, b.up), std::min(a.down, b.down)};
 }
-inline void engineProjection(const Fov& f, float n, float far, float m[16]) {
+inline void engineProjection(const Fov& f, float n, float farZ, float m[16]) {
     for (int i = 0; i < 16; ++i) m[i] = 0;
     float l = n * std::tan(f.left), r = n * std::tan(f.right), t = n * std::tan(f.up), b = n * std::tan(f.down);
     m[0] = 2 * n / (r - l), m[2] = (r + l) / (r - l);
     m[5] = 2 * n / (t - b), m[6] = (t + b) / (t - b);
-    m[10] = -(far + n) / (far - n), m[11] = -2 * far * n / (far - n);
+    m[10] = -(farZ + n) / (farZ - n), m[11] = -2 * farZ * n / (farZ - n);
     m[14] = -1;
 }
 }  // namespace core

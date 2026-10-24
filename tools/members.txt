@@ -12,3 +12,4 @@ CWheeledVehicleBehavior::vb_qInitialSteeringWheelBoneRotation
 CWeaponEntity::en_bRightHandWeapon
 CMacheteWeaponParams::mwp_fDamageRayRadius
 CMacheteWeaponParams::mwp_slDamage
+CWeaponEntity::en_henOwner
