@@ -44,6 +44,8 @@ void hookedVrdInit(void* vrd, void* player) {
     realVrdInit(vrd, player);
     int local = *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(vrd) + 0x328);  // vt+0x670 result (R3 s1)
     VRLOG("player_vr: CPlayerVRData %p initialised for player %p (local %d)", vrd, player, local);
+    if (auto* layout = se4::build().at<int32_t>(se4::gen::prj_iGamepadButtonLayout))
+        VRLOG("player_vr: gamepad button layout %d (the virtual pad assumes GBL_STANDARD 12)", *layout);
     if (local) g_localVrd = vrd;
     // Lab only: give all weapons once the local VR player exists (needs +cht_bEnableCheats 1).
     if (local && se4::options::get("lab_giveall", 0)) se4::setIndex(se4::gen::cht_bGiveAll, 1);

@@ -87,3 +87,4 @@ manual:entity_time               # R15: entity time getter used for the two-hand
 manual:gadget_launch_activate    # R12: gadget launch mode activation; the mod sets direction/speed from the hand
 manual:gadget_launch             # R12: gadget projectile spawn from the launch mode fields
 manual:gadget_launch_event       # R12: launch mode Throw/Fire event handler
+var:prj_iGamepadButtonLayout     # pad layout (GBL_STANDARD 12, GBL_CUSTOM 9); the virtual pad assumes standard
