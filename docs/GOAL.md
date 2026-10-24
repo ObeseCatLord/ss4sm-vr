@@ -44,6 +44,9 @@ the user. Status lives in `docs/IMPLEMENTATION_STATUS.md`. This file only change
 - [ ] Dual wielding with per-hand fire and a crosshair per weapon.
 - [ ] The native weapon wheel and gadget ring, selected by hand movement, with native slow motion.
 - [ ] Two-hand steadying for two-handed weapons.
+- [ ] Picture-in-picture scopes for the sniper rifle and every other usable scope: a magnified view through the
+      scope lens of the hand-held weapon, while the world keeps the normal eye FOV. Native zoom state, damage
+      and sounds stay native. The full-screen scope overlay is suppressed in VR (as in the SS2 VR mod).
 
 ## 4. Melee, gadgets, vehicles
 - [ ] Physical melee: inertia (mass-scaled follow), swept collision that stops at walls, and native damage
