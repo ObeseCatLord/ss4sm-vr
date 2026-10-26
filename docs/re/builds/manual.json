@@ -140,7 +140,9 @@
   "gfx_safe_area": "0x140b99060",
   "vr_loco_in_air": "0x14043aae0",
   "gfx_text": "0x140b953c0",
-  "execute_view": "0x140bc0d20"
+  "execute_view": "0x140bc0d20",
+  "is_third_person_view": "0x1402be4d0",
+  "get_camera_mode": "0x1404789f0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -275,7 +277,9 @@
   "hud_layout_map": "0x1400dfaf0",
   "gfx_safe_area": "0x140b9ba10",
   "vr_loco_in_air": "0x14043d210",
-  "gfx_text": "0x140b97d70"
+  "gfx_text": "0x140b97d70",
+  "is_third_person_view": "0x1402c0b90",
+  "get_camera_mode": "0x14047b120"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -418,7 +422,9 @@
   "gfx_safe_area": "0x140b99710",
   "vr_loco_in_air": "0x14043ac60",
   "gfx_text": "0x140b95a30",
-  "execute_view": "0x140bc1410"
+  "execute_view": "0x140bc1410",
+  "is_third_person_view": "0x1402be2c0",
+  "get_camera_mode": "0x140479020"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -553,6 +559,8 @@
   "hud_layout_map": "0x1400dfbb0",
   "gfx_safe_area": "0x140b9c0b0",
   "vr_loco_in_air": "0x14043d380",
-  "gfx_text": "0x140b983d0"
+  "gfx_text": "0x140b983d0",
+  "is_third_person_view": "0x1402c0970",
+  "get_camera_mode": "0x14047b740"
  }
 }

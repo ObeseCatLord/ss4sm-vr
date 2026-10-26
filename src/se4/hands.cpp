@@ -207,6 +207,14 @@ void hookedStep(uint8_t* weapon, void* arg) {
         probeWeapon(weapon, params);
     }
     const bool rightHand = params && at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0;
+    if (params) {  // the local player's weapon per hand, logged on change (lab tests select by name)
+        static uint8_t* inHand[2];
+        if (inHand[rightHand] != weapon) {
+            inHand[rightHand] = weapon;
+            const char* file = se4::names::weaponFile(weapon);
+            VRLOG("hands: %s hand weapon %s", rightHand ? "right" : "left", file ? file : "?");
+        }
+    }
     const bool native = params && at<int32_t>(params, kTwoHanded) != 0;
     // Only a right-hand weapon takes the left hand as its support hand (a left weapon is the dual-wield one).
     // The off hand must be free: no second weapon in it (dual wielding).

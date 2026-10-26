@@ -164,3 +164,5 @@ manual:vr_loco_in_air    # R21: null-checked while riding
 manual:gfx_text          # R18 s7: diagnostic (hud_text_log)
 manual:execute_view      # R23: texture LOD bias window
 var:tex_fLODBias
+manual:is_third_person_view  # R24: riding view kept first person for the local VR player
+manual:get_camera_mode       # R24: diagnostic / optional companion

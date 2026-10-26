@@ -857,5 +857,15 @@
    "len": 48
   },
   "_note": "execute a view's render commands (the eye's scene, then its post-processing): the upscaler LOD bias window (R23 s4.2)"
+ },
+ "is_third_person_view": {
+  "src": "0x1402be4d0",
+  "len": 64,
+  "_note": "BOOL (CPuppetEntity*): puppet vt+0xdf0, the view gate; while riding the seat ALLOW bits, else en_bAvatarViewMode. False = vt+0xdf8 uses vt+0x340 mode 0 (vrd head) (R24)"
+ },
+ "get_camera_mode": {
+  "src": "0x1404789f0",
+  "len": 64,
+  "_note": "int (CPlayerActorPuppetEntity*): PCM_* from the profile/prj (riding) view option, stored in en_pcmPlayerCameraMode (R24)"
  }
 }

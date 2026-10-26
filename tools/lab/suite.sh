@@ -1,19 +1,29 @@
 #!/bin/bash
 # Lab test suite (isolated lab copy, simulated Monado): every VR feature checked from the mod's log, with captures.
-# usage: suite.sh ss4|sm <out-dir> [stage ...]   stages: core vehicle survival artifact (default: all)
+# usage: suite.sh ss4|sm <out-dir> [stage ...]   stages: core vehicle survival melee artifact
+# (default: core vehicle survival artifact on SS4; SM has no Survival map, so melee replaces survival)
 # Prints PASS/FAIL per check and a summary; captures go to <out-dir>. Run tools/lab/stop_lab.sh afterwards.
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"; ID="$ROOT/lab/monado/input_driver"
 G=$1; OUT=$2; shift 2; mkdir -p "$OUT"
-STAGES=${*:-core vehicle survival artifact}
+DEFAULT="core vehicle survival artifact"; [ "$G" = sm ] && DEFAULT="core vehicle melee artifact"
+STAGES=${*:-$DEFAULT}
 . "$HERE/paths.sh" "$G"
 GAMELOG="$LAB_GAME/Log/$([ "$G" = sm ] && echo SamSM.log || echo Sam4.log)"
 OPT="$LAB_GAME/Bin/x64/ss4smvr/options.txt"; LUA="$LAB_GAME/Bin/x64/ss4smvr/lab.lua"
 if [ "$G" = sm ]; then
   CORE=Content/SeriousSamSM/Levels/01_SM/01_Refinery.wld; VEH=Content/SeriousSamSM/Levels/01_SM/02_Siberia.wld
   SURV=; INJ=Content/SeriousSamSM/Databases/Weapons/SirianInjector_SM.ep
+  # right wheel directions (tools/lab/wheel_map.sh): AK 0 deg, crossbow (scoped) 120 deg, knife 240 deg
+  RIFLE="0.09 0"; SCOPED="-0.045 0.078"; KNIFE="-0.045 -0.078"
+  # vehicle: the Siberia snowmobile's handlebar grips (vehicles_log): half-width, height and reach from the head
+  VX=0.32; VY=0.96; VZ=-0.57
 else
   CORE=Content/SeriousSam4/Levels/01_PB/02_Pompeii.wld; VEH=Content/SeriousSam4/Levels/01_PB/06_Countryside.wld
   SURV=Content/SeriousSam4/Levels/Z5_Other/SV_Backyard.wld; INJ=Content/SeriousSam4/Databases/Weapons/SirianInjector.ep
+  # right wheel directions (tools/lab/wheel_map.sh): rifle 0 deg, sniper 90 deg, knife 245 deg
+  RIFLE="0.09 0"; SCOPED="0 0.09"; KNIFE="-0.038 -0.082"
+  # vehicle: the Countryside harvester's wheel rim (18 cm fallback rim)
+  VX=0.18; VY=1.13; VZ=-0.35
 fi
 H="head=0,1.6,0,0,0,0"; LH="lpos=-0.25,1.3,-0.35"; R0="rpos=0.25,1.3,-0.35"
 PASS=0; FAIL=0; REPORT=
@@ -64,17 +74,17 @@ stage_core() {
   check "menu bar asks the pad router for its shortcuts" "$(grep -aq 'prompts: button prompts show' "$MODLOG" && echo 1 || echo 0)"
   press rb=1; sleep 2
   # Rifle + left squeeze at the foregrip: two-hand grip (before dual wielding: the off hand must be free)
-  mark; wheel_to 0.09 0; $ID $H lpos=0.25,1.3,-0.6 $R0 >/dev/null; sleep 1; $ID $H lpos=0.25,1.3,-0.6 $R0 lgrip=1 >/dev/null; sleep 2
+  mark; wheel_to $RIFLE; $ID $H lpos=0.25,1.3,-0.6 $R0 >/dev/null; sleep 1; $ID $H lpos=0.25,1.3,-0.6 $R0 lgrip=1 >/dev/null; sleep 2
   cap two-hand; $ID $H $LH $R0 >/dev/null
   check "two-hand grip (squeeze at the foregrip)" "$(has 'the two-handed weapon')"
   # Dual pistols: two crosshairs; knife right + pistol left: one
   "$HERE/dual_crosshair_lab.sh" "$OUT/dual-pistols" "-0.72 -0.70" "-0.72 -0.70" >/dev/null 2>&1
   check "dual pistols captured (two crosshairs: see dual-pistols.png)" 1
-  mark; wheel_to -0.038 -0.082; $ID $H lpos=-0.2,1.35,-0.45 lrot=0.25,0.08,0 rpos=0.2,1.35,-0.45 rrot=-0.2,-0.05,0 >/dev/null; sleep 2
+  mark; wheel_to $KNIFE; $ID $H lpos=-0.2,1.35,-0.45 lrot=0.25,0.08,0 rpos=0.2,1.35,-0.45 rrot=-0.2,-0.05,0 >/dev/null; sleep 2
   check "knife in the right hand" "$(has 'melee: knife in hand')"; cap knife-left-pistol
-  # Sniper scope (top of the right wheel), raised to the eye
-  mark; wheel_to 0 0.09; $ID $H $LH rpos=0.04,1.55,-0.12 >/dev/null; sleep 3; cap scope
-  check "sniper: picture-in-picture scope" "$(has 'scope: scoped weapon')"
+  # Scoped weapon (SS4 sniper, SM crossbow), raised to the eye
+  mark; wheel_to $SCOPED; $ID $H $LH rpos=0.04,1.55,-0.12 >/dev/null; sleep 3; cap scope
+  check "scoped weapon: picture-in-picture scope" "$(has 'scope: scoped weapon')"
   # Gadgets (each gesture), from the left grip
   mark; "$HERE/gadgets_lab.sh" "$G" "$OUT/gadget" 6 >/dev/null 2>&1
   check "gadgets: taken into the hand and used" "$(since | grep -c -- '-> use' | awk '{print ($1>=3)?1:0}')" "($(since | grep -c -- '-> use') uses)"
@@ -91,16 +101,16 @@ player:TeleportQV(qv, false)
 player:MountRide(v, v:GetSeatName(0))
 conInfoF("lab_lua: mounted\n")
 EOF
-  EXTRA=(); start "$VEH" "lab_lua_delay=60" || return
+  EXTRA=(); start "$VEH" "lab_lua_delay=60" "vehicles_log=1" || return
   sleep 10; mark
   check "vehicle: boarded without a crash" "$(grep -aq 'vehicles: driving' "$MODLOG" && ! grep -aq Crashed "$GAMELOG" && echo 1 || echo 0)"
   check "vehicle: seated height" "$(grep -aq 'seated height' "$MODLOG" && echo 1 || echo 0)"
   cap vehicle-seat
-  Y=1.13; $ID $H lpos=-0.18,$Y,-0.35 rpos=0.18,$Y,-0.35 >/dev/null; sleep 1
-  $ID $H lpos=-0.18,$Y,-0.35 rpos=0.18,$Y,-0.35 lgrip=1 rgrip=1 >/dev/null; sleep 2
-  for a in 0.15 0.3 0.45 0.6; do
-    $ID $H lpos=$(awk "BEGIN{print -0.18*cos($a)}"),$Y,$(awk "BEGIN{print -0.35+0.18*sin($a)}") \
-      rpos=$(awk "BEGIN{print 0.18*cos($a)}"),$Y,$(awk "BEGIN{print -0.35-0.18*sin($a)}") lgrip=1 rgrip=1 >/dev/null; sleep 0.7
+  $ID $H lpos=-$VX,$VY,$VZ rpos=$VX,$VY,$VZ >/dev/null; sleep 1
+  $ID $H lpos=-$VX,$VY,$VZ rpos=$VX,$VY,$VZ lgrip=1 rgrip=1 >/dev/null; sleep 2
+  for a in 0.15 0.3 0.45 0.6; do  # both hands turn about the steering axis
+    $ID $H lpos=$(awk "BEGIN{print -$VX*cos($a)}"),$VY,$(awk "BEGIN{print $VZ+$VX*sin($a)}") \
+      rpos=$(awk "BEGIN{print $VX*cos($a)}"),$VY,$(awk "BEGIN{print $VZ-$VX*sin($a)}") lgrip=1 rgrip=1 >/dev/null; sleep 0.7
   done
   check "vehicle: steering wheel grabbed" "$(grep -aq 'grabbed the steering' "$MODLOG" && echo 1 || echo 0)"
   $ID $H $LH $R0 lstick=0,1 >/dev/null; sleep 4; cap vehicle-driving; $ID $H $LH $R0 >/dev/null; sleep 1
@@ -122,13 +132,65 @@ EOF
   sleep 10; mark
   for k in $(seq 1 14); do press rb=1; sleep 0.5; done
   check "kick: right B runs the native use/melee" "$(has 'right B - native use')"
-  sleep 1; mark; wheel_to -0.038 -0.082
+  sleep 1; mark; wheel_to $KNIFE
   for k in 1 2 3 4 5 6; do
     for x in 0.45 0.3 0.15 0.0 -0.15 -0.3; do $ID $H $LH rpos=$x,1.35,-0.5 >/dev/null; done; sleep 0.3
     for x in -0.3 -0.15 0.0 0.15 0.3 0.45; do $ID $H $LH rpos=$x,1.25,-0.5 >/dev/null; done; sleep 0.3
   done
   check "melee: knife swings hit enemies" "$(has 'melee: knife hit')" "($(since | grep -c 'melee: knife hit') hits)"
   cap survival
+  rm -f "$LUA"
+}
+
+stage_melee() {  # kick and knife hits on the core level, with enemies from its spawners (games without Survival)
+  cat > "$LUA" <<'EOF'
+-- lab only: enemies for the melee tests. Whenever fewer than two are alive, the level's spawners spawn one more
+-- (SpawnSimpleNow returns the spawnee); the living ones are kept 1.4-1.9 m in front of the player.
+local wi = worldGlobals.worldInfo
+local player = wi:GetPlayer()
+local spawners = wi:GetAllEntitiesOfClass("CSpawnerEntity")
+local foes, next, total, shown = {}, 1, 0, false
+local function spawn(p, d)
+  for tries = 1, #spawners do
+    local s = spawners[next]
+    next = next % #spawners + 1
+    -- spawned where the level placed the spawner; only characters are used (some spawners make vehicles or items)
+    local ok, e = pcall(function() return s:SpawnSimpleNow() end)
+    total = total + 1
+    if ok and e and e:GetClassName() == "CLeggedCharacterEntity" and e:IsAlive() then table.insert(foes, e); return end
+  end
+end
+RunAsync(function()
+  while not IsDeleted(player) do
+    player:SetHealth(200)
+    local p = player:GetPlacement():GetVect()
+    local d = player:GetLookDir(true)
+    local k = 0
+    for _, e in ipairs(foes) do
+      if k < 2 and not IsDeleted(e) and e:IsAlive() then
+        local qv = e:GetPlacement()
+        qv:SetVect(p + d * (1.4 + k * 0.5))
+        e:SetPlacement(qv)
+        k = k + 1
+      end
+    end
+    if k < 2 and total < 60 and #spawners > 0 then spawn(p, d) end
+    if k > 0 and not shown then conInfoF("lab_lua: enemies in front of the player\n"); shown = true end
+    Wait(Delay(0.5))
+  end
+end)
+EOF
+  EXTRA=(); start "$CORE" "lab_lua_delay=60" || return
+  sleep 10; mark
+  for k in $(seq 1 14); do press rb=1; sleep 0.5; done
+  check "kick: right B runs the native use/melee" "$(has 'right B - native use')"
+  sleep 1; mark; wheel_to $KNIFE
+  for k in 1 2 3 4 5 6; do
+    for x in 0.45 0.3 0.15 0.0 -0.15 -0.3; do $ID $H $LH rpos=$x,1.35,-0.5 >/dev/null; done; sleep 0.3
+    for x in -0.3 -0.15 0.0 0.15 0.3 0.45; do $ID $H $LH rpos=$x,1.25,-0.5 >/dev/null; done; sleep 0.3
+  done
+  check "melee: knife swings hit enemies" "$(has 'melee: knife hit')" "($(since | grep -c 'melee: knife hit') hits)"
+  cap melee
   rm -f "$LUA"
 }
 
