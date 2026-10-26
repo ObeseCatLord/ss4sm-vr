@@ -59,5 +59,7 @@ Goal: check that VR works against a remote server, not only on localhost.
   Checking the server-side heading after a turn is still open.
 - Remote bodies do not use the relayed grip and trigger data yet. Their arms follow the engine's replicated controller
   placements.
-- Melee in multiplayer: `MELEE=1 tools/lab/mp_lab.sh …` spawns enemies on the server (`lab_lua_server`, run from the
-  remote VR player's tick). The VR client then swings the knife, and the hits must count in the server's log.
+- **Melee in multiplayer works (lab, 2026-10-26).** With `MELEE=1 tools/lab/mp_lab.sh ss4 …`, the dedicated server
+  spawns enemies in front of the VR player (`lab_lua_server`). The VR client swings the knife, and the server, as the
+  damage authority, logged 12 knife hits from the replicated hand. The client's own sweep logged 8, which do not
+  count.

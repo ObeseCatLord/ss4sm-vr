@@ -423,12 +423,20 @@
     - Both clients see each other in the level. There was no crash or kick.
     - The engine logs a non-fatal "Code guard was activated" line on the clients and in single player too. It is
       not specific to multiplayer.
+  - Later the same day:
+    - SM passed the same three-way test.
+    - A VR client of a remote server now sends `ClientActionVR` automatically.
+    - Native turning works (R26: three read redirects, `src/se4/turn.cpp`), and the anchor yaw is folded into the head
+      that is sent.
+    - Desktop-guard peers (the dedicated server) sweep remote VR players' melee. The server counted 12 knife hits from
+      the VR client (`MELEE=1 mp_lab.sh`).
+    - Final single-player regression on the current build (single pass default): **SS4 21/21, SM 21/21**.
   - Still open:
-    - Using the relayed data on remote bodies (finger curls and grip; the arms already follow the native replicated
-      controller placements).
-    - Server-side melee validation.
-    - SM.
-    - The internet test: a remote server with gbe_fork `custom_broadcasts.txt` or a direct IP, and port forwarding.
+    - Using the relayed grip and trigger data on remote bodies (the arms follow the native replicated controller
+      placements).
+    - Checking the server-side heading after a turn.
+    - The internet test (docs/MULTIPLAYER_TEST.md §2: a remote server with gbe_fork `custom_broadcasts.txt` or a
+      direct IP, and port forwarding).
 - **Performance (docs/PERF.md, 2026-10-26):**
   - New tools: `perf_timing` (GPU and CPU ms per frame in the log), `render_scale`, and `tools/lab/perf_matrix.sh`.
   - Single pass works again. It saves about 15 % of game CPU time.
