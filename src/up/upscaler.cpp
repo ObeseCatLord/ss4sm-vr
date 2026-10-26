@@ -1,4 +1,5 @@
 #include "up/upscaler.hpp"
+#include "core/upscale.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "up/ngx_shim.hpp"
@@ -21,17 +22,6 @@ VkPhysicalDevice g_pd;
 VkDevice g_dev;
 PFN_vkGetDeviceProcAddr g_gdpa;
 bool g_reset[2] = {true, true};
-
-const float kRatio[4] = {1.0f, 1.5f, 1.7f, 2.0f};
-
-float halton(int index, int base) {
-    float f = 1, r = 0;
-    for (int i = index; i > 0; i /= base) {
-        f /= float(base);
-        r += f * float(i % base);
-    }
-    return r;
-}
 
 // ---------------- DLSS (NGX Vulkan) ----------------
 struct Dlss {
@@ -99,10 +89,11 @@ bool dlssInit(PFN_vkGetInstanceProcAddr gipa, const wchar_t* dir) {
 
 bool dlssEvaluate(int eye, const Frame& f) {
     const int e = eye - 1;
+    const uint32_t inW = f.renderW ? f.renderW : f.color.width, inH = f.renderH ? f.renderH : f.color.height;
     int flags = NVSDK_NGX_DLSS_Feature_Flags_MVLowRes | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
     if (f.hdr) flags |= NVSDK_NGX_DLSS_Feature_Flags_IsHDR;
     if (f.depthInverted) flags |= NVSDK_NGX_DLSS_Feature_Flags_DepthInverted;
-    const bool resize = g_dlss.rw[e] != f.color.width || g_dlss.rh[e] != f.color.height || g_dlss.ow[e] != f.output.width ||
+    const bool resize = g_dlss.rw[e] != inW || g_dlss.rh[e] != inH || g_dlss.ow[e] != f.output.width ||
                         g_dlss.oh[e] != f.output.height || g_dlss.flags[e] != flags;
     if (!g_dlss.feature[e] || resize) {
         if (g_dlss.feature[e]) NVSDK_NGX_VULKAN_ReleaseFeature(g_dlss.feature[e]), g_dlss.feature[e] = nullptr;
@@ -111,8 +102,8 @@ bool dlssEvaluate(int eye, const Frame& f) {
                               NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance})
             NVSDK_NGX_Parameter_SetUI(g_dlss.params, p, NVSDK_NGX_DLSS_Hint_Render_Preset_K);
         NVSDK_NGX_DLSS_Create_Params cp{};
-        cp.Feature.InWidth = f.color.width;
-        cp.Feature.InHeight = f.color.height;
+        cp.Feature.InWidth = inW;
+        cp.Feature.InHeight = inH;
         cp.Feature.InTargetWidth = f.output.width;
         cp.Feature.InTargetHeight = f.output.height;
         cp.Feature.InPerfQualityValue = dlssQuality();
@@ -123,10 +114,10 @@ bool dlssEvaluate(int eye, const Frame& f) {
             g_dlss.feature[e] = nullptr;
             return false;
         }
-        g_dlss.rw[e] = f.color.width, g_dlss.rh[e] = f.color.height, g_dlss.ow[e] = f.output.width, g_dlss.oh[e] = f.output.height;
+        g_dlss.rw[e] = inW, g_dlss.rh[e] = inH, g_dlss.ow[e] = f.output.width, g_dlss.oh[e] = f.output.height;
         g_dlss.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("dlss: eye %d %ux%u -> %ux%u (quality %d, preset K)", eye, f.color.width, f.color.height, f.output.width, f.output.height, g_quality);
+        VRLOG("dlss: eye %d %ux%u -> %ux%u (quality %d, preset K)", eye, inW, inH, f.output.width, f.output.height, g_quality);
     }
     auto res = [](const Image& i, bool rw, VkImageAspectFlags aspect) {
         return NVSDK_NGX_Create_ImageView_Resource_VK(i.view, i.image, {aspect, 0, 1, 0, 1}, i.format, i.width, i.height, rw);
@@ -142,7 +133,7 @@ bool dlssEvaluate(int eye, const Frame& f) {
     ep.pInMotionVectors = &mv;
     ep.InJitterOffsetX = f.jitterX;
     ep.InJitterOffsetY = f.jitterY;
-    ep.InRenderSubrectDimensions = {f.color.width, f.color.height};
+    ep.InRenderSubrectDimensions = {inW, inH};  // at (0,0) of the colour, depth and motion images
     ep.InReset = (g_reset[e] || f.reset) ? 1 : 0;
     ep.InMVScaleX = f.motionScaleX;
     ep.InMVScaleY = f.motionScaleY;
@@ -194,10 +185,11 @@ FfxApiResource fsrRes(const Image& i, uint32_t state, uint32_t usage) {
 
 bool fsrEvaluate(int eye, const Frame& f) {
     const int e = eye - 1;
+    const uint32_t inW = f.renderW ? f.renderW : f.color.width, inH = f.renderH ? f.renderH : f.color.height;
     uint32_t flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE;
     if (f.hdr) flags |= FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE;
     if (f.depthInverted) flags |= FFX_UPSCALE_ENABLE_DEPTH_INVERTED;
-    if (!g_fsr.ctx[e] || g_fsr.maxRender[e][0] < f.color.width || g_fsr.maxRender[e][1] < f.color.height ||
+    if (!g_fsr.ctx[e] || g_fsr.maxRender[e][0] < inW || g_fsr.maxRender[e][1] < inH ||
         g_fsr.maxOut[e][0] != f.output.width || g_fsr.maxOut[e][1] != f.output.height || g_fsr.flags[e] != flags) {
         if (g_fsr.ctx[e]) g_fsr.fn.DestroyContext(&g_fsr.ctx[e], nullptr), g_fsr.ctx[e] = nullptr;
         ffxCreateBackendVKDesc be{};
@@ -209,7 +201,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
         cd.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
         cd.header.pNext = &be.header;
         cd.flags = flags;
-        cd.maxRenderSize = {f.color.width, f.color.height};
+        cd.maxRenderSize = {inW, inH};
         cd.maxUpscaleSize = {f.output.width, f.output.height};
         ffxReturnCode_t rc = g_fsr.fn.CreateContext(&g_fsr.ctx[e], &cd.header, nullptr);
         if (rc != FFX_API_RETURN_OK) {
@@ -217,11 +209,11 @@ bool fsrEvaluate(int eye, const Frame& f) {
             g_fsr.ctx[e] = nullptr;
             return false;
         }
-        g_fsr.maxRender[e][0] = f.color.width, g_fsr.maxRender[e][1] = f.color.height;
+        g_fsr.maxRender[e][0] = inW, g_fsr.maxRender[e][1] = inH;
         g_fsr.maxOut[e][0] = f.output.width, g_fsr.maxOut[e][1] = f.output.height;
         g_fsr.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("fsr: eye %d %ux%u -> %ux%u (quality %d)", eye, f.color.width, f.color.height, f.output.width, f.output.height, g_quality);
+        VRLOG("fsr: eye %d %ux%u -> %ux%u (quality %d)", eye, inW, inH, f.output.width, f.output.height, g_quality);
     }
     ffxDispatchDescUpscale d{};
     d.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
@@ -232,7 +224,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
     d.output = fsrRes(f.output, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS, FFX_API_RESOURCE_USAGE_UAV);
     d.jitterOffset = {f.jitterX, f.jitterY};
     d.motionVectorScale = {f.motionScaleX, f.motionScaleY};
-    d.renderSize = {f.color.width, f.color.height};
+    d.renderSize = {inW, inH};  // at (0,0); the resource descriptions keep the image extents
     d.upscaleSize = {f.output.width, f.output.height};
     d.enableSharpening = g_sharpness > 0.0f;
     d.sharpness = g_sharpness;
@@ -300,29 +292,19 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
 Kind active() { return g_kind; }
 const char* name() { return g_kind == Kind::DLSS ? "DLSS" : g_kind == Kind::FSR ? "FSR 3.1" : "off"; }
 
-void renderSize(uint32_t outW, uint32_t outH, uint32_t& rw, uint32_t& rh) {
-    float r = g_kind == Kind::Off ? 1.0f : kRatio[g_quality];
-    rw = std::max(1u, uint32_t(std::lround(outW / r)));
-    rh = std::max(1u, uint32_t(std::lround(outH / r)));
-}
+float ratio() { return g_kind == Kind::Off ? 1.0f : core::upscaleRatio(g_quality); }
+
+void renderSize(uint32_t outW, uint32_t outH, uint32_t& rw, uint32_t& rh) { core::upscaleRenderSize(outW, outH, ratio(), rw, rh); }
 
 void jitter(uint32_t frame, uint32_t renderW, uint32_t outW, float& px, float& py) {
     if (g_kind == Kind::Off || !renderW) {
         px = py = 0;
         return;
     }
-    // FSR's phase count rule (also fine for DLSS): 8 * (display/render)^2.
-    float ratio = float(outW) / float(renderW);
-    int phases = std::max(8, int(std::ceil(8.0f * ratio * ratio)));
-    int idx = int(frame % uint32_t(phases)) + 1;
-    px = halton(idx, 2) - 0.5f;
-    py = halton(idx, 3) - 0.5f;
+    core::jitterOffset(frame, renderW, outW, px, py);
 }
 
-float mipBias(uint32_t renderW, uint32_t outW) {
-    if (g_kind == Kind::Off || !renderW || !outW) return 0.0f;
-    return std::log2(float(renderW) / float(outW));
-}
+float mipBias(uint32_t renderW, uint32_t outW) { return g_kind == Kind::Off ? 0.0f : core::upscaleMipBias(renderW, outW); }
 
 bool evaluate(int eye, const Frame& f) {
     if (eye != 1 && eye != 2) return false;

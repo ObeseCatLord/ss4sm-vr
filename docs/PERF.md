@@ -40,8 +40,15 @@ Findings:
   Check it again at headset resolution and in a dense scene.
 - **Upscalers.**
   - Native-AA mode (DLAA, or FSR at ratio 1) costs about 0.6–0.7 ms per frame.
-  - `upscale_quality` 1–3 does not reduce the render size yet. Phase A is native AA only, so these rows show no
-    saving. Lowering the internal render size is phase B (R25, in progress).
+  - **Phase B (R25, 2026-10-26):** with `upscale_quality` 1–3 the scene now renders at output/ratio. The
+    RenderView limiter is hooked for eyes 1/2, the upscaler fills the full-size HDR canvas, post-processing writes the
+    eye image at full size, and the engine's spatial rescale is skipped.
+    - Lab check, DLSS at ratio 1.5 (1280x1440 → 1920x2160): the limiter, the HDR canvas created once at eye size,
+      projection, rescale skips and phase-B eye dispatches all agree.
+    - About 98.6 % of eye frames take phase B. The rest fall back to a second stock post-processing pass.
+    - GPU **5.12 ms**, against 5.37 ms for DLAA and 4.66 ms without AA. This scene is not shading-bound on the 4090,
+      so the saving will be larger at headset resolution and in dense scenes.
+    - Phase B needs two-pass. It is off with `upscale_phase_b=0`.
   - Image quality is in IMPLEMENTATION_STATUS (upscaler item). The default stays off.
 - **CPU.** About 6 ms per frame in Pompeii, with peaks of 8–12 ms during loading or streaming windows. That is
   inside 11.1 ms, but busy scenes should be checked on the headset.

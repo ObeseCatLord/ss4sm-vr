@@ -10,6 +10,7 @@
 //   upscaler        = auto | 0 off | 1 fsr | 2 dlss      (auto: DLSS on NVIDIA RTX when available, else FSR)
 //   upscale_quality = 0 native AA (DLAA / FSR native) | 1 quality | 2 balanced | 3 performance   (default 0)
 //   upscale_sharpness = 0..100 (default 15)
+//   upscale_phase_b = 1 render at output / ratio for quality 1..3 (default) | 0 render at output size (src/up/integrate.cpp)
 #include <vulkan/vulkan.h>
 #include <cstdint>
 
@@ -26,6 +27,8 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
 Kind active();
 const char* name();
 
+// Output / render ratio of the configured quality mode (1 for native AA and while no backend is active).
+float ratio();
 // Render resolution for an output (display) size under the configured quality mode.
 void renderSize(uint32_t outW, uint32_t outH, uint32_t& renderW, uint32_t& renderH);
 // Sub-pixel jitter for this frame in render pixels (x right, y down), and as a clip-space offset for the
@@ -42,7 +45,8 @@ struct Image {
 };
 struct Frame {
     VkCommandBuffer cmd = VK_NULL_HANDLE;  // recording, outside a render pass; images in GENERAL or read layouts
-    Image color, depth, motion, output;    // color/depth/motion at render size, output at display size (storage)
+    Image color, depth, motion, output;    // color/depth/motion hold the render size, output at display size (storage)
+    uint32_t renderW = 0, renderH = 0;     // render size: sub-rect at (0,0) of color/depth/motion; 0 = their full extent
     float jitterX = 0, jitterY = 0;        // render pixels, as passed to jitter()
     float motionScaleX = 1, motionScaleY = 1;  // converts the engine's motion vectors to render pixels
     float frameMs = 11.1f;

@@ -22,6 +22,8 @@ bool hookViewport();
 void headPlacement(float out[7]);
 // The eye the engine is rendering now (device +0x18: 1 left, 2 right, 3 scope, 0 none).
 int currentEye();
+// Size of the eye render targets slot 0x028 creates: slot 0x060 x vr_fRenderingPixelRatio.
+void eyeTargetSize(int& w, int& h);
 // The eye whose render target `dp` is (the drawport slot 0x028 returned), or 0. Single pass renders the HUD with
 // the device's eye field at 0; this tells the eye from the drawport.
 int eyeOfDrawport(const void* dp);

@@ -196,6 +196,12 @@ int* sRecSize(Object*, int* ret) {
 }
 int* sMaxSize(Object* self, int* ret) {
     NOTE(0x068);
+    // Upscaler phase B: the HDR canvas (sized from this slot) must hold the eye image at output size, which includes
+    // vr_fRenderingPixelRatio (R25 s2.3). Otherwise the recommended size, as before.
+    if (upint::phaseB()) {
+        eyeSize(ret[0], ret[1]);
+        return ret;
+    }
     return sRecSize(self, ret);
 }
 float* sProjection(Object*, float* m, int eye, float n, float f) {
@@ -626,6 +632,7 @@ bool eyeFov(int eye, float& left, float& right, float& up, float& down) {
     return true;
 }
 int currentEye() { return g_installed ? field<int32_t>(0x18) : 0; }
+void eyeTargetSize(int& w, int& h) { eyeSize(w, h); }
 int eyeOfDrawport(const void* dp) { return !dp ? 0 : dp == g_eyeRt[0] ? 1 : dp == g_eyeRt[1] ? 2 : 0; }
 int g_hudDpEye;  // main thread: the eye of the HUD element being drawn, from its drawport (setHudDrawport)
 void setHudDrawport(const void* dp) { g_hudDpEye = eyeOfDrawport(dp); }
