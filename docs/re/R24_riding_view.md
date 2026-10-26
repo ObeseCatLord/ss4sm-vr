@@ -333,3 +333,11 @@ Notes:
 "is_third_person_view": {"src": "0x1402be4d0", "len": 64, "_note": "BOOL (CPuppetEntity*): puppet vt+0xdf0; seat ALLOW bits, else en_bAvatarViewMode. False = vt+0xdf8 uses vt+0x340 mode 0 (vrd head) (R24)"},
 "get_camera_mode": {"src": "0x1404789f0", "len": 64, "_note": "int (CPlayerActorPuppetEntity*): PCM_* from the profile/prj (riding) view option, stored in en_pcmPlayerCameraMode (R24)"}
 ```
+
+## 8. Lab result (2026-10-26)
+Implemented as in section 5.2 (`vehicles.cpp hookedThirdPerson`, option `ride_first_person`, default 1).
+- **SM 02_Siberia snowmobile.** Before the hook, the headset view came from the chase camera behind the vehicle,
+  while the hands followed the seat. With the hook, the view is first person at the seat, the windscreen and dash
+  are in view, and the hands are on the handlebar grips. The grab, turn, drive and exit steps passed.
+- **SS4 06_Countryside harvester.** No change: still first person, and the suite's vehicle stage passed (5/5).
+Section 5.3 was not needed.

@@ -389,6 +389,15 @@
   physics-body read answers "not airborne" while riding, so the VR anchor keeps following the seat); seated height on
   boarding (`ride_eye_cm`, default 80); grab steering falls back to an 18 cm rim when the model has no grip
   attachments; the wheel was grabbed and turned (0.5 rad), the stick drove it, the use button got out.
+- **Lab suites (2026-10-26, `tools/lab/suite.sh`, isolated lab copies):**
+  - **SS4: 20/20** over the core, vehicle, survival and artifact stages.
+  - **SM: 20/20** over the core, vehicle, melee and artifact stages. SM has no Survival map, so the melee stage gets
+    its enemies from the level's spawners through lab Lua.
+  - Per-game wheel directions come from `tools/lab/wheel_map.sh`, which uses the new "hands: right hand weapon" log
+    line. In SM the scoped weapon is the crossbow.
+- **Riding view (R24):** seats that prefer the chase camera (SS4 ATV, chopper and tractor; SM snowmobile) now keep
+  the VR rider in first person at the seat. The puppet predicate "is in third-person view" answers first person for
+  the local VR rider (`ride_first_person`). Lab: SM snowmobile first person with the hands on the handlebar grips.
 - **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
   redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by
   `hud_inset_scale`, centred on the eye's optical axis; world-projected points are untouched. Lab: health/armour/ammo

@@ -52,6 +52,9 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    sharp (no blur) and in stereo. Note the weapon's look vs where it shoots (known: the visible gun is pitched up).
 7c. Vehicles (ATV): the left stick drives. Squeeze both grips on the handlebars; turning the hands should turn the
    real bars 1:1 and steer the ATV in the same direction. Log: `vehicles: grabbed the steering wheel`.
+   On every vehicle (also the ATV, chopper and SM snowmobile, which default to a chase camera) you should see from the
+   seat, not from behind the vehicle (`vehicles: riding view kept first person`). Note whether the rider's body and
+   arms look right from there.
 7d. Body IK (`body_ik=1` in options.txt): in a mirror, third-person view (`plcmdThirdPersonView`) or another
    machine, the player body's arms should reach the hands and weapons. Log: `body: IK handler ... registered`.
 7e. Foveation: off by default except on a Steam Frame. Try `foveation=1` (fixed) in options.txt. The centre should

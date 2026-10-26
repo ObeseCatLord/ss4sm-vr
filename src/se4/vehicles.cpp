@@ -78,6 +78,35 @@ void hookedAnimate(uint8_t* behavior, void* p2) {
     followerSetRot(follower, g_bone, out);
 }
 
+// Riding view (R24): the puppet predicate "is in third-person view" (vt+0xdf0) answers first person for the local VR
+// player while riding, so the headset keeps the head camera at the seat instead of the chase camera that seats such
+// as the ATV, chopper, tractor and SM snowmobile prefer. No option or cvar is written. Called for every puppet from
+// the simulation and render paths, so it only compares pointers.
+using ThirdPersonFn = int(__cdecl*)(uint8_t* puppet);
+ThirdPersonFn realThirdPerson;
+int __cdecl hookedThirdPerson(uint8_t* puppet) {
+    void* vrd = player_vr::localVrd();
+    const unsigned vrdOff = player_vr::vrdOffset();
+    // vrd+0 is its player: compare first, so +vrdOff is read only on that (large enough) puppet.
+    if (vrd && puppet && vrdOff && *static_cast<uint8_t**>(vrd) == puppet && at<void*>(puppet, vrdOff) == vrd &&
+        vrdev::installed() && handleEntity(at<int32_t>(puppet, se4::build().off(se4::gen::CPuppetEntity_en_henRide)))) {
+        static LONG once;
+        if (!InterlockedExchange(&once, 1)) VRLOG("vehicles: riding view kept first person for the VR player");
+        return 0;
+    }
+    return realThirdPerson(puppet);
+}
+bool installRidingView() {
+    const auto& b = se4::build();
+    void* fn = b.at<void>(se4::gen::is_third_person_view);
+    if (!se4::options::get("ride_first_person", 1) || !fn || !handleEntity || !b.off(se4::gen::CPuppetEntity_en_henRide)) return false;
+    if (MH_CreateHook(fn, reinterpret_cast<void*>(hookedThirdPerson), reinterpret_cast<void**>(&realThirdPerson)) != MH_OK ||
+        MH_EnableHook(fn) != MH_OK)
+        return VRLOG("vehicles: riding view hook FAILED"), false;
+    VRLOG("vehicles: riding view first person in VR (%p)", fn);
+    return true;
+}
+
 void release() {
     if (g_driving) vrdev::setSeatOffset(0.0f);
     g_driving = false;
@@ -89,9 +118,10 @@ void release() {
 }  // namespace
 
 bool install() {
-    if (!se4::options::get("vehicle_grab", 1)) return false;
     const auto& b = se4::build();
     handleEntity = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
+    installRidingView();
+    if (!se4::options::get("vehicle_grab", 1)) return false;
     boneWorld = reinterpret_cast<BoneWorldFn>(b.at<void>(se4::gen::bone_world));
     attachWorld = reinterpret_cast<AttachWorldFn>(b.at<void>(se4::gen::attach_world));
     identFromString = reinterpret_cast<IdentFn>(b.at<void>(se4::gen::ident_ctor));

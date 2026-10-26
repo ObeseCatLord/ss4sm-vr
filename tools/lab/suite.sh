@@ -105,6 +105,7 @@ EOF
   sleep 10; mark
   check "vehicle: boarded without a crash" "$(grep -aq 'vehicles: driving' "$MODLOG" && ! grep -aq Crashed "$GAMELOG" && echo 1 || echo 0)"
   check "vehicle: seated height" "$(grep -aq 'seated height' "$MODLOG" && echo 1 || echo 0)"
+  check "vehicle: riding view first person (head camera at the seat)" "$(grep -aq 'riding view kept first person' "$MODLOG" && echo 1 || echo 0)"
   cap vehicle-seat
   $ID $H lpos=-$VX,$VY,$VZ rpos=$VX,$VY,$VZ >/dev/null; sleep 1
   $ID $H lpos=-$VX,$VY,$VZ rpos=$VX,$VY,$VZ lgrip=1 rgrip=1 >/dev/null; sleep 2
