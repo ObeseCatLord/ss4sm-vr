@@ -147,3 +147,6 @@ manual:router_control_markup # R19
 manual:command_markup        # R19: prompts resolved through the pad router in VR
 manual:control_markup        # R19: input device table
 manual:device_switch         # R19: keep the pad router as the last used device in VR
+manual:script_ctx        # R20: lab Lua
+manual:lua_world_to_lsi  # R20
+manual:lua_exec_string   # R20

@@ -762,5 +762,20 @@
    "len": 48
   },
   "_note": "(pi, bindings, ...): sets pi+0xb0 to the last used input device, which picks prompt glyph variants (R19 s1.2)"
+ },
+ "script_ctx": {
+  "src": "0x1411223e0",
+  "len": 32,
+  "_note": "per-thread engine context (TLS); ctx+0xa8 = executing CLuaScriptInterface (R20 s2.3)"
+ },
+ "lua_world_to_lsi": {
+  "src": "0x140b79820",
+  "len": 16,
+  "_note": "world -> CLuaScriptInterface (R20 s2.3)"
+ },
+ "lua_exec_string": {
+  "src": "0x140b748a0",
+  "len": 64,
+  "_note": "int (lsi, ctx, const char* src, uint flags): runs Lua source as a scheduler coroutine in that script context (R20 s2.2); lab_lua"
  }
 }

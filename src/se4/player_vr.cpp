@@ -280,6 +280,57 @@ bool patchSlot208(uint8_t* fn, void** global) {
     VRLOG("player_vr: vrd_init slot 0x208 calls at %p, %p go through null-checking thunk %p", sites[0], sites[1], thunk);
     return true;
 }
+// Lab only (docs/re/R20_lab_lua.md): if ss4smvr/lab.lua exists next to the payload, run it once in the local
+// player's world (its script context: worldGlobals, Wait, engine functions) after lab_lua_delay ticks (default 90).
+using CtxFn = void*(__cdecl*)();
+using LsiFn = void*(__cdecl*)(void* world);
+using ExecFn = int(__cdecl*)(void* lsi, void* ctx, const char* src, uint32_t flags);
+void labLua(uint8_t* player) {
+    static int state;  // 0 not loaded, 1 waiting, 2 done
+    static char* text;
+    static int delay;
+    if (state == 2) return;
+    if (state == 0) {
+        state = 2;
+        wchar_t path[MAX_PATH];
+        HMODULE self = nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&labLua), &self);
+        const DWORD n = GetModuleFileNameW(self, path, MAX_PATH);
+        wchar_t* slash = n && n < MAX_PATH - 16 ? wcsrchr(path, L'\\') : nullptr;
+        if (!slash) return;
+        wcscpy(slash + 1, L"lab.lua");
+        HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (f == INVALID_HANDLE_VALUE) return;
+        const DWORD size = GetFileSize(f, nullptr);
+        static const char prefix[] = "--[[@lab_lua-@]] ";
+        text = size < (1u << 20) ? static_cast<char*>(HeapAlloc(GetProcessHeap(), 0, size + sizeof prefix)) : nullptr;
+        DWORD got = 0;
+        if (text) {
+            memcpy(text, prefix, sizeof prefix - 1);
+            ReadFile(f, text + sizeof prefix - 1, size, &got, nullptr);
+            text[sizeof prefix - 1 + got] = 0;
+        }
+        CloseHandle(f);
+        if (!text) return;
+        delay = se4::options::get("lab_lua_delay", 90);
+        state = 1;
+        VRLOG("player_vr: lab.lua loaded (%lu bytes), runs in %d ticks", got, delay);
+        return;
+    }
+    if (delay-- > 0) return;
+    state = 2;
+    const auto& b = se4::build();
+    auto ctx = reinterpret_cast<CtxFn>(b.at<void>(se4::gen::script_ctx));
+    auto toLsi = reinterpret_cast<LsiFn>(b.at<void>(se4::gen::lua_world_to_lsi));
+    auto exec = reinterpret_cast<ExecFn>(b.at<void>(se4::gen::lua_exec_string));
+    void* world = *reinterpret_cast<void**>(player + 0x30);
+    void* lsi = ctx && toLsi && exec && world ? toLsi(world) : nullptr;
+    if (!lsi || *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(lsi) + 8) != 1) return VRLOG("player_vr: lab.lua - no world script interface");
+    const int ok = exec(lsi, ctx(), text, 0);
+    VRLOG("player_vr: lab.lua executed (%s)", ok ? "ok" : "failed - see 'Lua error' in the game log");
+}
+
 // Every CPlayerVRData step (simulation thread), armed or not: body IK, and the local player's gadget/wheel-spot
 // tick (src/se4/gadgets.cpp), which otherwise only ran from weapon steps.
 using VrdTickFn = void(__cdecl*)(void** vrd);
@@ -287,7 +338,10 @@ VrdTickFn realVrdTick;
 void __cdecl hookedVrdTick(void** vrd) {
     realVrdTick(vrd);
     body::onVrdTick(vrd);
-    if (vrd && vrd == g_localVrd) gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
+    if (vrd && vrd == g_localVrd) {
+        gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
+        labLua(static_cast<uint8_t*>(vrd[0]));
+    }
 }
 }  // namespace
 

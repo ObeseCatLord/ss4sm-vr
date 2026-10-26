@@ -126,7 +126,10 @@
   "router_control_markup": "0x1412ed8d0",
   "command_markup": "0x1412e6900",
   "control_markup": "0x1412e0980",
-  "device_switch": "0x1400528a0"
+  "device_switch": "0x1400528a0",
+  "script_ctx": "0x1411223e0",
+  "lua_world_to_lsi": "0x140b79820",
+  "lua_exec_string": "0x140b748a0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -248,7 +251,10 @@
   "xpad_control_markup": "0x1412f81c0",
   "router_control_markup": "0x1412f02c0",
   "control_markup": "0x1412e3370",
-  "device_switch": "0x1400551f0"
+  "device_switch": "0x1400551f0",
+  "script_ctx": "0x141124d30",
+  "lua_world_to_lsi": "0x140b7c1d0",
+  "lua_exec_string": "0x140b76fd0"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -377,7 +383,10 @@
   "router_control_markup": "0x1412ee230",
   "command_markup": "0x1412e7270",
   "control_markup": "0x1412e12f0",
-  "device_switch": "0x140052900"
+  "device_switch": "0x140052900",
+  "script_ctx": "0x141122ba0",
+  "lua_world_to_lsi": "0x140b79e70",
+  "lua_exec_string": "0x140b74e10"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -499,6 +508,9 @@
   "xpad_control_markup": "0x1412f8b30",
   "router_control_markup": "0x1412f0bc0",
   "control_markup": "0x1412e3c80",
-  "device_switch": "0x140055240"
+  "device_switch": "0x140055240",
+  "script_ctx": "0x1411254e0",
+  "lua_world_to_lsi": "0x140b7c810",
+  "lua_exec_string": "0x140b77530"
  }
 }
