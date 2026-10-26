@@ -63,6 +63,10 @@ stage_core() {
   mark; wheel_to -0.15 0; check "wheel spot: Menu" "$(has 'Menu spot run')"; cap menu
   check "menu bar asks the pad router for its shortcuts" "$(grep -aq 'prompts: button prompts show' "$MODLOG" && echo 1 || echo 0)"
   press rb=1; sleep 2
+  # Rifle + left squeeze at the foregrip: two-hand grip (before dual wielding: the off hand must be free)
+  mark; wheel_to 0.09 0; $ID $H lpos=0.25,1.3,-0.6 $R0 >/dev/null; sleep 1; $ID $H lpos=0.25,1.3,-0.6 $R0 lgrip=1 >/dev/null; sleep 2
+  cap two-hand; $ID $H $LH $R0 >/dev/null
+  check "two-hand grip (squeeze at the foregrip)" "$(has 'the two-handed weapon')"
   # Dual pistols: two crosshairs; knife right + pistol left: one
   "$HERE/dual_crosshair_lab.sh" "$OUT/dual-pistols" "-0.72 -0.70" "-0.72 -0.70" >/dev/null 2>&1
   check "dual pistols captured (two crosshairs: see dual-pistols.png)" 1
@@ -71,11 +75,6 @@ stage_core() {
   # Sniper scope (top of the right wheel), raised to the eye
   mark; wheel_to 0 0.09; $ID $H $LH rpos=0.04,1.55,-0.12 >/dev/null; sleep 3; cap scope
   check "sniper: picture-in-picture scope" "$(has 'scope: scoped weapon')"
-  # Rifle + left squeeze at the foregrip: two-hand grip
-  $ID $H $LH $R0 rforce=1 >/dev/null; sleep 0.1; $ID $H $LH $R0 >/dev/null; sleep 2  # right trackpad tap: dual wield off (free left hand)
-  mark; wheel_to 0.09 0; $ID $H lpos=0.25,1.3,-0.6 $R0 >/dev/null; sleep 1; $ID $H lpos=0.25,1.3,-0.6 $R0 lgrip=1 >/dev/null; sleep 2
-  cap two-hand; $ID $H $LH $R0 >/dev/null
-  check "two-hand grip (squeeze at the foregrip)" "$(has 'the two-handed weapon')"
   # Gadgets (each gesture), from the left grip
   mark; "$HERE/gadgets_lab.sh" "$G" "$OUT/gadget" 6 >/dev/null 2>&1
   check "gadgets: taken into the hand and used" "$(since | grep -c -- '-> use' | awk '{print ($1>=3)?1:0}')" "($(since | grep -c -- '-> use') uses)"
