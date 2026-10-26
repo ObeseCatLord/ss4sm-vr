@@ -1045,6 +1045,8 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
     return core::angles(core::jittered(p.tan, g_jx * g_jitterScale, g_jy * g_jitterScale, g_jitW, g_jitH));
 }
 
+bool flatWanted() { return !se4::g_vrEnabled && se4::options::get("upscaler", 0) != 0; }
+
 bool install() {
     g_evaluate = se4::options::get("upscaler", 0) != 0;
     if (!g_evaluate) return false;

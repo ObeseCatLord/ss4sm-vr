@@ -66,7 +66,9 @@ struct GameVk {
     uint32_t graphicsFamily = UINT32_MAX;
     VkQueue xrQueue = VK_NULL_HANDLE;  // family graphicsFamily, index 0
     bool xrInstance = false, xrDevice = false;
+    bool flat = false;  // desktop play with an upscaler: the game device with the upscaler's extensions, no XR
 } g;
+bool active() { return g.xrDevice || g.flat; }  // the device-level hooks apply
 
 HWND g_gameWnd;
 PFN_vkCreateWin32SurfaceKHR realCreateWin32Surface;
@@ -125,9 +127,26 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
     onGameVulkan();
     VRLOG("vk: game vkCreateInstance (%u extensions)", ci->enabledExtensionCount);
     auto& rt = xr::runtime();
-    if (!rt.ensure()) {
-        VRLOG("vk: no OpenXR system - flat passthrough");
-        VkResult r = realCreateInstance(ci, a, out);
+    if (!se4::g_vrEnabled || !rt.ensure()) {
+        // Desktop play: only the upscaler, when one is selected, needs its instance extensions.
+        VkInstanceCreateInfo fci = *ci;
+        const char* upExt[16];
+        uint32_t upN = 0;
+        std::vector<const char*> exts;
+        if (upint::flatWanted()) up::instanceExtensions(upExt, upN, 16);
+        if (upN) {
+            auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(realGIPA(nullptr, "vkEnumerateInstanceExtensionProperties"));
+            uint32_t c = 0;
+            enumerate(nullptr, &c, nullptr);
+            std::vector<VkExtensionProperties> av(c);
+            enumerate(nullptr, &c, av.data());
+            exts = mergeExtensions(ci->ppEnabledExtensionNames, ci->enabledExtensionCount, upExt, upN, av);
+            fci.enabledExtensionCount = uint32_t(exts.size());
+            fci.ppEnabledExtensionNames = exts.data();
+        }
+        VRLOG(se4::g_vrEnabled ? "vk: no OpenXR system - flat passthrough" : "vk: desktop play (%u -> %u instance extensions)",
+              ci->enabledExtensionCount, fci.enabledExtensionCount);
+        VkResult r = realCreateInstance(&fci, a, out);
         if (r == VK_SUCCESS) g.instance = *out;
         return r;
     }
@@ -159,9 +178,68 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
     return r;
 }
 
+// Device-level entry points and the modules that record into the game's command buffers (both modes).
+void setupDevice(VkPhysicalDevice pd, uint32_t family) {
+    realQueueSubmit = DFN(vkQueueSubmit);
+    realQueueSubmit2 = DFN(vkQueueSubmit2);
+    if (!realQueueSubmit2) realQueueSubmit2 = reinterpret_cast<PFN_vkQueueSubmit2>(realGDPA(g.device, "vkQueueSubmit2KHR"));
+    realQueuePresent = DFN(vkQueuePresentKHR);
+    realQueueWaitIdle = DFN(vkQueueWaitIdle);
+    realDeviceWaitIdle = DFN(vkDeviceWaitIdle);
+    realCreateSwapchain = DFN(vkCreateSwapchainKHR);
+    realGetSwapchainImages = DFN(vkGetSwapchainImagesKHR);
+    realGetDeviceQueue = DFN(vkGetDeviceQueue);
+    realCreateImage = DFN(vkCreateImage);
+    realBeginCB = DFN(vkBeginCommandBuffer);
+    realBarrier = DFN(vkCmdPipelineBarrier);
+    realBarrier2 = DFN(vkCmdPipelineBarrier2);
+    if (!realBarrier2) realBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(realGDPA(g.device, "vkCmdPipelineBarrier2KHR"));
+    realDestroyImage = DFN(vkDestroyImage);
+    realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
+    if (!g.flat) fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
+    gputime::onDevice(g.instance, realGIPA, pd, g.device, realGDPA, family);
+    wchar_t dir[MAX_PATH];
+    se4::payloadDirectory(dir, MAX_PATH);
+    up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
+    upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
+    if (!g.flat) scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
+}
+
+// Desktop play with an upscaler: the game's own device plus the upscaler's device extensions; no XR, no foveation.
+VkResult createFlatDevice(VkPhysicalDevice pd, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks* a, VkDevice* out) {
+    VkDeviceCreateInfo copy = *ci;
+    const char* upDev[24];
+    uint32_t upDevN = 0;
+    up::deviceExtensions(g.instance, pd, upDev, upDevN, 24);
+    std::vector<const char*> devExts;
+    if (upDevN) {
+        auto enumerate = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(realGIPA(g.instance, "vkEnumerateDeviceExtensionProperties"));
+        uint32_t c = 0;
+        enumerate(pd, nullptr, &c, nullptr);
+        std::vector<VkExtensionProperties> av(c);
+        enumerate(pd, nullptr, &c, av.data());
+        devExts = mergeExtensions(copy.ppEnabledExtensionNames, copy.enabledExtensionCount, upDev, upDevN, av);
+        copy.enabledExtensionCount = uint32_t(devExts.size());
+        copy.ppEnabledExtensionNames = devExts.data();
+    }
+    const uint32_t family = ci->queueCreateInfoCount ? ci->pQueueCreateInfos[0].queueFamilyIndex : 0;
+    VkResult r = realCreateDevice(pd, &copy, a, out);
+    VRLOG("vk: desktop device -> %d (%u -> %u extensions, graphics family %u)", int(r), ci->enabledExtensionCount,
+          copy.enabledExtensionCount, family);
+    if (r != VK_SUCCESS) return r;
+    g.device = *out;
+    g.physical = pd;
+    g.graphicsFamily = family;
+    g.flat = true;
+    setupDevice(pd, family);
+    return r;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDeviceCreateInfo* ci, const VkAllocationCallbacks* a, VkDevice* out) {
     if (!realCreateDevice) realCreateDevice = reinterpret_cast<PFN_vkCreateDevice>(realGIPA(g.instance, "vkCreateDevice"));
     if (!realGDPA) realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(realGIPA(g.instance, "vkGetDeviceProcAddr"));
+    if (!g.xrInstance && !g.device && g.instance && g_redirectThread != GetCurrentThreadId() && upint::flatWanted())
+        return createFlatDevice(pd, ci, a, out);
     if (g_redirectThread == GetCurrentThreadId() || g.device || !g.xrInstance) {
         VkResult r = realCreateDevice(pd, ci, a, out);
         if (r == VK_SUCCESS && !g.device && g.instance) g.device = *out, g.physical = pd;
@@ -218,31 +296,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     g.graphicsFamily = family;
     g.xrDevice = true;
 
-    realQueueSubmit = DFN(vkQueueSubmit);
-    realQueueSubmit2 = DFN(vkQueueSubmit2);
-    if (!realQueueSubmit2) realQueueSubmit2 = reinterpret_cast<PFN_vkQueueSubmit2>(realGDPA(g.device, "vkQueueSubmit2KHR"));
-    realQueuePresent = DFN(vkQueuePresentKHR);
-    realQueueWaitIdle = DFN(vkQueueWaitIdle);
-    realDeviceWaitIdle = DFN(vkDeviceWaitIdle);
-    realCreateSwapchain = DFN(vkCreateSwapchainKHR);
-    realGetSwapchainImages = DFN(vkGetSwapchainImagesKHR);
-    realGetDeviceQueue = DFN(vkGetDeviceQueue);
-    realCreateImage = DFN(vkCreateImage);
-    realBeginCB = DFN(vkBeginCommandBuffer);
-    realBarrier = DFN(vkCmdPipelineBarrier);
-    realBarrier2 = DFN(vkCmdPipelineBarrier2);
-    if (!realBarrier2) realBarrier2 = reinterpret_cast<PFN_vkCmdPipelineBarrier2>(realGDPA(g.device, "vkCmdPipelineBarrier2KHR"));
-    realDestroyImage = DFN(vkDestroyImage);
-    realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
-    fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
-    gputime::onDevice(g.instance, realGIPA, pd, g.device, realGDPA, family);
-    {
-        wchar_t dir[MAX_PATH];
-        se4::payloadDirectory(dir, MAX_PATH);
-        up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
-        upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
-        scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
-    }
+    setupDevice(pd, family);
     if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
     else se4::applyVrFramePacing();
     return r;
@@ -768,7 +822,7 @@ PFN_vkVoidFunction deviceOverride(const char* name) {
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGDPA(VkDevice d, const char* name) {
     PFN_vkVoidFunction real = realGDPA(d, name);
-    if (!real || !name || d != g.device || !g.xrDevice) return real;
+    if (!real || !name || d != g.device || !active()) return real;
     if (auto o = deviceOverride(name)) return o;
     return real;
 }
@@ -785,7 +839,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hookGIPA(VkInstance inst, const char* n
             if (!realGDPA) realGDPA = reinterpret_cast<PFN_vkGetDeviceProcAddr>(realGIPA(inst, name));
             return realGDPA ? reinterpret_cast<PFN_vkVoidFunction>(hookGDPA) : nullptr;
         }
-        if (inst && inst == g.instance && g.xrDevice)
+        if (inst && inst == g.instance && active())
             if (auto o = deviceOverride(name)) return o;
     }
     return realGIPA(inst, name);
@@ -802,7 +856,7 @@ FARPROC interceptProc(HMODULE mod, const char* name, FARPROC real) {
         realGIPA = reinterpret_cast<PFN_vkGetInstanceProcAddr>(real);
         // The Vulkan backend is initialising on a game thread: bring up OpenXR and install the VR device
         // now, because the backend queries the device during init (R1: install before gfx init).
-        if (!(se4::g_debugSkip & 8) && xr::runtime().ensure()) vrdev::install();
+        if (se4::g_vrEnabled && !(se4::g_debugSkip & 8) && xr::runtime().ensure()) vrdev::install();
         return reinterpret_cast<FARPROC>(hookGIPA);
     }
     if (!strcmp(name, "vkCreateInstance")) {

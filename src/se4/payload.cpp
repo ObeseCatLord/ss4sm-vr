@@ -99,6 +99,11 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         // The server is the authority for melee damage, so it sweeps remote VR players' blades from their replicated hands.
         // Remote VR players' bodies (arms and fingers) are posed here too (body_ik).
         if (se4::options::get("mp_guards", 0) && player_vr::install(false)) net::install(), melee::install(), body::install();
+        // An upscaler in desktop play (option upscaler): the Vulkan layer and the upscaler on the flat main view.
+        if (upint::flatWanted()) {
+            se4::installProcAddressHook();
+            upint::install();
+        }
         return;
     }
     if (!(skip & 2)) se4::installProcAddressHook();

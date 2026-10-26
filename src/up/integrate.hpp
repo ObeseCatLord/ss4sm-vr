@@ -23,6 +23,9 @@
 
 namespace upint {
 bool install();
+// Desktop play (VR not enabled) with an upscaler selected: the flat main view is upscaled as "eye 1"
+// (docs/re/R27_flat_upscaler.md).
+bool flatWanted();
 // Phase B is on now (two-pass stereo, an upscaler running at a ratio > 1, symbols and opcodes verified).
 bool phaseB();
 // Vulkan layer callbacks.
