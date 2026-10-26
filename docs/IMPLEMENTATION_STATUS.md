@@ -398,7 +398,7 @@
 - **Riding view (R24):** seats that prefer the chase camera (SS4 ATV, chopper and tractor; SM snowmobile) now keep
   the VR rider in first person at the seat. The puppet predicate "is in third-person view" answers first person for
   the local VR rider (`ride_first_person`). Lab: SM snowmobile first person with the hands on the handlebar grips.
-- **Multiplayer channel (R13 s3), built and host-tested; not yet run in the multiplayer lab (MP testing comes last):**
+- **Multiplayer channel (R13 s3), lab-verified in SS4 on 2026-10-26 (dedicated server + VR client + desktop client):**
   - Code: `core/net_proto.hpp` (protocol, `tests/net_checks.cpp`) and `se4/net.cpp` (transport).
   - Mod messages travel as the engine's `CNMScriptRPC` under mod-private name hashes that are never interned, so an
     unmodded peer only logs one line. `CNMScriptRPC::Process` is detoured to consume them.
@@ -411,7 +411,24 @@
   - Desktop peers (`mp_guards=1`, `install.py --mode desktop`) say Hello from a remote VR player's tick. Options:
     `mp_channel`, `mp_log`.
   - Lab tooling: `tools/lab/mp_lab.sh` runs a dedicated (or listen) server, the VR client and a desktop client as
-    isolated gbe_fork copies. `run_game.sh VR=0` runs flat instances.
+    isolated gbe_fork copies over 127.0.0.1. `run_game.sh VR=0` runs flat instances.
+    - The server is started from its console at the main menu with `gamStartServer(...)`, then `gam_*` cvars, then
+      `gamStart()`. `gamStart()` alone starts single player, and a command-line `+exec` runs before the game's
+      functions exist.
+    - Clients join with `+gam_strConnectToIP`.
+  - Lab result (SS4 Pompeii co-op):
+    - The VR client is marked as playing in VR and gets its local vrd. Its Hello is acknowledged, and its poses
+      reach the server, which relays them.
+    - The desktop client (`mp_guards`) is acknowledged and receives the VR player's relayed poses.
+    - Both clients see each other in the level. There was no crash or kick.
+    - The engine logs a non-fatal "Code guard was activated" line on the clients and in single player too. It is
+      not specific to multiplayer.
+  - Still open:
+    - Using the relayed data on remote bodies (finger curls and grip; the arms already follow the native replicated
+      controller placements).
+    - Server-side melee validation.
+    - SM.
+    - The internet test: a remote server with gbe_fork `custom_broadcasts.txt` or a direct IP, and port forwarding.
 - **Performance (docs/PERF.md, 2026-10-26):**
   - New tools: `perf_timing` (GPU and CPU ms per frame in the log), `render_scale`, and `tools/lab/perf_matrix.sh`.
   - Single pass works again. It saves about 15 % of game CPU time.
