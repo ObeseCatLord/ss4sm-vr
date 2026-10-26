@@ -29,6 +29,10 @@ Abbreviations:
    - The only gate is a `.bss` global that has no writer (it is always 0). **[D]**
    - `Sam4_Unrestricted.exe` and `SamSM_Unrestricted.exe` contain the identical handler and gate. "Unrestricted" is
      the moddable/Workshop variant (`_unrestricted` save/session suffixes). It is not a console switch. **[D][M]**
+   - **Lab observation (2026-10-25).** Sending `grave`, `asciitilde` and `F1` through XTEST did not visibly open a
+     console in the isolated Sam4.exe. Static analysis finds no cvar or exe switch that would explain this. §1.4
+     lists the candidate causes and a way to check from the log alone. Even when it works, the console cannot
+     reach the world (point 2), so **the lab should use the `lab_lua` bridge (§5)**.
 2. **Console input is Lua**, but it runs in the **shell lsi, not the world**.
    - Each line is first tried as `return <line>` (so the value is printed), then run as a statement. **[D]**
    - The shell has full read permission (level 4). Its globals hold cvars and engine functions only. **There is no
@@ -147,6 +151,35 @@ Abbreviations:
 - No cvar runs a script when a level starts. WorldScripts are started by `CWorldInfoEntity` start 0x1403d4020
   (`<world>/Scripts/WorldScripts.lua`, R13). Overriding that file with a loose copy is possible in principle, but it
   would change official content, so it is rejected.
+
+### 1.4 Why the lab's key presses may not have opened it, and how to check [D]/[I]
+The toggle has no software gate (§1.1), so the cause lies on the input or display side. Candidates, most likely
+first:
+1. **The console is open but not visible.**
+   - The console is drawn by `Render` (pi vt+0x50, R11 §3) after the application state. In VR that pass renders
+     into the eye targets (0x1401deaf0 → `Render(pi, eyeRT, 1)`). The desktop mirror path 0x140055f10 draws only
+     the game-info overlay **[I]**.
+   - So with the mod's VR device installed, a window capture may never show the console.
+   - **Check without seeing it:** the line processor logs every submitted line as `"> %1"` (0x140e63da0, via the
+     log call 0x1410bbe50). Send F1, type `print("R20probe")` with `xtype.py`, then send `Return`. Grep the game log
+     for `> print("R20probe")` and for `R20probe`.
+   - While the console is open the game pauses unless `prj_bDisableConsolePause` is set (§1.1). A frozen world after
+     F1 is a second sign that it opened.
+2. **Key-id translation.**
+   - Key ids come from a **scancode-indexed** table (builder 0x141193010; slot = 0x1423a68b0 + 4·scancode): Esc
+     (sc 0x01) → 0x60, F1 (sc 0x3b) → 0x51, `` ` ``/`~` (sc 0x29) → 0x61.
+   - The engine therefore depends on the scancode that Wine assigns to the X keycode. On a headless
+     Weston/Xwayland keymap, Wine's layout detection could assign different scancodes **[I]**.
+   - Compare with keys that are known to work in the lab (Return and Escape reach the same pi handler, R11 §2). If
+     F1 does nothing while Escape works, suspect the keymap.
+   - `F1` (keysym `F1`) is the more robust choice because it does not depend on the layout.
+3. **Modifier bit.** The toggle is skipped when bit 29 of window-system vt+0x218 is set (0x141189ce0 forwards to
+   the platform window impl vt+0xe0). This is assumed to be Alt. A stuck synthetic modifier would block it **[I]**.
+4. **Focus.** The key must reach the game window's message loop (`xfocus.py` first). XTEST is fine. A synthetic
+   `XSendEvent` would be ignored by Wine.
+
+A mod-side override exists for completeness: `console_set_active(*(pi+0x70), 1)` (thunk 0x140aa68b0 → 0x140ab0640,
+SM 0x140aa6ff0 → 0x140ab0da0). It is not recommended, because the console only reaches the shell (§1.2).
 
 ## 2. Mod-side bridge
 
@@ -377,3 +410,5 @@ crate script has been imported (`CreateRPC` stores it in `worldGlobals` in singl
 7. `UserCfg.lua`'s resolved directory under Proton (0x1410f0c50 path rules). The game logs "Executing user startup
    config from %1" or "…Creating default script", and it **creates the file if missing**. Do not point the lab at
    the user's real directories.
+8. Why XTEST `grave`/`asciitilde`/`F1` did not visibly open the console in the lab (§1.4). Check the `"> %1"` log
+   line first. Then compare Wine's scancodes for these keys against Return and Escape.

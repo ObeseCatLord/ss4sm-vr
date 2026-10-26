@@ -122,7 +122,11 @@
   "quick_load": "0x1401ccd90",
   "entity_to_handle": "0x141113230",
   "menu_open_hand": "0x140056c80",
-  "xpad_control_markup": "0x1412f57d0"
+  "xpad_control_markup": "0x1412f57d0",
+  "router_control_markup": "0x1412ed8d0",
+  "command_markup": "0x1412e6900",
+  "control_markup": "0x1412e0980",
+  "device_switch": "0x1400528a0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -241,7 +245,10 @@
   "cstring_dtor": "0x1410c2870",
   "entity_to_handle": "0x141115b80",
   "menu_open_hand": "0x1400595d0",
-  "xpad_control_markup": "0x1412f81c0"
+  "xpad_control_markup": "0x1412f81c0",
+  "router_control_markup": "0x1412f02c0",
+  "control_markup": "0x1412e3370",
+  "device_switch": "0x1400551f0"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -366,7 +373,11 @@
   "quick_load": "0x1401cc8b0",
   "entity_to_handle": "0x141113b00",
   "menu_open_hand": "0x140056ce0",
-  "xpad_control_markup": "0x1412f61a0"
+  "xpad_control_markup": "0x1412f61a0",
+  "router_control_markup": "0x1412ee230",
+  "command_markup": "0x1412e7270",
+  "control_markup": "0x1412e12f0",
+  "device_switch": "0x140052900"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -485,6 +496,9 @@
   "cstring_dtor": "0x1410c3010",
   "entity_to_handle": "0x141116440",
   "menu_open_hand": "0x140059620",
-  "xpad_control_markup": "0x1412f8b30"
+  "xpad_control_markup": "0x1412f8b30",
+  "router_control_markup": "0x1412f0bc0",
+  "control_markup": "0x1412e3c80",
+  "device_switch": "0x140055240"
  }
 }

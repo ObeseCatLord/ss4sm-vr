@@ -722,5 +722,45 @@
    "len": 48
   },
   "_note": "XInput pad device vt+0x38: CString* (self, CString* out, int control) -> the icon set glyph markup; self+0x20 = XInput user (R19 s2.1)"
+ },
+ "router_control_markup": {
+  "src": "0x1412ed8d0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1412ee230",
+   "len": 48
+  },
+  "_note": "\"GamepadX\" input router vt+0x38: forwards to the last used pad (R19 s1.3); identifies the router device"
+ },
+ "command_markup": {
+  "src": "0x1412e6900",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1412e7270",
+   "len": 64
+  },
+  "_note": "command_markup(CString* out, bindings, const INDEX* piDevice, ident idCommand): prompt text of a command for one device (R19 s1.1)"
+ },
+ "control_markup": {
+  "src": "0x1412e0980",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1412e12f0",
+   "len": 48
+  },
+  "_note": "control_markup(CString* out, const INDEX* piDevice, INDEX control): g_devices / count are its first rip loads (R19 s1.1)"
+ },
+ "device_switch": {
+  "src": "0x1400528a0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140052900",
+   "len": 48
+  },
+  "_note": "(pi, bindings, ...): sets pi+0xb0 to the last used input device, which picks prompt glyph variants (R19 s1.2)"
  }
 }
