@@ -72,6 +72,7 @@ stage_core() {
   mark; wheel_to 0 0.09; $ID $H $LH rpos=0.04,1.55,-0.12 >/dev/null; sleep 3; cap scope
   check "sniper: picture-in-picture scope" "$(has 'scope: scoped weapon')"
   # Rifle + left squeeze at the foregrip: two-hand grip
+  $ID $H $LH $R0 rforce=1 >/dev/null; sleep 0.1; $ID $H $LH $R0 >/dev/null; sleep 2  # right trackpad tap: dual wield off (free left hand)
   mark; wheel_to 0.09 0; $ID $H lpos=0.25,1.3,-0.6 $R0 >/dev/null; sleep 1; $ID $H lpos=0.25,1.3,-0.6 $R0 lgrip=1 >/dev/null; sleep 2
   cap two-hand; $ID $H $LH $R0 >/dev/null
   check "two-hand grip (squeeze at the foregrip)" "$(has 'the two-handed weapon')"

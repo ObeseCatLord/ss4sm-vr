@@ -176,6 +176,68 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp, float dist) {
     return true;
 }
 
+// Text on the hand panel. The engine's 3D HUD path draws quads but no text (SS4 never shipped VR, so its 3D text
+// path is unused and draws nothing on the panel, R18 s7.4). While the wheel renders on the hand, its text calls
+// (and the spot labels) are taken to the 2D path: each text point on the panel is projected into this eye's
+// pixels, its size scaled by the panel's pixel size at that depth, and drawn flat in this eye's image. Per-eye
+// projection keeps the text at the panel's depth in stereo, as the crosshair (R8 A6).
+using HudTextFn = void(__cdecl*)(void* canvas, void* gfx, void* str, void* tp, uint64_t xy, float alpha);
+HudTextFn realHudText, realHudTextCentred;
+struct PanelText {
+    bool on = false;
+    core::Pose anchor;   // panel in head space (engine units), as the element's anchor
+    core::Pose eye;      // this eye in head space
+    float tl, tr, tu, td;  // this eye's frustum tangents
+    float x0, y0, w, h;  // drawport box
+    float s;             // engine units per panel pixel
+} g_pt;
+// Panel pixel -> this eye's pixel and the size factor; false when the point is behind the eye.
+bool panelToEye(const float in[2], float out[2], float& k) {
+    const core::Vec3 local{in[0] * g_pt.s - 0.5f * g_pt.w * g_pt.s, 0.5f * g_pt.h * g_pt.s - in[1] * g_pt.s, 0.0f};
+    const core::Vec3 head = g_pt.anchor.p + core::rotate(g_pt.anchor.q, local);
+    const core::Vec3 e = core::rotate(core::inverse(g_pt.eye.q), head - g_pt.eye.p);
+    if (!(e.z < -1e-3f)) return false;
+    const float tx = e.x / -e.z, ty = e.y / -e.z;
+    out[0] = g_pt.x0 + (tx - g_pt.tl) / (g_pt.tr - g_pt.tl) * g_pt.w;
+    out[1] = g_pt.y0 + (g_pt.tu - ty) / (g_pt.tu - g_pt.td) * g_pt.h;
+    k = g_pt.s * g_pt.w / (-e.z * (g_pt.tr - g_pt.tl));
+    return std::isfinite(out[0]) && std::isfinite(out[1]) && k > 0.01f && k < 100.0f;
+}
+void panelText(HudTextFn real, void* canvas, void* gfx, void* str, void* tp, uint64_t xy, float alpha) {
+    uint8_t* dp = gfx ? *reinterpret_cast<uint8_t**>(static_cast<uint8_t*>(gfx) + 0x1c78) : nullptr;
+    float in[2], out[2], k;
+    memcpy(in, &xy, 8);
+    static bool inside;
+    if (inside || !g_pt.on || !canvas || !tp || !dp || !flushCanvas || !panelToEye(in, out, k)) return real(canvas, gfx, str, tp, xy, alpha);
+    inside = true;
+    // Draw what the wheel queued so far on its 3D path, then this text alone on the 2D path. The flush rewrites the
+    // object matrix the next queue entry captures (gfx+0xcd0..), so it is kept for the wheel's later draws.
+    alignas(16) uint8_t matrix[0x60];
+    uint8_t* g = static_cast<uint8_t*>(gfx);
+    memcpy(matrix, g + 0xcd0, sizeof matrix);
+    flushCanvas(canvas, gfx);
+    int32_t* flat = reinterpret_cast<int32_t*>(dp + 0x30);
+    const int32_t savedFlat = *flat;
+    *flat = 1;
+    float* size = reinterpret_cast<float*>(static_cast<uint8_t*>(tp) + 0x20);
+    const float savedSize = *size;
+    *size = savedSize * k;
+    uint64_t packed;
+    memcpy(&packed, out, 8);
+    real(canvas, gfx, str, tp, packed, alpha);
+    *size = savedSize;
+    flushCanvas(canvas, gfx);
+    *flat = savedFlat;
+    memcpy(g + 0xcd0, matrix, sizeof matrix);
+    inside = false;
+}
+void __cdecl hookedHudText(void* canvas, void* gfx, void* str, void* tp, uint64_t xy, float alpha) {
+    panelText(realHudText, canvas, gfx, str, tp, xy, alpha);
+}
+void __cdecl hookedHudTextCentred(void* canvas, void* gfx, void* str, void* tp, uint64_t xy, float alpha) {
+    panelText(realHudTextCentred, canvas, gfx, str, tp, xy, alpha);
+}
+
 // The wheel spots (src/se4/wheel_panel.cpp), drawn into the wheel's own canvas with the wheel's helpers (R18 s3):
 // a gadget-list box and a centred label each, left and right of the wheel, in drawport pixels.
 using TextFn = void(__cdecl*)(void* batch, void* gfx, void* str, void* tp, uint64_t xy, float alpha);  // hud_text_centred
@@ -200,6 +262,8 @@ struct SpotCtx {
     uint8_t* wheel = nullptr;
     uint8_t* dp = nullptr;
 } g_spotCtx;
+bool g_spotBoxes = true;
+bool g_panelText = true;  // option wheel_panel_text (the panel's text drawn on the 2D path)  // diag: wheel_spot_boxes=0 draws the labels only
 float g_spotDx = 220.0f;  // spot centre from the wheel centre, in the wheel's 640x480 layout (option wheel_spot_dx)
 void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     (void)ctx, (void)dp;
@@ -243,6 +307,13 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     if (wheelScale) rel *= *wheelScale;
     if (!(rel > 0.05f && rel < 5.0f)) rel = 0.35f;
     g_sd.tpSize(tp, 1, rel);
+    static bool logged;
+    if (!logged) {
+        logged = true;
+        uint8_t* font = *reinterpret_cast<uint8_t**>(tp + 8);
+        VRLOG("hud_vr: spot labels size %.3f x cell %d px, unit %.3f, font %p", *reinterpret_cast<float*>(tp + 0x20),
+              font ? *reinterpret_cast<int32_t*>(font + 0x68) : -1, unit, static_cast<void*>(font));
+    }
     const float textSize = 0.0f;  // centred text (hud_text_centred) needs no baseline offset
     const float bw = 110.0f * unit, bh = 24.0f * unit;
     float pos[SpotCount][2];
@@ -256,7 +327,7 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
         const float rect[4] = {p[0] - bw * 0.5f, p[1] - bh * 0.5f, p[0] + bw * 0.5f, p[1] + bh * 0.5f};
         // A dark, mostly opaque box with white text (readable over snow or sky); the hovered spot in the wheel's own
         // highlight colour with black text.
-        if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? (hover | 0xff000000u) : 0xd0181818u));
+        if (tex && g_spotBoxes) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? (hover | 0xff000000u) : 0xd0181818u));
     }
     // The canvas draws a queue's text before its quads, so the boxes are drawn now and the labels queued after them.
     if (flushCanvas) flushCanvas(batch, *g_gfx);
@@ -455,10 +526,22 @@ void hookedElement(void** ctx, uint8_t* e) {
     auto* batching = g_noBatch ? se4::build().at<int32_t>(se4::gen::hud_bAllowBatching) : nullptr;
     const int32_t savedBatching = batching ? *batching : 0;
     if (batching) *batching = 0;
-    if (onHand) g_spotCtx = {ctx, e, dp};
+    if (onHand) {
+        g_spotCtx = {ctx, e, dp};
+        const int eye = vrdev::currentEye();
+        float e7[7], l, r, u, dn;
+        if (g_panelText && vrdev::eyeInHead(eye, e7) && vrdev::eyeFov(eye, l, r, u, dn)) {
+            g_pt.anchor = {core::normalize({anchor[0], anchor[1], anchor[2], anchor[3]}), {anchor[4], anchor[5], anchor[6]}};
+            g_pt.eye = {core::normalize({e7[0], e7[1], e7[2], e7[3]}), {e7[4], e7[5], e7[6]}};
+            g_pt.tl = std::tan(l), g_pt.tr = std::tan(r), g_pt.tu = std::tan(u), g_pt.td = std::tan(dn);
+            g_pt.x0 = float(box[0]), g_pt.y0 = float(box[1]), g_pt.w = w, g_pt.h = h, g_pt.s = s;
+            g_pt.on = g_pt.tr > g_pt.tl && g_pt.tu > g_pt.td;
+        }
+    }
     g_logText = onHand && realGfxText;
     realElement(ctx, e);
     g_spotCtx = {};
+    g_pt.on = false;
     if (wheel) wheel_panel::beforeWheelDraw(e);  // again, in case the draw's own selection step set it
     flush(ctx);
     g_logText = false;
@@ -496,6 +579,17 @@ bool install() {
             reinterpret_cast<StrDtorFn>(b.at<void>(se4::gen::cstring_dtor))};
     if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
     g_spotDx = float(se4::options::get("wheel_spot_dx", 220));
+    g_spotBoxes = se4::options::get("wheel_spot_boxes", 1) != 0;
+    g_panelText = se4::options::get("wheel_panel_text", 1) != 0;
+    if (g_panelText) {
+        void* t = b.at<void>(se4::gen::hud_text);
+        void* c = b.at<void>(se4::gen::hud_text_centred);
+        const bool ok = t && c && MH_CreateHook(t, reinterpret_cast<void*>(hookedHudText), reinterpret_cast<void**>(&realHudText)) == MH_OK &&
+                        MH_CreateHook(c, reinterpret_cast<void*>(hookedHudTextCentred), reinterpret_cast<void**>(&realHudTextCentred)) == MH_OK &&
+                        MH_EnableHook(t) == MH_OK && MH_EnableHook(c) == MH_OK;
+        g_panelText = ok;
+        VRLOG(ok ? "hud_vr: hand panel text drawn per eye on the 2D path" : "hud_vr: hand panel text hooks FAILED");
+    }
     if (g_sd.text) spotsInWheelRender();
     g_insetPct = se4::options::get("hud_inset", 70);
     g_insetScalePct = se4::options::get("hud_inset_scale", g_insetPct);

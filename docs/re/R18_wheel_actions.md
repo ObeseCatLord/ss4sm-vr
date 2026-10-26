@@ -536,3 +536,27 @@ packed xy and `fade`. They differ from the mod **only in the size value**.
 
 Runtime check: once, log `*(int*)(*(uint8_t**)(tp+8)+0x68)` (cell px) and `*(float*)(tp+0x20)`. Expect roughly 0.3–0.5,
 and a few tens of drawport pixels for cell × size × HUD unit.
+
+### 7.4 Lab result: the 3D HUD path draws no text (2026-10-26, Sam4)
+With the size fixed (§7.3), the labels still did not show, and neither did the wheel's own text (ammo counts,
+"GADGETS", gadget names) on the hand panel. Findings:
+- The queue is fine: the `gfx_text` diag hook sees every label at its canvas position, white, size 0.249 × 50 px cell
+  × HUD unit 2.35 ≈ 29 px.
+- The text flush (0x1400ea890) destroys every entry after drawing, so no stale matrix carries over between elements;
+  its quad and text sections take the same 3D setup (device slots 0x070/0x078, keyed by `device+0x08`).
+- Turning the panel 180° hides the wheel's quads (back faces culled) and still shows no text from either side, and
+  no text lands at the raw pixel positions in the eye image. The 3D text path draws nothing visible; SS4 never
+  shipped VR, so nothing exercised it.
+- Text on the 2D path works (the flat HUD's "CHEATS" label).
+
+Fix (`hud_vr.cpp panelText`): while the wheel renders on the hand, `hud_text` and `hud_text_centred` are hooked.
+For each call:
+1. Flush what the wheel queued so far, which is drawn on its 3D path.
+2. Project the text point from the panel into this eye's pixels, using the element anchor, `eyeInHead` and `eyeFov`.
+3. Scale `tp+0x20` by the panel pixel's size at that depth.
+4. Queue the text with `dp+0x30 = 1` (2D) and flush.
+5. Restore `dp+0x30`, the size and the object matrix at `gfx+0xcd0..+0xd30`, which the flush rewrites and the next
+   queue entry captures.
+
+Per-eye projection keeps the text at the panel's depth in stereo. Lab: spot labels on their boxes, and the wheel's
+title and gadget names visible on the panel. Option `wheel_panel_text` (1).
