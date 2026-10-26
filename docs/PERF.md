@@ -49,7 +49,8 @@ Findings:
     - GPU **5.12 ms**, against 5.37 ms for DLAA and 4.66 ms without AA. This scene is not shading-bound on the 4090,
       so the saving will be larger at headset resolution and in dense scenes.
     - Phase B needs two-pass. It is off with `upscale_phase_b=0`.
-  - Image quality is in IMPLEMENTATION_STATUS (upscaler item). The default stays off.
+  - Image quality is in IMPLEMENTATION_STATUS (upscaler item). FSR's earlier static-geometry noise is gone after the
+    phase-B rework. The default stays off (a headset decision).
 - **CPU.** About 6 ms per frame in Pompeii, with peaks of 8–12 ms during loading or streaming windows. That is
   inside 11.1 ms, but busy scenes should be checked on the headset.
 

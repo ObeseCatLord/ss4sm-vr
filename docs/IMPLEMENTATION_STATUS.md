@@ -260,8 +260,11 @@
     The bias gives DLSS about 4 % more detail at no stability cost. DLSS removes about 18 % of the frame-to-frame
     shimmer (foliage moves in the wind, so the floor is not 0) but stays softer than no AA. FSR shows low-level noise
     over static walls and ground, so its jitter is not fully resolved (sign flips were tested earlier).
-  - `upscaler` stays 0 by default: the sharpness/stability trade-off is a headset decision (USER_VR_TEST), and FSR's
-    static noise is open. Lab switches are listed in src/up/integrate.cpp.
+    **Resolved later on 2026-10-26.** After the phase-B rework of the FSR inputs (render size and resource extents),
+    FSR measures a 1.29 frame diff and 4198 sharpness, against 1.33 / 4496 without AA. Its ground and wall difference
+    dropped from 2.42 to 1.47, and the static noise is gone from the difference map. The reverse-Z depth convention
+    (lab switch `upscale_fsr_depth` 0/1/2) makes no measurable difference.
+  - `upscaler` stays 0 by default: the sharpness/stability trade-off is a headset decision (USER_VR_TEST). Lab switches are listed in src/up/integrate.cpp.
 - Lab, 2026-10-24, SS4 Pompeii, hands and scope working:
   - **PiP scope:** the sniper's scope view is a circular, magnified image with a reticle at the eyepiece, in the
     weapon's hand. The engine renders it as eye 3.

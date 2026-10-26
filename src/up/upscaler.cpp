@@ -8,6 +8,7 @@
 #include <ffx_api/ffx_upscale.h>
 #include <ffx_api/vk/ffx_api_vk.h>
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -17,6 +18,9 @@ namespace {
 Kind g_kind = Kind::Off;
 int g_quality = 0;       // 0 native AA, 1 quality, 2 balanced, 3 performance
 float g_sharpness = 0.15f;
+// Lab switch upscale_fsr_depth: the depth range given to FSR for the reverse-Z depth. 0 swapped (near = far plane),
+// 1 as is, 2 infinite (FFX_UPSCALE_ENABLE_DEPTH_INFINITE, near = FLT_MAX, far = the near plane, as AMD's sample does).
+int g_fsrDepth;
 VkInstance g_inst;
 VkPhysicalDevice g_pd;
 VkDevice g_dev;
@@ -189,6 +193,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
     uint32_t flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE;
     if (f.hdr) flags |= FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE;
     if (f.depthInverted) flags |= FFX_UPSCALE_ENABLE_DEPTH_INVERTED;
+    if (g_fsrDepth == 2) flags |= FFX_UPSCALE_ENABLE_DEPTH_INFINITE;
     if (!g_fsr.ctx[e] || g_fsr.maxRender[e][0] < inW || g_fsr.maxRender[e][1] < inH ||
         g_fsr.maxOut[e][0] != f.output.width || g_fsr.maxOut[e][1] != f.output.height || g_fsr.flags[e] != flags) {
         if (g_fsr.ctx[e]) g_fsr.fn.DestroyContext(&g_fsr.ctx[e], nullptr), g_fsr.ctx[e] = nullptr;
@@ -213,7 +218,8 @@ bool fsrEvaluate(int eye, const Frame& f) {
         g_fsr.maxOut[e][0] = f.output.width, g_fsr.maxOut[e][1] = f.output.height;
         g_fsr.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("fsr: eye %d %ux%u -> %ux%u (quality %d)", eye, inW, inH, f.output.width, f.output.height, g_quality);
+        VRLOG("fsr: eye %d %ux%u -> %ux%u (quality %d, near %.4g far %.4g, depth mode %d)", eye, inW, inH, f.output.width,
+              f.output.height, g_quality, f.nearZ, f.farZ, g_fsrDepth);
     }
     ffxDispatchDescUpscale d{};
     d.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
@@ -231,8 +237,9 @@ bool fsrEvaluate(int eye, const Frame& f) {
     d.frameTimeDelta = f.frameMs;
     d.preExposure = 1.0f;
     d.reset = g_reset[e] || f.reset;
-    d.cameraNear = f.depthInverted ? f.farZ : f.nearZ;
-    d.cameraFar = f.depthInverted ? f.nearZ : f.farZ;
+    d.cameraNear = f.depthInverted && g_fsrDepth == 0 ? f.farZ : f.nearZ;
+    d.cameraFar = f.depthInverted && g_fsrDepth == 0 ? f.nearZ : f.farZ;
+    if (g_fsrDepth == 2) d.cameraNear = FLT_MAX, d.cameraFar = f.nearZ;
     d.cameraFovAngleVertical = f.fovY;
     d.viewSpaceToMetersFactor = 1.0f;
     ffxReturnCode_t rc = g_fsr.fn.Dispatch(&g_fsr.ctx[e], &d.header);
@@ -277,6 +284,7 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
     int opt = se4::options::get("upscaler", 0);  // off until validated in the lab; auto = -1
     g_quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
     g_sharpness = std::clamp(se4::options::get("upscale_sharpness", 15), 0, 100) / 100.0f;
+    g_fsrDepth = std::clamp(se4::options::get("upscale_fsr_depth", 0), 0, 2);
     if (opt == 0) {
         VRLOG("upscaler: off");
         return false;
