@@ -183,16 +183,17 @@ RunAsync(function()
 end)
 EOF
   EXTRA=(); start "$CORE" "lab_lua_delay=60" || return
-  sleep 10; mark
-  for k in $(seq 1 14); do press rb=1; sleep 0.5; done
-  check "kick: right B runs the native use/melee" "$(has 'right B - native use')"
-  sleep 1; mark; wheel_to $KNIFE
+  # The knife first: the kick presses "use", which can also board a vehicle the spawners left nearby (SM Refinery boats).
+  sleep 10; mark; wheel_to $KNIFE
   for k in 1 2 3 4 5 6; do
     for x in 0.45 0.3 0.15 0.0 -0.15 -0.3; do $ID $H $LH rpos=$x,1.35,-0.5 >/dev/null; done; sleep 0.3
     for x in -0.3 -0.15 0.0 0.15 0.3 0.45; do $ID $H $LH rpos=$x,1.25,-0.5 >/dev/null; done; sleep 0.3
   done
   check "melee: knife swings hit enemies" "$(has 'melee: knife hit')" "($(since | grep -c 'melee: knife hit') hits)"
   cap melee
+  mark
+  for k in $(seq 1 4); do press rb=1; sleep 0.5; done
+  check "kick: right B runs the native use/melee" "$(has 'right B - native use')"
   rm -f "$LUA"
 }
 
