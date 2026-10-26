@@ -119,7 +119,7 @@ void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn,
               uintptr_t clientH, uintptr_t henFloor, uintptr_t henMover, uintptr_t reset1, uintptr_t reset2) {
     void* vrd = player ? *reinterpret_cast<void**>(player + g_vrdOff) : nullptr;
     if (vrd && vrd == g_localVrd && vrdev::installed()) vehicles::step(player, vrd);
-    if (!g_nativeAction || !vrd || vrd != g_localVrd || !vrdev::installed()) {
+    if (!nativeVrAction() || !vrd || vrd != g_localVrd || !vrdev::installed()) {
         realCa(player, fire, look, lockOn, relMove, clientPos, clientH, henFloor, henMover, reset1, reset2);
         return;
     }
@@ -373,12 +373,12 @@ void headWorld(void* vrd, float out[7]) {
     static auto fn = reinterpret_cast<void*(__cdecl*)(void*, float*)>(se4::build().at<void>(se4::gen::vrd_head_world));
     if (fn && vrd) fn(vrd, out);
 }
-bool nativeVrAction() { return g_nativeAction; }
+bool nativeVrAction() { return g_nativeAction || net::clientSession(); }  // a multiplayer client always: the server needs the hands
 void useHand(int hand) {
     if (realHandUse && g_localVrd) realHandUse(g_localVrd, hand);
     else VRLOG("player_vr: no VR use path (hook %p, vrd %p)", reinterpret_cast<void*>(realHandUse), g_localVrd);
 }
-bool nativeTurn() { return g_nativeTurn; }
+bool nativeTurn() { return g_nativeTurn || net::clientSession(); }
 void* localVrd() { return g_localVrd; }
 
 bool install(bool localVr) {

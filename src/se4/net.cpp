@@ -41,6 +41,7 @@ struct Client {
     ULONGLONG lastHello = 0, lastPose = 0;
     uint32_t sequence = 0;
 } g_client;
+volatile bool g_clientSession;
 SRWLOCK g_lock = SRWLOCK_INIT;
 Peers g_peers;  // server side
 struct Remote {
@@ -212,6 +213,8 @@ void tick(void* vrd, bool localVr) {
     if (netif != g_client.netif) {  // a new session: start over
         g_client = {};
         g_client.netif = netif;
+        g_clientSession = !isServer(netif);
+        VRLOG("net: session as %s", g_clientSession ? "client" : "server (single player, host or dedicated)");
         AcquireSRWLockExclusive(&g_lock);
         g_peers = {};
         ReleaseSRWLockExclusive(&g_lock);
@@ -247,6 +250,8 @@ void tick(void* vrd, bool localVr) {
     PoseMsg pose;
     if (localPose(vrd, pose)) send(netif, kPoseHash, false, &pose, sizeof pose, nullptr);
 }
+
+bool clientSession() { return g_clientSession; }
 
 bool remotePose(int32_t playerIndex, core::wire::PosePacket& out) {
     bool ok = false;

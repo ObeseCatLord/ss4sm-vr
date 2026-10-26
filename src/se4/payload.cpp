@@ -95,7 +95,8 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     }
     if (!se4::g_vrEnabled) {
         // Flat play: no hooks, unless this desktop player opts into guards for VR peers in multiplayer.
-        if (se4::options::get("mp_guards", 0) && player_vr::install(false)) net::install();
+        // The server is the authority for melee damage, so it sweeps remote VR players' blades from their replicated hands.
+        if (se4::options::get("mp_guards", 0) && player_vr::install(false)) net::install(), melee::install();
         return;
     }
     if (!(skip & 2)) se4::installProcAddressHook();

@@ -13,6 +13,9 @@ bool install();
 // Simulation thread, from the vrd tick of every VR player (`localVr`: the local player's). Drives the client
 // handshake and the local VR player's pose sends; rate-limited internally.
 void tick(void* vrd, bool localVr);
+// True while this machine is a client of a remote server (the latest session's network interface is a client's). The
+// local VR player then sends ClientActionVR and turns natively (player_vr), so the server has its head and hands.
+bool clientSession();
 // The latest relayed pose of a remote player (by en_iPlayerIndex) and its age; false if none within 0.5 s.
 bool remotePose(int32_t playerIndex, core::wire::PosePacket& out);
 }  // namespace net
