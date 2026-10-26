@@ -344,11 +344,15 @@
   weapons draw none. Lab: dual pistols show two crosshairs following their hands; a minigun's gap is wider than a
   pistol's; knife right + pistol left shows only the left one. Stereo: at 3 m the crosshair's disparity equals the
   ground's (-6 px), so it sits at the target depth in world space.
-- **Melee:** knife swings killed Processed in Survival (blade and arc hits). The kick on an enemy is still unverified.
+- **Melee:** knife swings killed Processed in Survival (blade and arc hits). The right-B kick cleared Survival wave 1
+  with no weapon in hand and fire never pressed (player kept alive by the lab Lua), so the kick hits enemies.
 - **Scope crash fixed:** the PiP scope used a freed weapon after a weapon switch; it now checks the player still holds it.
 - **Sirian Artifact of Might (R17):** the native artefact "Use" animation is held in the hand (anim queue speed ~0
   at 1.5 s, end timer cancelled and re-armed on release) until crushed (trigger, Index squeeze force, Frame grip
-  second stage); timeout 120 s. Not yet run in the lab (needs a crate or a Lua call, R20 pending).
+  second stage); timeout 120 s. Lab (SS4 and SM, animation started by the lab Lua bridge): the artefact is held
+  in the hand (19.6 s / 7.1 s), a trigger crush resumes it and ArtifactBroken fires natively ~1.5 s later.
+- **Lab Lua bridge (R20):** `Bin/x64/ss4smvr/lab.lua` in a lab copy runs once in the local player's world (engine's
+  own lua_exec_string in the world script context) after `lab_lua_delay` ticks. Lab copies only.
 - **Steam Frame controllers:** XR_VALVE_frame_controller_interaction profile; bumpers hold the per-hand wheels,
   ABXY/D-pad/View mapped, grip second stage = crush.
 - **Wheel spots (R18):** moving the wheel hand past the wheel to the side points at Menu / Netricsa (left) or
@@ -357,4 +361,8 @@
 - **Menu layout:** while a menu or Netricsa is open, A confirms, B goes back/closes, grips (Index trackpads, Frame
   bumpers) switch tabs, the trigger clicks through the pointer. Lab: Netricsa tab switch and close.
 - **Button prompts (R19):** the virtual pad's control markup returns the VR control (Xbox glyph where it matches,
-  text otherwise) per profile and layout (`core/prompts.hpp`).
+  text otherwise) per profile and layout (`core/prompts.hpp`); prompts asked of the keyboard device go through the
+  pad router; menu button bars run in gamepad mode while the VR pointer moves the mouse. Lab: HUD prompts (plcmdFire
+  → RT) and the pause menu bar "RESUME GAME (B) · CHEATS · SELECT (A)" on Index.
+- **Siberian Mayhem:** per-weapon crosshair, wheel spots, Netricsa controls, prompts and the artifact crush checked.
+- Open: the wheel spot labels (boxes draw, text does not yet); MP tests later (gbe_fork / SmartSteamEmu).
