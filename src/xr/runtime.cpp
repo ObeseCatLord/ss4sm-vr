@@ -1,7 +1,10 @@
 #include "xr/runtime.hpp"
 #include "se4/log.hpp"
+#include "se4/options.hpp"
 #include "vk/queue_lock.hpp"
 #include "xr/input.hpp"
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace xr {
@@ -156,8 +159,17 @@ bool Runtime::createSession(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, 
     uint32_t vc = 0;
     XrViewConfigurationView cv[2] = {{XR_TYPE_VIEW_CONFIGURATION_VIEW}, {XR_TYPE_VIEW_CONFIGURATION_VIEW}};
     if (XR_SUCCEEDED(xrEnumerateViewConfigurationViews(instance_, system_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 2, &vc, cv)) && vc == 2) {
-        views_.recommendedWidth = cv[0].recommendedImageRectWidth;
-        views_.recommendedHeight = cv[0].recommendedImageRectHeight;
+        // Option render_scale (percent of the runtime's recommended eye size, default 100), within its maximum.
+        const double scale = std::clamp(se4::options::get("render_scale", 100), 30, 300) / 100.0;
+        auto scaled = [&](uint32_t rec, uint32_t max) {
+            const uint32_t v = uint32_t(std::lround(rec * scale)) & ~1u;
+            return std::clamp<uint32_t>(v, 64, max ? max : v);
+        };
+        views_.recommendedWidth = scaled(cv[0].recommendedImageRectWidth, cv[0].maxImageRectWidth);
+        views_.recommendedHeight = scaled(cv[0].recommendedImageRectHeight, cv[0].maxImageRectHeight);
+        VRLOG("xr: eye size %ux%u (runtime recommends %ux%u, max %ux%u, render_scale %.0f%%)", views_.recommendedWidth,
+              views_.recommendedHeight, cv[0].recommendedImageRectWidth, cv[0].recommendedImageRectHeight, cv[0].maxImageRectWidth,
+              cv[0].maxImageRectHeight, scale * 100);
     }
     uint32_t n = 0;
     xrEnumerateSwapchainFormats(session_, 0, &n, nullptr);

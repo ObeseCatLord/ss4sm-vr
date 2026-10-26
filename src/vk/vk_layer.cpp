@@ -21,6 +21,7 @@
 #include "vk/foveation.hpp"
 #include "up/integrate.hpp"
 #include "vk/scope_layer.hpp"
+#include "vk/gpu_timing.hpp"
 #include "se4/scope.hpp"
 #include "up/upscaler.hpp"
 #include "core/math.hpp"
@@ -234,6 +235,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     realDestroyImage = DFN(vkDestroyImage);
     realGetDeviceQueue(g.device, family, 0, &g.xrQueue);
     fov::onDevice(g.instance, realGIPA, realGDPA, pd, g.device, g.xrQueue, family);
+    gputime::onDevice(g.instance, realGIPA, pd, g.device, realGDPA, family);
     {
         wchar_t dir[MAX_PATH];
         se4::payloadDirectory(dir, MAX_PATH);
@@ -250,12 +252,12 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
 VKAPI_ATTR VkResult VKAPI_CALL hookQueueSubmit(VkQueue q, uint32_t n, const VkSubmitInfo* s, VkFence f) {
     if (q != g.xrQueue) return realQueueSubmit(q, n, s, f);
     vkq::Guard lock;
-    return realQueueSubmit(q, n, s, f);
+    return gputime::submit(realQueueSubmit, q, n, s, f);
 }
 VKAPI_ATTR VkResult VKAPI_CALL hookQueueSubmit2(VkQueue q, uint32_t n, const VkSubmitInfo2* s, VkFence f) {
     if (q != g.xrQueue) return realQueueSubmit2(q, n, s, f);
     vkq::Guard lock;
-    return realQueueSubmit2(q, n, s, f);
+    return gputime::submit2(realQueueSubmit2, q, n, s, f);
 }
 VKAPI_ATTR VkResult VKAPI_CALL hookQueueWaitIdle(VkQueue q) {
     if (q != g.xrQueue) return realQueueWaitIdle(q);
@@ -443,7 +445,14 @@ void imageBarrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImageLa
     DFN(vkCmdPipelineBarrier)(cb, ss, ds, 0, 0, nullptr, 0, nullptr, 1, &b);
 }
 
+VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi);
 VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKHR* pi) {
+    gputime::presentEntry();
+    const VkResult r = presentFrame(q, pi);
+    gputime::presentExit();
+    return r;
+}
+VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
     auto& rt = xr::runtime();
     if (!g.xrDevice || pi->swapchainCount != 1) {
         if (q != g.xrQueue) return realQueuePresent(q, pi);
@@ -697,6 +706,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKH
         VRLOG("mirror: %.1f fps (frames %u submitted %u, display period %.2f ms)", windowFrames / secs, frames, submitted,
               fs.predictedDisplayPeriod / 1e6);
         windowStart = fs.predictedDisplayTime;
+        gputime::log(windowFrames);
         windowFrames = 0;
         gamepad::logStats();
         vrdev::logStats();
