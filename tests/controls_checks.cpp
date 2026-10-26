@@ -212,5 +212,19 @@ int main() {
         f.hand[1].buttons = 0;
         assert(m.update(f).spotAction == SpotNone);
     }
+    // Menus / Netricsa: B goes back, A confirms, grips switch tabs, the triggers stay with the pointer
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.menu = true;
+        f.hand[1].buttons = Secondary;
+        f.hand[1].trigger = 1;
+        Pad p = m.update(f);
+        assert(p.buttons == PadB && !p.kick && p.rt == 0);
+        f.hand[1].buttons = Primary, f.hand[1].trigger = 0, f.hand[0].squeeze = 1;
+        assert(m.update(f).buttons == (PadA | PadLB));
+        f.hand[0].squeeze = 0, f.hand[1].buttons = TrackpadPress, f.ms = 100;
+        assert(m.update(f).buttons == PadRB);  // not a wheel in menus
+    }
     return 0;
 }

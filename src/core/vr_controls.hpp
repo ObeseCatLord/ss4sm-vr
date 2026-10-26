@@ -32,6 +32,10 @@
 //                toggle), jump R A or R grip, use/melee kick R B, reload R X, crouch R stick click, menu R menu or
 //                L View, gadget L grip, sprint L stick click, D-pad up/down = pad D-pad.
 //   Simple controller: trigger fires, menu opens the menu.
+// Menus and Netricsa (any menu screen on top, Frame::menu): the right A confirms (pad A), the right B goes back /
+// closes (pad B), the grips (Index trackpad presses, Frame bumpers) switch tabs (pad LB/RB), the sticks navigate
+// and scroll, the left menu/B (Touch Y) is Start; the trigger clicks through the VR menu pointer (src/se4/vr_device.cpp),
+// so the pad triggers stay released.
 // Crushing a held item (a Sirian Artifact of Might): the trigger on every profile, plus a hard squeeze on Index
 // (squeeze force) and the grip's second stage on the Steam Frame (crushSqueeze).
 #include "core/math.hpp"
@@ -67,6 +71,7 @@ struct Frame {
     uint64_t ms = 0;        // a millisecond clock (taps vs holds)
     Hand hand[2];           // 0 left, 1 right
     Quat head{0, 0, 0, 1};  // HMD orientation, play space
+    bool menu = false;      // a menu screen (in-game menu, Netricsa, dialogs) is on top
 };
 
 enum Spot : int8_t { SpotNone = -1, SpotMenu, SpotNetricsa, SpotQuickLoad, SpotQuickSave, SpotCount };
@@ -126,6 +131,21 @@ struct Mapper {
         p.rx = R.sx, p.ry = R.sy;
         uint16_t b = 0;
         auto on = [](const Hand& h, uint32_t bit) { return (h.buttons & bit) != 0; };
+        if (f.menu) {
+            // Menu layout: no wheel, no gameplay buttons, the pointer clicks.
+            p.rt = p.lt = 0;
+            if (on(R, Primary)) b |= PadA;
+            if (on(R, Secondary)) b |= PadB;
+            if (on(L, Primary) || on(R, ButtonX)) b |= PadX;
+            if (on(L, Secondary) || on(L, Menu) || on(R, Menu) || on(L, View)) b |= PadStart;
+            if (grip[0] || on(L, TrackpadPress) || on(L, Bumper)) b |= PadLB;
+            if (grip[1] || on(R, TrackpadPress) || on(R, Bumper)) b |= PadRB;
+            if (on(L, DpadUp)) b |= PadDpadUp;
+            if (on(L, DpadDown)) b |= PadDpadDown;
+            wheelHeld = false, spot = SpotNone, rightPad = false;
+            p.buttons = b;
+            return p;
+        }
         bool wheel = false;
         bool selL = true, selR = true;
         // Index / WMR: a wheel per hand. Holding a hand's trackpad opens the native wheel for that hand's weapon

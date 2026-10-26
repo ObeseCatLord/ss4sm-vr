@@ -464,11 +464,12 @@ void hookedMouse(void* viewport, int* pos, int msg, int* size) {
 // +0x5c quaternion, +0x6c position, in the play space of slot 0x080). The controller's aim ray is intersected
 // with that quad and the hit is sent to the viewport's mouse handler as window coordinates in a 4096x4096
 // window, which the handler rescales to the cinema texture: move every frame, left button from the trigger,
-// right button from B. The pointing hand switches to the other hand on its trigger press, as natively.
+// B is the pad's back button in menus (core/vr_controls.hpp menu layout). The pointing hand switches to the other hand on its trigger press, as natively.
 struct Pointer {
     int hand = 1;
     bool trig[2]{}, back = false, wasMenu = false;
 } g_ptr;
+volatile LONG g_menuActive;  // a menu screen is on top (render thread -> controller mapping)
 bool g_pointerOn = true;
 
 void menuPointer(void* pi) {
@@ -477,6 +478,7 @@ void menuPointer(void* pi) {
     auto* mgr = *reinterpret_cast<uint8_t**>(p + 0xb8);
     void* top = mgr ? *reinterpret_cast<void**>(mgr + 0x28) : nullptr;
     auto* viewer = *reinterpret_cast<uint8_t**>(p + 0x360);
+    InterlockedExchange(&g_menuActive, top ? 1 : 0);
     if (!top || !viewer) {
         g_ptr.wasMenu = false;
         return;
@@ -528,7 +530,6 @@ void menuPointer(void* pi) {
         realMouse(pi, pos, 1, size);
         const bool t = trig[g_ptr.hand];
         if (t != g_ptr.trig[g_ptr.hand]) realMouse(pi, pos, t ? 4 : 3, size);
-        if (back != g_ptr.back) realMouse(pi, pos, back ? 7 : 6, size);
     }
     g_ptr.trig[0] = trig[0], g_ptr.trig[1] = trig[1], g_ptr.back = back;
 }
@@ -555,6 +556,7 @@ int hookedRender(void* pi, void* dp, int inVR) {
             menuPointer(pi);
             return renderVR(pi, dp, 0);
         }
+        InterlockedExchange(&g_menuActive, 0);  // the wheel's own (invisible) menu screen is not a menu
         auto* immersive = se4::build().at<int32_t>(se4::gen::vr_bForceImmersiveMode);
         const int32_t saved = immersive ? *immersive : 0;
         if (immersive) *immersive = 1;
@@ -627,6 +629,7 @@ bool eyeInHead(int eye, float out[7]) {
     return true;
 }
 bool installed() { return g_installed; }
+bool menuActive() { return g_menuActive != 0; }
 
 void headPlacement(float out[7]) { sHead(&g_obj, out); }
 

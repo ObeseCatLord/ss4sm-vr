@@ -8,6 +8,7 @@
 #include "se4/vehicles.hpp"
 #include "se4/gadgets.hpp"
 #include "se4/hands.hpp"
+#include "se4/vr_device.hpp"
 #include "se4/artifact.hpp"
 #include <xinput.h>
 #include <cmath>
@@ -153,6 +154,7 @@ void publishFromXr() {
     auto k = xr::input().hand(1).kind != xr::ControllerKind::Unknown ? xr::input().hand(1).kind : xr::input().hand(0).kind;
     f.kind = Kind(int(k));
     f.ms = GetTickCount64();
+    f.menu = vrdev::menuActive();
     const auto& v = xr::runtime().views();
     if (v.valid) f.head = {v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w};
     const Pad m = g_mapper.update(f);
