@@ -194,48 +194,85 @@ struct SpotDraw {
     StrCtorFn strCtor;
     StrDtorFn strDtor;
 } g_sd;
-float g_spotDx = 0.40f;  // spot centre from the wheel centre, in drawport widths (option wheel_spot_dx, percent); text outside the
-                         // drawport is culled, so the spots stay inside it
+// The wheel being drawn on the hand panel (set around its render, read by the in-render thunk below).
+struct SpotCtx {
+    void** ctx = nullptr;
+    uint8_t* wheel = nullptr;
+    uint8_t* dp = nullptr;
+} g_spotCtx;
+float g_spotDx = 330.0f;  // spot centre from the wheel centre, in the wheel's 640x480 layout (option wheel_spot_dx)
 void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
-    if (!g_sd.text || !wheel_panel::spotsAvailable() || !ctx[10] || !g_gfx || !*g_gfx) return;
-    void* batch = *reinterpret_cast<void**>(static_cast<uint8_t*>(ctx[10]) + 0xb0);
+    (void)ctx, (void)dp;
+    if (!g_sd.text || !wheel_panel::spotsAvailable() || !g_gfx || !*g_gfx) return;
+    uint8_t* hud = *reinterpret_cast<uint8_t**>(wheel + 8);  // as the wheel's own draws: *(*(wheel+8)+0xb0)
+    void* batch = hud ? *reinterpret_cast<void**>(hud + 0xb0) : nullptr;
     uint8_t* params = *reinterpret_cast<uint8_t**>(wheel + kParams);
     if (!batch || !params) return;
-    const int32_t* box = reinterpret_cast<const int32_t*>(dp + kDpBox);
-    const float w = float(box[2] - box[0]), h = float(box[3] - box[1]);
-    const float cx = box[0] + w * 0.5f, cy = box[1] + h * 0.5f;
+    // The wheel lays out in a 640x480 virtual space (centre 320,240) mapped to the canvas by its vt+0x98
+    // (0x1400db320: HUD layout at hud+0xa0); the spots use the same mapping.
+    using MapFn = float*(__cdecl*)(uint8_t* wheel, float* out, const float* ref);
+    auto map = reinterpret_cast<MapFn>((*reinterpret_cast<void***>(wheel))[0x98 / 8]);
+    auto at = [&](float vx, float vy, float out[2]) {
+        const float ref[2] = {vx, vy};
+        map(wheel, out, ref);
+    };
+    float c[2], c2[2];
+    at(320, 240, c), at(320, 250, c2);
+    const float unit = std::fabs(c2[1] - c[1]) / 10.0f;  // canvas units per virtual pixel
+    if (!(unit > 1e-3f && unit < 1e3f)) return;
     float fade = *reinterpret_cast<float*>(wheel + 0xc0);
     if (!(fade >= 0 && fade <= 1)) fade = 1;
-    void* tex = *reinterpret_cast<void**>(params + 0x1c8);         // hep_ptexGadgetListItemTexture
+    void* tex = *reinterpret_cast<void**>(params + 0x1c8);              // hep_ptexGadgetListItemTexture
     const uint32_t idle = *reinterpret_cast<uint32_t*>(params + 0x1d0);  // hep_colGadgetListItemBackgroundColorInactive
     const uint32_t hover = *reinterpret_cast<uint32_t*>(params + 0x58);  // hep_colHoveredElementBorderColor
-    auto alpha = [&](uint32_t c) { return (uint32_t(float(c >> 24) * fade) << 24) | (c & 0xffffff); };
+    auto alpha = [&](uint32_t col) { return (uint32_t(float(col >> 24) * fade) << 24) | (col & 0xffffff); };
     using namespace core::controls;
     const int hovered = gamepad::wheelSpot();
     void* fontParams = reinterpret_cast<void*(__cdecl*)(uint8_t*)>((*reinterpret_cast<void***>(wheel))[0xa8 / 8])(wheel);
-    alignas(16) uint8_t tp[0x60] = {};
     if (!fontParams) return;
+    alignas(16) uint8_t tp[0x100] = {};  // TextParams (the wheel keeps up to 0xc0 bytes for it on its stack)
     g_sd.tpInit(tp, static_cast<uint8_t*>(fontParams) + 0x30);
     *reinterpret_cast<uint32_t*>(tp + 0x14) |= 0x200;  // centred, as the wheel's own labels
-    *reinterpret_cast<float*>(tp + 0x38) = -1.0f;      // as the wheel sets it after init (0 left the text empty)
-    const float textSize = 0.022f * h;
+    *reinterpret_cast<float*>(tp + 0x38) = -1.0f;      // as the wheel sets it after init
+    const float textSize = 13.0f * unit;
     g_sd.tpSize(tp, 1, textSize);
-    const float bw = 0.18f * w, bh = 0.05f * h;
+    const float bw = 110.0f * unit, bh = 24.0f * unit;
     for (int spot = 0; spot < SpotCount; ++spot) {
-        const float x = cx + (spot == SpotMenu || spot == SpotNetricsa ? -1.0f : 1.0f) * g_spotDx * w;
-        const float y = cy - (spot == SpotNetricsa || spot == SpotQuickSave ? 0.17f * h : 0.0f);
-        const float rect[4] = {x - bw * 0.5f, y - bh * 0.5f, x + bw * 0.5f, y + bh * 0.5f};
+        const bool left = spot == SpotMenu || spot == SpotNetricsa;
+        const bool upper = spot == SpotNetricsa || spot == SpotQuickSave;
+        float p[2];
+        at(320.0f + (left ? -1.0f : 1.0f) * g_spotDx, upper ? 205.0f : 240.0f, p);
+        const float rect[4] = {p[0] - bw * 0.5f, p[1] - bh * 0.5f, p[0] + bw * 0.5f, p[1] + bh * 0.5f};
         if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? hover : idle));
         *reinterpret_cast<uint32_t*>(tp + 0x10) = spot == hovered ? 0xffffffffu : 0xffd0d0d0u;
         alignas(16) uint8_t str[0x20] = {};
         g_sd.strCtor(str, spotName(spot));
-        const float xy[2] = {x, y - textSize * 0.5f};
+        const float xy[2] = {p[0], p[1] - textSize * 0.5f};
         uint64_t packed;
         memcpy(&packed, xy, 8);
         g_sd.text(batch, *g_gfx, str, tp, packed, fade);
         g_sd.strDtor(str);
     }
     g_sd.tpFree(tp);
+}
+// The wheel render's own TextParams free at the end of its labels (`E8` -> textparams_free, once in the render):
+// the spots are drawn there, inside the render's state (drawn after the render returns they went to plain screen
+// space and were never seen on the panel).
+void __cdecl wheelTextDone(void* tp) {
+    if (g_spotCtx.wheel) drawSpots(g_spotCtx.ctx, g_spotCtx.wheel, g_spotCtx.dp);
+    g_sd.tpFree(tp);
+}
+bool spotsInWheelRender() {
+    auto* fn = se4::build().at<uint8_t>(se4::gen::wheel_render);
+    if (!fn || !g_sd.tpFree) return false;
+    uint8_t* site = nullptr;
+    int n = 0;
+    for (size_t i = 0; i + 5 < 0x700; ++i)
+        if (fn[i] == 0xE8 && fn + i + 5 + *reinterpret_cast<int32_t*>(fn + i + 1) == reinterpret_cast<uint8_t*>(g_sd.tpFree)) site = fn + i, ++n;
+    void* jump = n == 1 ? se4::patch::nearJump(site, reinterpret_cast<void*>(wheelTextDone)) : nullptr;
+    if (!jump || !se4::patch::retargetCall(site, jump)) return VRLOG("hud_vr: wheel render text end not found (%d) - no spot labels", n), false;
+    VRLOG("hud_vr: wheel spots drawn inside the wheel render (%p)", static_cast<void*>(site));
+    return true;
 }
 
 // One crosshair element draw: in the flat HUD natively (projected per eye by src/se4/crosshair.cpp), on the 3D path
@@ -315,9 +352,10 @@ void hookedElement(void** ctx, uint8_t* e) {
     auto* batching = g_noBatch ? se4::build().at<int32_t>(se4::gen::hud_bAllowBatching) : nullptr;
     const int32_t savedBatching = batching ? *batching : 0;
     if (batching) *batching = 0;
+    if (onHand) g_spotCtx = {ctx, e, dp};
     realElement(ctx, e);
+    g_spotCtx = {};
     if (wheel) wheel_panel::beforeWheelDraw(e);  // again, in case the draw's own selection step set it
-    if (onHand) drawSpots(ctx, e, dp);
     flush(ctx);
     if (batching) *batching = savedBatching;
     load(params, native);
@@ -352,7 +390,8 @@ bool install() {
             reinterpret_cast<TpFreeFn>(b.at<void>(se4::gen::textparams_free)), reinterpret_cast<StrCtorFn>(b.at<void>(se4::gen::cstring_ctor)),
             reinterpret_cast<StrDtorFn>(b.at<void>(se4::gen::cstring_dtor))};
     if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
-    g_spotDx = se4::options::get("wheel_spot_dx", 40) / 100.0f;
+    g_spotDx = float(se4::options::get("wheel_spot_dx", 330));
+    if (g_sd.text) spotsInWheelRender();
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))
         for (int i = 0; i < 0x100 && !g_gfx; ++i)

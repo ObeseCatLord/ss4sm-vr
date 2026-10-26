@@ -373,3 +373,193 @@ The Unrestricted exes were not ported here. Use `port_list.py` from Sam4 for eac
    6. A real second XInput pad (user 1) keeps Xbox glyphs.
    7. The Customize Controls screen (it also calls `control_markup`) is acceptable with VR labels, or filter it
       by return address (the call at 0x14088130b / SM 0x14088135b, so return address +5).
+
+## 8. Menu button bar input mode
+
+Follow-up to the lab report for Sam4 616154: in VR the pause menu (`CMSInGameMenu2`) bar reads
+"RESUME GAME [ESC]  CHEATS [F3]" even though `command_markup` logs pad glyphs for 'Back', 'OK' and 'F1'.
+Static analysis only: Ghidra decompiles from a scratch copy of `lab/ghidra_r19`, and SamSM checked by disassembly,
+call order, vtable slots and `sigscan.py`. Nothing was run. (The "§8 Ports summary" above predates this section.)
+
+### 8.1 Answer
+- The bar variant is picked by **one process-wide global, the menu input mode** `g_inputMode` **0x142275a88**
+  (SM **0x142252b78**). It holds an ident: `InputMode.Gamepad` / `.Keyboard` / `.Mouse` / `.Touch`.
+  It is not per menu manager, not per player and not a device index. Cursor visibility, the "gamepad connected"
+  state and `pi+0xb0` do not pick the variant. The cursor test is itself derived from this mode (§8.4).
+- The menu's **mouse input** function **0x140153ef0** (SM **0x140154b90**) sets `g_inputMode = InputMode.Mouse` on
+  **every** mouse message, including a plain move. The mod's VR pointer calls the viewport mouse handler with
+  msg 1 (move) every frame while a menu is up. That message goes through the menu input handler's vt+0x48
+  0x14094ce10 (msg 1 → code 0) to 0x140153ef0, so the mode is Mouse on every frame.
+- The pad press that opens the menu sets `InputMode.Gamepad` (0x140153ac0). On that first frame the bar computes
+  its pad shortcuts, which is the logged 'Back' / 'OK' / 'F1' calls. The next pointer move switches the bar back
+  to the Mouse variant. The Mouse variant holds fixed key images: `KeyboardEscape` and `F3`. The Cheats button
+  is bound to menu command 0x17 (F3) for Keyboard and Mouse, and to 0x15 ('F1', pad X) for Gamepad. That is why
+  the bar shows F3 while the log shows F1.
+- **Smallest safe change:** detour the bar's per-frame update, `CAuxButtonHolder` vt+0x20 **0x140904230**
+  (SM **0x140904790**). While the local player is in VR and `g_inputMode == InputMode.Mouse`:
+  1. set the mode to Gamepad;
+  2. call the original;
+  3. restore Mouse.
+
+  Only the bars change. Each button then takes its Gamepad mode data, whose shortcut is rebuilt from the menu
+  bindings through `aux_shortcut` → `expand_wrap` → the already-hooked `command_markup`. The mod writes no other
+  state. The cursor, hover, clicks and widget labels keep their Mouse-mode behaviour.
+
+### 8.2 Who builds and draws the bar
+| item | Sam4 | SM | notes |
+|---|---|---|---|
+| `CMSInGameMenu2` vtable / build (vt+0x120) | 0x141b932e8 / 0x14087d370 | 0x141b77b38 / 0x14087d2f0 | creates the bar with `abh_create_b`, stores it at `ms_pabhAuxButtonHolder` **+0x158**, adds button 0 (cmd 0xc, "Resume Game"/"Back"), 3 (cmd 0xb, "Select"), 1 (Cheats: `abh_add4` cmd 0x17 key "ETRSKbdMInput.F3=F3", then `abh_set_cmd(bar,1,Gamepad,0x15)`) |
+| `abh_create_b` (no default buttons) / `abh_create_a` (Back + Select, keys Escape/Enter) | 0x140906150 / 0x140905da0 | 0x140906750 / 0x140906370 | both: ctor, ident "AuxButtonHolder" |
+| `CAuxButtonHolder` ctor / vtable (size 0x238) | 0x140903490 / **0x141bd4670** | 0x1409039f0 / **0x141bb8f10** | one vtable, no subclasses found |
+| **vt+0x20 update** (layout + text of all 5 buttons) | **0x140904230** | **0x140904790** | §8.3 |
+| vt+0x40 OnCommand (menu command → aux button click, by current mode) | 0x140904040 | 0x1409045a0 | reads `g_inputMode` |
+| `abh_add_mode(bar, idx, cmd, mode, label, shortcut)` | 0x140904f00 | 0x140905470 | per-mode record; non-Gamepad modes get the literal shortcut via `aux_shortcut` |
+| `abh_add4(bar, idx, cmd, label, key)`: Gamepad (cmd remapped 0x16→0x31, 0x17→0x30, 0x18→0x23, 0x19→0x15, 0x3a→0x35, shortcut ""), Keyboard and Mouse (key), Touch ("") | 0x140903870 | 0x140903dd0 | 54 callers each |
+| `abh_add_std(bar, idx, cmd, label, focus, noKey)` (wrapper / body): Escape for 0xc, Enter for 0xb, F2 for 0x16 | 0x140904c90 / 0x140904cb0 | 0x140905200 / 0x140905220 | 84 callers each |
+| `abh_set_cmd(bar, idx, mode, cmd)` | 0x140905180 | 0x1409056f0 | |
+| `abh_find(bar, idx, mode)` → mode record (creates one if missing) | 0x140905c10 | 0x1409061e0 | |
+| `aux_shortcut(bar, idx, cmd, mode, literal)` | 0x1409052d0 | 0x140905840 | not Gamepad: shortcut = literal. Gamepad: `"{%1}"` of each menu-command name bound to `cmd` → `expand_wrap(bindings, …, device)`, where device = the menu player's device if `dev+0x10 & 2` (gamepad), else "GamepadX". The first non-empty result wins |
+| Select-button visibility (called from update) | 0x140903dd0 | 0x140904330 | hides button 3 in Mouse/Touch mode |
+
+Layouts, from the reflection data and the code:
+- Holder: `wid_aabAuxButton` = `CAuxButton[5]` at **+0x140**, 0x28 each. Each `CAuxButton` has:
+  - +0 the button widget;
+  - +8 the shortcut widget;
+  - +0x10/+0x18 the mode records (`ab_aabmdModes`);
+  - +0x20 `ab_fNormPosition`.
+- More holder fields: `wid_aidFocusableModes` +0x208/+0x210, `wid_iPrimaryButton` +0x218, `wid_iFontSize` +0x234.
+- Mode record `CAuxButtonModeData`, 0x20 bytes:
+  - +0 `abmd_idMode` (InputMode ident);
+  - +8 `abmd_strShortcut`;
+  - +0x10 `abmd_strLabel`;
+  - +0x18 `abmd_mcTrigger` (menu command).
+
+### 8.3 How the update picks the variant
+In 0x140904230 (SM 0x140904790):
+1. It reads `g_inputMode` through `input_mode_get` 0x1401532e0 (SM 0x140153f80), which is the 5th and 6th
+   direct calls at +0xf9 / +0x105 in all four exes. It also sets `focusable` = mode ∈ `wid_aidFocusableModes`.
+2. For each button it takes the record whose `abmd_idMode` == mode. If mode == Gamepad it first calls
+   `aux_shortcut(bar, i, rec.cmd, Gamepad, "")`, so the pad shortcut is rebuilt every update.
+3. It formats the text:
+   - `<img src…` shortcut (pad glyph): `<pcwb class="font size N">LABEL  GLYPH</pcwb>`;
+   - empty shortcut: the label only;
+   - any other non-empty shortcut (Keyboard/Mouse key-image name such as `KeyboardEscape`, `F3`, after
+     translation): `…LABEL  <img src="SHORTCUT">`.
+
+   It sets the shortcut widget only if the text changed (`0x140916920`).
+4. It highlights the primary button only when `focusable && mode != Mouse`.
+5. It calls the Select-visibility helper (Gamepad mode shows "SELECT [A]").
+6. If the screen's focus is empty or invalid, or sits inside the bar, it calls `menu_focus_default` 0x140147ca0.
+   That function does nothing in Mouse/Touch mode, or while a focusable widget already has focus.
+
+### 8.4 The input mode global
+| item | Sam4 | SM |
+|---|---|---|
+| ident globals Gamepad / Keyboard / Mouse / Touch (static init 0x140006570… with `ident_ctor`) | 0x142275a68 / a70 / a78 / a80 | 0x142252b58 / b60 / b68 / b70 |
+| `g_inputMode` (default Mouse, init 0x140006520) / time of the last change | **0x142275a88** / 0x142275a90 | **0x142252b78** / 0x142252b80 |
+| `input_mode_get(IDENT* out)` (`mov rax,[rip+g_inputMode]`) / time getter | 0x1401532e0 / 0x1401532d0 | 0x140153f80 / 0x140153f70 |
+| writers: pad button down / up (from the menu pad pump 0x140aac120, which first calls `device_switch`) → Gamepad | 0x140153ac0 / 0x140153b60 | 0x140154760 / 0x140154800 |
+| writers: key down / up (handler vt+0x40) → Keyboard | 0x140153c20 / 0x140153da0 | 0x1401548c0 / 0x140154a40 |
+| **writer: `menu_mouse_input(mgr, bTouch, code)`** (handler vt+0x48), every mouse message → Mouse (Touch if `bTouch`), then top screen vt+0x168 | **0x140153ef0** | **0x140154b90** |
+| `input_mode_set(ident)` (touch/virtual pad screens → Touch, "KbdMouse" press-key → Keyboard, the start screen → Mouse/Gamepad) | 0x140154530 | 0x1401551d0 |
+| menu input handler vtable (the viewport's handler at `vp+0x200`): vt+0x40 key, **vt+0x48 mouse**, vt+0x58 "show cursor" | 0x141beb9a0: 0x14094cbb0, **0x14094ce10**, 0x14094c6e0 | 0x141bd0230: 0x14094d050, **0x14094d280**, 0x14094cc00 |
+
+- Mouse filter in vt+0x48. The event reaches `menu_mouse_input` only when the menu owner's local-player slot
+  device (`slot+0x28`, not `pi+0xb0`) is -1 or "Keyboard+mouse", and a "Keyboard+mouse" device is in the
+  device list at 0x1423ad480. In single-player VR the pointer passes this filter, because it clicks. Message
+  map (viewport msg → code):
+  - 1 move → 0;
+  - 4 / 3 → 5 / 7 (LMB down / up);
+  - 0x14 / 0x15 / 0x16 → touch.
+- The "show cursor" slot 0x14094c6e0 returns the screen's cursor flag when the mode is Mouse or the screen forces a
+  cursor (`vt+200`). Touch mode has its own case. Forcing Gamepad globally could therefore hide the cursor.
+- Other readers of `g_inputMode` depend on it for menu behaviour, not just for what the bar shows. This is why
+  the change is confined to the bar:
+  - `menu_focus_default` 0x140147ca0;
+  - focus change 0x14014ab40 (scroll-into-view only in Gamepad/Keyboard mode);
+  - menu activation 0x140149c90;
+  - widget command labels 0x140916670 → 0x140917200 ("GamepadX" if Gamepad, else "Keyboard+Mouse", re-labelled
+    on a mode change; SM 0x140916d20 / 0x1409178f0). In VR these already show pad glyphs through the
+    `command_markup` hook;
+  - the cheat-code sequence 0x140152a60.
+
+### 8.5 Recommended change
+Detour `aux_holder_update` and add no other state:
+```
+using UpdFn = void(__cdecl*)(void* bar, void* dp);
+uint64_t* g_mode; uint64_t g_idGamepad, g_idMouse;          // ident_ctor("InputMode.Gamepad"/"InputMode.Mouse")
+void __cdecl hkAuxUpdate(void* bar, void* dp) {
+    if (g_mode && *g_mode == g_idMouse && vrdev::installed() && player_vr::localVrd()) {
+        *g_mode = g_idGamepad;
+        realAuxUpdate(bar, dp);
+        if (*g_mode == g_idGamepad) *g_mode = g_idMouse;     // only undo our own write
+        return;
+    }
+    realAuxUpdate(bar, dp);
+}
+```
+- `g_mode` comes from `input_mode_get`: its first instruction is `48 8B 05 disp32`, so
+  `g_mode = fn + 7 + disp`. `ident_ctor` interns names, and the engine compares idents as one 64-bit value, so
+  `ident_ctor("InputMode.Gamepad")` returns the value stored at 0x142275a68. Reading 0x142275a68 itself is the
+  alternative: it is the `mov rax,[rip+…]` at `0x140153ac0`+0x29 (SM `0x140154760`+0x29), followed by the store to `g_inputMode`.
+- Only Mouse is swapped. A real key press (Keyboard) or touch keeps its own variant, which matches R19 §7
+  check 6. Remove the condition on Mouse if keyboard keys should never show in VR.
+- Thread: `menuPointer` runs in the main loop's Render (`hookedRender`), on the same thread that lays out the
+  menu, so the save and restore cannot race with the pointer's write.
+- What changes in VR:
+  - the bar shows `LABEL  <glyph>` for every button (Resume = pad B → VR B, Cheats = pad X, Select = pad A);
+  - "Select" becomes visible;
+  - in bars whose `wid_aidFocusableModes` contains Gamepad, the primary button is highlighted.
+
+  For `CMSInGameMenu2` the bar uses `abh_create_b`, which sets no focusable modes, so focus behaviour is unchanged.
+  Clicking the aux buttons with the pointer is unchanged: clicks set Mouse first, and OnCommand runs with the
+  real mode.
+- It also covers every other `CAuxButtonHolder` (Netricsa, loading, demo bars).
+
+**Caveat (text glyphs).** The bar can only draw a pad shortcut that starts with `<img src`. Plain text from the
+mod's `markup()` is framed by `expand_markup` as `<span class="control frame"> … </span>`. The update would then
+put it inside `<img src="…">`, which is broken markup. In the menu layout this applies to:
+- Index/Touch/Frame X: "L A", for Cheats on Index;
+- Vive/WMR A/B: "R Trackpad", "R Grip".
+
+Optional fix: also detour `aux_shortcut` 0x1409052d0 (SM 0x140905840). After the original runs, when
+`mode == Gamepad` and VR is active, take `rec = abh_find(bar, idx, mode)`. If `*(char**)(rec+8)` is non-empty
+and does not start with `<img src`, assign "" with `cstring_assign` 0x1410bfe20 (SM 0x1410c05d0). The bar then
+shows the label alone. Otherwise, map those menu controls to glyphs.
+
+### 8.6 Signature suggestions (`signatures.json`)
+`sigscan.py` results, each unique in all four exes:
+```
+"aux_holder_update": {"src": "0x140904230", "len": 64,
+  "_note": "CAuxButtonHolder vt+0x20 (vtable 0x141bd4670): per-frame layout/text of a menu button bar; picks each button's mode record by g_inputMode (R19 s8)"},
+"input_mode_get": {"call_of": "aux_holder_update", "index": 5,
+  "_note": "IDENT* (IDENT* out): *out = g_inputMode; first insn mov rax,[rip+g_inputMode] (R19 s8.4)"},
+"menu_mouse_input": {"src": "0x140153ef0", "len": 48,
+  "_note": "(menuMgr, bTouch, code): every menu mouse message sets g_inputMode = InputMode.Mouse/Touch (R19 s8.4); reference only"},
+"aux_shortcut": {"src": "0x1409052d0", "len": 48,
+  "_note": "(bar, idx, menuCmd, mode, literal): mode record shortcut; Gamepad = expand of the menu command (R19 s8.2); for the optional text fix"}
+```
+- `aux_holder_update` len 64 → Sam4_U 0x140906960, SM 0x140904790, SM_U 0x140906eb0. 48 bytes is not unique.
+- `menu_mouse_input` → 0x1401568a0 / 0x140154b90 / 0x140157530.
+- `aux_shortcut` → 0x140907a00 / 0x140905840 / 0x140907f60.
+- `input_mode_get` index 5 → Sam4_U 0x140155c90 (`g_inputMode` 0x142275a88), SM 0x140153f80 (0x142252b78),
+  SM_U 0x140156920 (0x142251b78).
+
+For the optional fix, `abh_find` is the 3rd direct call (index 2) of `aux_shortcut` and `cstring_assign` the 6th
+(index 5) in Sam4 and SM.
+
+### 8.7 Confidence and lab checks
+- **H**: the bar variant = `g_inputMode` in `aux_holder_update`, and the pointer's move messages set Mouse through
+  vt+0x48 → `menu_mouse_input`. Decompiled in Sam4; SM has the same code (byte-identical `menu_mouse_input`,
+  same call order in the update), and the mod log matches.
+- **H**: the mode is a single global, so the change is local UI state with nothing replicated.
+- **M-H**: vt+0x20 runs on every frame the menu is drawn. It recomputes the layout on each call, and the
+  sibling widget update 0x140916670 polls the mode on each call. The caller was not traced.
+- **M**: how text shortcuts render in the bar (image-name resolver, §7.1).
+
+Lab checks (lab Monado):
+1. Pause menu bar shows "RESUME GAME [B]  CHEATS [X]  SELECT [A]" on Touch.
+2. Aux buttons still click with the pointer, and the cursor is still drawn.
+3. On Index, Cheats shows the label only after the optional fix.
+4. Desktop (VR off): a mouse move still shows [ESC]/[F3].
+5. A real key press in VR shows key images until the next pointer move.

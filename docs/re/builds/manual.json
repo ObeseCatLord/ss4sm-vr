@@ -129,7 +129,12 @@
   "device_switch": "0x1400528a0",
   "script_ctx": "0x1411223e0",
   "lua_world_to_lsi": "0x140b79820",
-  "lua_exec_string": "0x140b748a0"
+  "lua_exec_string": "0x140b748a0",
+  "aux_holder_update": "0x140904230",
+  "aux_shortcut": "0x1409052d0",
+  "input_mode_get": "0x1401532e0",
+  "abh_find": "0x140905c10",
+  "cstring_assign": "0x1410bfe20"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -254,7 +259,12 @@
   "device_switch": "0x1400551f0",
   "script_ctx": "0x141124d30",
   "lua_world_to_lsi": "0x140b7c1d0",
-  "lua_exec_string": "0x140b76fd0"
+  "lua_exec_string": "0x140b76fd0",
+  "aux_holder_update": "0x140906960",
+  "aux_shortcut": "0x140907a00",
+  "input_mode_get": "0x140155c90",
+  "abh_find": "0x140908340",
+  "cstring_assign": "0x1410c29b0"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -386,7 +396,12 @@
   "device_switch": "0x140052900",
   "script_ctx": "0x141122ba0",
   "lua_world_to_lsi": "0x140b79e70",
-  "lua_exec_string": "0x140b74e10"
+  "lua_exec_string": "0x140b74e10",
+  "aux_holder_update": "0x140904790",
+  "aux_shortcut": "0x140905840",
+  "input_mode_get": "0x140153f80",
+  "abh_find": "0x1409061e0",
+  "cstring_assign": "0x1410c05d0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -511,6 +526,11 @@
   "device_switch": "0x140055240",
   "script_ctx": "0x1411254e0",
   "lua_world_to_lsi": "0x140b7c810",
-  "lua_exec_string": "0x140b77530"
+  "lua_exec_string": "0x140b77530",
+  "aux_holder_update": "0x140906eb0",
+  "aux_shortcut": "0x140907f60",
+  "input_mode_get": "0x140156920",
+  "abh_find": "0x140908900",
+  "cstring_assign": "0x1410c3150"
  }
 }

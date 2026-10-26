@@ -777,5 +777,30 @@
   "src": "0x140b748a0",
   "len": 64,
   "_note": "int (lsi, ctx, const char* src, uint flags): runs Lua source as a scheduler coroutine in that script context (R20 s2.2); lab_lua"
+ },
+ "aux_holder_update": {
+  "src": "0x140904230",
+  "len": 64,
+  "_note": "CAuxButtonHolder vt+0x20 (bar, dp): per-frame menu button bar; picks each button's mode record by g_inputMode (R19 s8)"
+ },
+ "input_mode_get": {
+  "call_of": "aux_holder_update",
+  "index": 5,
+  "_note": "IDENT* (IDENT* out): *out = g_inputMode; first insn mov rax,[rip+g_inputMode] (R19 s8.4)"
+ },
+ "aux_shortcut": {
+  "src": "0x1409052d0",
+  "len": 48,
+  "_note": "(bar, idx, menuCmd, mode, literal): the button's mode-record shortcut; Gamepad = the menu command expanded (R19 s8.2)"
+ },
+ "abh_find": {
+  "call_of": "aux_shortcut",
+  "index": 2,
+  "_note": "(bar, idx, mode) -> CAuxButtonModeData (+8 shortcut CString) (R19 s8.5)"
+ },
+ "cstring_assign": {
+  "call_of": "aux_shortcut",
+  "index": 5,
+  "_note": "(CString*, const char*) (R19 s8.5)"
  }
 }

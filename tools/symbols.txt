@@ -150,3 +150,8 @@ manual:device_switch         # R19: keep the pad router as the last used device 
 manual:script_ctx        # R20: lab Lua
 manual:lua_world_to_lsi  # R20
 manual:lua_exec_string   # R20
+manual:aux_holder_update  # R19 s8: menu bar in gamepad mode in VR
+manual:input_mode_get     # R19 s8
+manual:aux_shortcut       # R19 s8.5
+manual:abh_find           # R19 s8.5
+manual:cstring_assign     # R19 s8.5

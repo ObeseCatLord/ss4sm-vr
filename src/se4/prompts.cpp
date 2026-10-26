@@ -9,6 +9,7 @@
 #include <windows.h>
 #include <MinHook.h>
 #include <cstdint>
+#include <cstring>
 
 namespace prompts {
 namespace {
@@ -69,6 +70,45 @@ void __cdecl hookedSwitch(uint8_t* pi, void* a2, void* a3, void* a4) {
         if (const int router = routerIndex(); router >= 0) *reinterpret_cast<int32_t*>(pi + 0xb0) = router;
 }
 
+// Menu button bars (R19 s8): their variant follows the global menu input mode, which every mouse message sets to
+// Mouse - and the VR pointer moves the mouse every frame. In VR the bar's update runs in Gamepad mode (restored after),
+// so it shows the pad shortcuts, i.e. the VR controls; a text-only shortcut ("L A") is left out because the bar can
+// only show an image there.
+using AuxUpdateFn = void(__cdecl*)(void* bar, void* dp, void* a3, void* a4);
+using AuxShortcutFn = void(__cdecl*)(void* bar, int idx, int cmd, uint64_t mode, const char* literal);
+using AbhFindFn = uint8_t*(__cdecl*)(void* bar, int idx, uint64_t mode);
+using AssignFn = void(__cdecl*)(void* str, const char* text);
+using IdentFn = void**(__cdecl*)(void** out, const char* name);
+AuxUpdateFn realAuxUpdate;
+AuxShortcutFn realAuxShortcut;
+AbhFindFn abhFind;
+AssignFn strAssign;
+IdentFn identCtor;
+uint64_t* g_inputMode;
+uint64_t g_idGamepad, g_idMouse;
+bool vrPlayer() { return vrdev::installed() && player_vr::localVrd(); }
+void __cdecl hookedAuxUpdate(void* bar, void* dp, void* a3, void* a4) {
+    if (!g_idGamepad && identCtor) {
+        void* id = nullptr;
+        identCtor(&id, "InputMode.Gamepad"), g_idGamepad = reinterpret_cast<uint64_t>(id);
+        identCtor(&id, "InputMode.Mouse"), g_idMouse = reinterpret_cast<uint64_t>(id);
+    }
+    if (g_inputMode && g_idGamepad && *g_inputMode == g_idMouse && vrPlayer()) {
+        *g_inputMode = g_idGamepad;
+        realAuxUpdate(bar, dp, a3, a4);
+        if (*g_inputMode == g_idGamepad) *g_inputMode = g_idMouse;  // only undo our own write
+        return;
+    }
+    realAuxUpdate(bar, dp, a3, a4);
+}
+void __cdecl hookedAuxShortcut(void* bar, int idx, int cmd, uint64_t mode, const char* literal) {
+    realAuxShortcut(bar, idx, cmd, mode, literal);
+    if (mode != g_idGamepad || !g_idGamepad || !abhFind || !strAssign || !vrPlayer()) return;
+    uint8_t* rec = abhFind(bar, idx, mode);
+    const char* sc = rec ? *reinterpret_cast<const char* const*>(rec + 8) : nullptr;
+    if (sc && *sc && strncmp(sc, "<img src", 8)) strAssign(rec + 8, "");
+}
+
 void* __cdecl hookedMarkup(uint8_t* self, void* out, int control) {
     // The mod's virtual pad is XInput user 0 (self+0x20, R19 s2.1); only while the local player plays in VR.
     if (self && *reinterpret_cast<int32_t*>(self + 0x20) == 0 && vrdev::installed() && player_vr::localVrd()) {
@@ -112,6 +152,25 @@ bool install() {
     if (void* sw = se4::build().at<void>(se4::gen::device_switch); sw && g_devices && g_routerMarkup &&
         (MH_CreateHook(sw, reinterpret_cast<void*>(hookedSwitch), reinterpret_cast<void**>(&realSwitch)) != MH_OK || MH_EnableHook(sw) != MH_OK))
         VRLOG("prompts: device switch hook FAILED");
+    {
+        const auto& b = se4::build();
+        auto* get = b.at<uint8_t>(se4::gen::input_mode_get);
+        if (get && get[0] == 0x48 && get[1] == 0x8B && get[2] == 0x05)
+            g_inputMode = reinterpret_cast<uint64_t*>(get + 7 + *reinterpret_cast<int32_t*>(get + 3));
+        identCtor = reinterpret_cast<IdentFn>(b.at<void>(se4::gen::ident_ctor));
+        abhFind = reinterpret_cast<AbhFindFn>(b.at<void>(se4::gen::abh_find));
+        strAssign = reinterpret_cast<AssignFn>(b.at<void>(se4::gen::cstring_assign));
+        void* upd = b.at<void>(se4::gen::aux_holder_update);
+        void* sc = b.at<void>(se4::gen::aux_shortcut);
+        if (g_inputMode && identCtor && upd &&
+            (MH_CreateHook(upd, reinterpret_cast<void*>(hookedAuxUpdate), reinterpret_cast<void**>(&realAuxUpdate)) != MH_OK ||
+             MH_EnableHook(upd) != MH_OK))
+            VRLOG("prompts: menu bar hook FAILED");
+        if (sc && abhFind && strAssign &&
+            (MH_CreateHook(sc, reinterpret_cast<void*>(hookedAuxShortcut), reinterpret_cast<void**>(&realAuxShortcut)) != MH_OK ||
+             MH_EnableHook(sc) != MH_OK))
+            VRLOG("prompts: menu bar shortcut hook FAILED");
+    }
     VRLOG("prompts: button prompts show the VR controllers (devices %p, count %p, router %p)", static_cast<const void*>(g_devices),
           static_cast<const void*>(g_deviceCount), g_routerMarkup);
     return true;
