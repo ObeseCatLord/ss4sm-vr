@@ -174,3 +174,12 @@ manual:pi_world
 manual:net_client_send
 manual:net_server_broadcast
 manual:net_server_send_one
+manual:mpix_limiter      # R25: upscaler phase B render size (hooked; filtered by call site)
+manual:rv_limiter_call   # R25: render_view's limiter call (return address +5)
+manual:hdr_limiter_call  # R25: hdr_targets' limiter call (return address +5)
+manual:hdr_subrect       # R25: HDR canvas box -> output size before post-processing
+manual:rescale_pass      # R25: skipped for an eye whose post-processing wrote the eye target
+manual:gfx_copy          # R25
+manual:exec_copy_call    # R25: execute_view's gfx_copy rescale call
+manual:exec_rescale_site # R25: decodes the 3D canvas drawport global
+manual:exec_eye_dp_load  # R25: decodes the saved eye drawport global

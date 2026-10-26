@@ -150,7 +150,18 @@
   "pi_world": "0x140b7cc30",
   "net_client_send": "0x140bb8d00",
   "net_server_broadcast": "0x140bbc440",
-  "net_server_send_one": "0x140bbc520"
+  "net_server_send_one": "0x140bbc520",
+  "mpix_limiter": "0x140b98fb0",
+  "render_view": "0x140bc1cd0",
+  "rv_limiter_call": "0x140bc2412",
+  "hdr_limiter_call": "0x140c88c52",
+  "hdr_subrect": "0x140c891f0",
+  "rescale_pass": "0x140bbf2c0",
+  "gfx_copy": "0x140b5a770",
+  "exec_copy_call": "0x140bc0fb3",
+  "exec_rescale_site": "0x140bc10fa",
+  "exec_eye_dp_load": "0x140bc0eba",
+  "end_view": "0x140bc0970"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -294,7 +305,18 @@
   "pi_world": "0x140b7f5e0",
   "net_client_send": "0x140bbb6d0",
   "net_server_broadcast": "0x140bbf020",
-  "net_server_send_one": "0x140bbf100"
+  "net_server_send_one": "0x140bbf100",
+  "mpix_limiter": "0x140b9b960",
+  "render_view": "0x140bc48b0",
+  "rv_limiter_call": "0x140bc4ff2",
+  "hdr_limiter_call": "0x140c8b7e2",
+  "hdr_subrect": "0x140c8bd80",
+  "rescale_pass": "0x140bc1ea0",
+  "gfx_copy": "0x140b5cea0",
+  "exec_copy_call": "0x140bc3b93",
+  "exec_rescale_site": "0x140bc3cda",
+  "exec_eye_dp_load": "0x140bc3a9a",
+  "end_view": "0x140bc3550"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -447,7 +469,18 @@
   "pi_world": "0x140b7d070",
   "net_client_send": "0x140bb93d0",
   "net_server_broadcast": "0x140bbcb20",
-  "net_server_send_one": "0x140bbcc00"
+  "net_server_send_one": "0x140bbcc00",
+  "mpix_limiter": "0x140b99660",
+  "render_view": "0x140bc23c0",
+  "rv_limiter_call": "0x140bc2b03",
+  "hdr_limiter_call": "0x140c891d2",
+  "hdr_subrect": "0x140c89770",
+  "rescale_pass": "0x140bbf9a0",
+  "gfx_copy": "0x140b5acd0",
+  "exec_copy_call": "0x140bc16a3",
+  "exec_rescale_site": "0x140bc17ea",
+  "exec_eye_dp_load": "0x140bc15aa",
+  "end_view": "0x140bc1060"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -591,6 +624,17 @@
   "pi_world": "0x140b7fa10",
   "net_client_send": "0x140bbbd90",
   "net_server_broadcast": "0x140bbf6f0",
-  "net_server_send_one": "0x140bbf7d0"
+  "net_server_send_one": "0x140bbf7d0",
+  "mpix_limiter": "0x140b9c000",
+  "render_view": "0x140bc4f90",
+  "rv_limiter_call": "0x140bc56d3",
+  "hdr_limiter_call": "0x140c8bd52",
+  "hdr_subrect": "0x140c8c2f0",
+  "rescale_pass": "0x140bc2570",
+  "gfx_copy": "0x140b5d3f0",
+  "exec_copy_call": "0x140bc4273",
+  "exec_rescale_site": "0x140bc43ba",
+  "exec_eye_dp_load": "0x140bc417a",
+  "end_view": "0x140bc3c30"
  }
 }

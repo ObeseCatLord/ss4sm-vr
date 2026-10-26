@@ -932,5 +932,60 @@
    "src": "0x140bbcc00",
    "len": 48
   }
+ },
+ "mpix_limiter": {
+  "src": "0x140b98fb0",
+  "len": 24,
+  "_note": "float (int w, int h, int* outW, int* outH): render size = (w,h) -> ren_fMax3DRenderingMPix -> x ren_fRenderingPixelRatio (min 1); returns ren_fRenderingPixelRatio in xmm0. Callers: render_view (rv_limiter_call), hdr_targets (hdr_limiter_call), 0x140151c20 x2 (R25 s1)"
+ },
+ "render_view": {
+  "src": "0x140bc1cd0",
+  "len": 24,
+  "_note": "RenderView(view): sizes the view (MPix limiter), allocates the resized 3D canvas into 0x1422d4f98, pushes the eye drawport into 0x1422d5198, builds the view command, calls hdr_targets (R13 s4.1, R25 s1)"
+ },
+ "rv_limiter_call": {
+  "src": "0x140bc2412",
+  "len": 24,
+  "_note": "call site E8 -> mpix_limiter inside render_view: (eye RT w, h) -> 3D canvas size; return address +5. Phase B render-size override point (R25 s1)"
+ },
+ "hdr_limiter_call": {
+  "src": "0x140c88c52",
+  "len": 24,
+  "_note": "call site E8 -> mpix_limiter inside hdr_targets: limits max(current target, device slot 0x68) -> HDR canvas size; return address +5 (R25 s2)"
+ },
+ "hdr_subrect": {
+  "src": "0x140c891f0",
+  "len": 64,
+  "_note": "drawport* (int singleSample, int w, int h): sets the HDR canvas (0x1422d7358, or MSAA 0x1422d7320) box +0x18/+0x1c and +0x28/+0x2c to (w,h), clamped to the texture keeping aspect; 0 = keep (R25 s2)"
+ },
+ "rescale_pass": {
+  "src": "0x140bbf2c0",
+  "len": 24,
+  "_note": "void (drawport* src3DCanvas, drawport* dstEye, int mode): CAS/bicubic/Lanczos/wide-kernel canvas -> eye drawport; only caller execute_view (exec_rescale_site) (R13 s4.1, R25 s3)"
+ },
+ "gfx_copy": {
+  "src": "0x140b5a770",
+  "len": 24,
+  "_note": "void (gfx, drawport* src, int, drawport* dst, int, int filtered): textured copy between drawports; 30 callers (R25 s3)"
+ },
+ "exec_copy_call": {
+  "src": "0x140bc0fb3",
+  "len": 32,
+  "_note": "call site E8 -> gfx_copy inside execute_view: point/filtered rescale of the 3D canvas (0x1422d4f98) into the eye drawport (0x1422d5198) (R25 s3)"
+ },
+ "exec_rescale_site": {
+  "src": "0x140bc10fa",
+  "len": 24,
+  "_note": "lea rcx,[rip+3D canvas drawport 0x1422d4f98]; call rescale_pass (at +7) inside execute_view: decode the 3D canvas global here (R25 s3)"
+ },
+ "exec_eye_dp_load": {
+  "src": "0x140bc0eba",
+  "len": 24,
+  "_note": "mov rdx,[rip+0x1422d5198] inside execute_view: the eye drawport pushed by render_view (rescale destination); decode the global here (R25 s3)"
+ },
+ "end_view": {
+  "src": "0x140bc0970",
+  "len": 32,
+  "_note": "end of a rendered view: if 0x1422d5198 pops the drawport stack (0x140b585f0(gfx,1)) and clears it; called after execute_view by the view functions (R25 s3)"
  }
 }
