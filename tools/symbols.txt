@@ -114,3 +114,14 @@ manual:generic_melee_step        # R12: generic melee weapon step
 manual:generic_melee_swing_test  # R12: generic melee canned swing test (skipped for VR owners)
 manual:crosshair_ring           # R8 A7: crosshair ring draw (per-weapon target, distance, placement)
 manual:other_hand_weapon        # R8 A7: other-hand weapon (ring takes the max spread); null during per-weapon passes
+manual:gwa_step        # R17: generic weapon animation state step (artifact hold/release)
+manual:gwa_handle      # R17: generic weapon animation state events (EEnd: drop the hold)
+manual:aq_set_speed    # R17: anim queue speed (hold at ~0, time preserved)
+manual:aq_get_speed    # R17
+manual:gsae_fire       # R17: global script anim event (ArtifactBroken), observed for the log
+manual:make_handle     # R17
+manual:state_world     # R17
+manual:timer_cancel    # R17: cancel the state end timer during the hold
+manual:is_authority    # R17
+manual:aq_anim_length  # R17
+manual:state_schedule  # R17: re-arm the state end timer on release

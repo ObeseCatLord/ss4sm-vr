@@ -500,5 +500,66 @@
    "len": 48
   },
   "_note": "weapon -> the owner's other-hand weapon (en_bRightHandWeapon ? left : right); the ring takes max(spread) of both (R8 s1, A7.2 G2)"
+ },
+ "gwa_step": {
+  "src": "0x1405b1740",
+  "len": 24,
+  "_note": "CPSGenericWeaponAnimation vt+0x48 step: creates the dummy weapon, plays the anim, schedules CEntityState::Return after its length (R17 s1.6)"
+ },
+ "gwa_handle": {
+  "src": "0x1405b1270",
+  "len": 24,
+  "_note": "CPSGenericWeaponAnimation vt+0x40 event handler (EBegin/EEnd) (R17 s1.5)"
+ },
+ "aq_set_speed": {
+  "src": "0x140ca9450",
+  "len": 24,
+  "_note": "void(aq, float): anim queue speed multiplier, rebases playing anims so their time is preserved; never 0 (R17 s3.1)"
+ },
+ "aq_get_speed": {
+  "src": "0x140ca8590",
+  "len": 24,
+  "_note": "float(aq): anim queue speed multiplier (R17 s3.1)"
+ },
+ "gsae_fire": {
+  "src": "0x14019c9f0",
+  "len": 24,
+  "_note": "CGlobalScriptAnimEvent fire (vt+0x18): posts the global script event (ArtifactBroken) (R17 s1.7)"
+ },
+ "make_handle": {
+  "call_of": "gwa_step",
+  "index": 0,
+  "limit": 1024,
+  "_note": "void(handle16* out, obj, type = obj->vt[0](obj)) (R17 s1.6)"
+ },
+ "state_world": {
+  "call_of": "gwa_step",
+  "index": 1,
+  "limit": 1024,
+  "_note": "state -> world (*(*(state+0x18)+0x30)) (R17 s1.6)"
+ },
+ "timer_cancel": {
+  "call_of": "gwa_step",
+  "index": 2,
+  "limit": 1024,
+  "_note": "void(world, const handle16*): cancel the state's scheduled calls (R17 s1.6)"
+ },
+ "is_authority": {
+  "call_of": "gwa_step",
+  "index": 3,
+  "limit": 1024,
+  "_note": "int(entity): simulation authority (SP / host) (R17 s1.8)"
+ },
+ "aq_anim_length": {
+  "call_of": "gwa_step",
+  "index": 15,
+  "limit": 1024,
+  "_note": "float(aq, IDENT, int): anim length in seconds (R17 s1.6)"
+ },
+ "state_schedule": {
+  "call_of": "gwa_step",
+  "index": 16,
+  "limit": 1024,
+  "_note": "void(state, float delay, cb, const char* name): CEntityState::Return timer (R17 s1.6)"
  }
 }

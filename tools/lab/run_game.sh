@@ -15,6 +15,9 @@ ROOT=/home/obesecatlord/FasterGames/SteamLibrary/steamapps
 G="$ROOT/common/$GAME"
 "$HERE/killgame.sh" >/dev/null; sleep 2
 D=$("$HERE/private_display.sh") || exit 1
+# Saves and profile snapshot (restored by stop_lab.sh): the games write auto/checkpoint saves and the profile into
+# the user's Steam cloud folder on every level start (lab 2026-10-24).
+"$HERE/saves.sh" snapshot || exit 1
 # Settings snapshot: the game writes its ini on clean exit; keep the user's settings untouched.
 for f in $HOME/.local/share/Steam/userdata/*/$APP/local/$INI; do [ -f "$f" ] && cp -n "$f" "$HERE/../../lab/$INI.user-backup"; done
 unset WAYLAND_DISPLAY

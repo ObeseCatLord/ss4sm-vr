@@ -26,3 +26,6 @@ CGenericMeleeWeaponParams::gmwp_dtDamageType
 CGenericMeleeWeaponParams::gmwp_fSwingRadius
 CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon  # the held weapons (scope: is the scoped weapon still held)
 CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon
+CPSGenericWeaponAnimation::es_idAnimation           # R17: the played weapon anim (IDENT)
+CPSGenericWeaponAnimation::es_bStartedPlayingAnim   # R17: set when the anim started on this machine
+CWeaponEntity::en_pwpWeaponParams                   # R17: weapon params (resource -> asset file name)

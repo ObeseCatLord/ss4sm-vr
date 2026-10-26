@@ -26,7 +26,10 @@
   "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
   "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248",
   "CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon": "0xf90",
-  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94"
+  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94",
+  "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
+  "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
  },
  "Sam4_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -55,7 +58,10 @@
   "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
   "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248",
   "CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon": "0xf90",
-  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94"
+  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94",
+  "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
+  "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
  },
  "SamSM": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -84,7 +90,10 @@
   "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
   "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248",
   "CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon": "0xf98",
-  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c"
+  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c",
+  "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
+  "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
  },
  "SamSM_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -113,6 +122,9 @@
   "CGenericMeleeWeaponParams::gmwp_dtDamageType": "0x268",
   "CGenericMeleeWeaponParams::gmwp_fSwingRadius": "0x248",
   "CPlayerActorPuppetEntity::en_henCurrentRightHandWeapon": "0xf98",
-  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c"
+  "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c",
+  "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
+  "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
  }
 }

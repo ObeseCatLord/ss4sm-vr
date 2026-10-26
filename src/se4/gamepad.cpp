@@ -8,6 +8,7 @@
 #include "se4/vehicles.hpp"
 #include "se4/gadgets.hpp"
 #include "se4/hands.hpp"
+#include "se4/artifact.hpp"
 #include <xinput.h>
 #include <cmath>
 #include <cstring>
@@ -137,8 +138,9 @@ void publishFromXr() {
         const auto& x = xr::input().hand(h);
         Hand& o = f.hand[h];
         o.active = x.active;
-        o.trigger = gadgets::triggerTaken(h) ? 0.0f : x.trigger;  // a gadget in this hand goes off by its own gesture
-        o.squeeze = hands::squeezeTaken(h) ? 0.0f : x.squeeze;  // the off hand is on (or at) a two-handed weapon
+        o.trigger = gadgets::triggerTaken(h) || artifact::holding(h) ? 0.0f : x.trigger;  // a gadget in this hand goes off by its own gesture
+        o.squeeze = hands::squeezeTaken(h) || artifact::holding(h) ? 0.0f : x.squeeze;  // the off hand is on (or at) a two-handed weapon;
+                                                                                       // a Sirian artifact is crushed, not jumped with
         o.sx = x.stick.x, o.sy = x.stick.y;
         o.buttons = x.buttons;
         o.pos = {x.grip.position.x, x.grip.position.y, x.grip.position.z};

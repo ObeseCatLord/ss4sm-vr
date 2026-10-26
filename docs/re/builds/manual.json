@@ -93,7 +93,18 @@
   "generic_melee_step": "0x14077a840",
   "generic_melee_swing_test": "0x1407796d0",
   "crosshair_ring": "0x140121410",
-  "other_hand_weapon": "0x1402dc8c0"
+  "other_hand_weapon": "0x1402dc8c0",
+  "gwa_step": "0x1405b1740",
+  "gwa_handle": "0x1405b1270",
+  "aq_set_speed": "0x140ca9450",
+  "aq_get_speed": "0x140ca8590",
+  "gsae_fire": "0x14019c9f0",
+  "make_handle": "0x1410de9b0",
+  "state_world": "0x140d05bb0",
+  "timer_cancel": "0x140c32490",
+  "is_authority": "0x140ba6dd0",
+  "aq_anim_length": "0x140bae480",
+  "state_schedule": "0x1400827c0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -189,7 +200,18 @@
   "generic_melee_step": "0x14077cf70",
   "generic_melee_swing_test": "0x14077be00",
   "crosshair_ring": "0x140123d60",
-  "other_hand_weapon": "0x1402def80"
+  "other_hand_weapon": "0x1402def80",
+  "gwa_step": "0x1405b3e70",
+  "gwa_handle": "0x1405b39a0",
+  "aq_set_speed": "0x140cabfe0",
+  "aq_get_speed": "0x140cab120",
+  "gsae_fire": "0x14019f3a0",
+  "make_handle": "0x1410e1540",
+  "state_world": "0x140d08740",
+  "timer_cancel": "0x140c35070",
+  "is_authority": "0x140ba9780",
+  "aq_anim_length": "0x140bb0e30",
+  "state_schedule": "0x140085110"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -285,7 +307,18 @@
   "generic_melee_step": "0x14077a100",
   "generic_melee_swing_test": "0x140778f90",
   "crosshair_ring": "0x140121e10",
-  "other_hand_weapon": "0x1402dc3c0"
+  "other_hand_weapon": "0x1402dc3c0",
+  "gwa_step": "0x1405b1610",
+  "gwa_handle": "0x1405b1140",
+  "aq_set_speed": "0x140ca9b20",
+  "aq_get_speed": "0x140ca8c60",
+  "gsae_fire": "0x14019d5d0",
+  "make_handle": "0x1410df250",
+  "state_world": "0x140d06520",
+  "timer_cancel": "0x140c32a30",
+  "is_authority": "0x140ba74b0",
+  "aq_anim_length": "0x140baeb90",
+  "state_schedule": "0x140082aa0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -381,6 +414,17 @@
   "generic_melee_step": "0x14077c820",
   "generic_melee_swing_test": "0x14077b6b0",
   "crosshair_ring": "0x140124750",
-  "other_hand_weapon": "0x1402dea70"
+  "other_hand_weapon": "0x1402dea70",
+  "gwa_step": "0x1405b3d30",
+  "gwa_handle": "0x1405b3860",
+  "aq_set_speed": "0x140cac6a0",
+  "aq_get_speed": "0x140cab7e0",
+  "gsae_fire": "0x14019ff70",
+  "make_handle": "0x1410e1dd0",
+  "state_world": "0x140d090a0",
+  "timer_cancel": "0x140c35600",
+  "is_authority": "0x140ba9e50",
+  "aq_anim_length": "0x140bb1530",
+  "state_schedule": "0x1400853e0"
  }
 }

@@ -46,8 +46,11 @@ float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
               static_cast<unsigned long long>(*reinterpret_cast<uint64_t*>(player + 0x2568 + d)));
         (void)opt;
         const float* hit = reinterpret_cast<const float*>(player + 0x2188 + d);
-        VRLOG("crosshair:   aim hit %.2f %.2f %.2f dist %.2f, view %.2f %.2f %.2f", hit[0], hit[1], hit[2], hit[3], r ? r[4] : 0.f, r ? r[5] : 0.f,
-              r ? r[6] : 0.f);
+        float hw[7] = {};
+        if (auto headWorld = reinterpret_cast<void*(__cdecl*)(void*, float*)>(se4::build().at<void>(se4::gen::vrd_head_world)))
+            if (player_vr::localVrd()) headWorld(player_vr::localVrd(), hw);
+        VRLOG("crosshair:   aim hit %.2f %.2f %.2f dist %.2f, view %.2f %.2f %.2f, vrd head world %.2f %.2f %.2f", hit[0], hit[1], hit[2], hit[3],
+              r ? r[4] : 0.f, r ? r[5] : 0.f, r ? r[6] : 0.f, hw[4], hw[5], hw[6]);
     }
     const unsigned off = player_vr::vrdOffset();
     float e[7];
@@ -56,6 +59,10 @@ float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
         return r;
     const core::Quat q{r[0], r[1], r[2], r[3]};
     const core::Vec3 p = core::Vec3{r[4], r[5], r[6]} + core::rotate(q, {e[4], e[5], e[6]});
+    static int burst;
+    if (diag && burst < 12 && GetTickCount64() - last > 1000)
+        ++burst, VRLOG("crosshair:   eye %d offset %.4f %.4f %.4f rot %.3f %.3f %.3f %.3f -> view %.3f %.3f %.3f (head q %.3f %.3f %.3f %.3f)", vrdev::currentEye(),
+                       e[4], e[5], e[6], e[0], e[1], e[2], e[3], p.x, p.y, p.z, r[0], r[1], r[2], r[3]);
     const core::Quat qe = core::multiply(q, core::Quat{e[0], e[1], e[2], e[3]});
     r[0] = qe.x, r[1] = qe.y, r[2] = qe.z, r[3] = qe.w, r[4] = p.x, r[5] = p.y, r[6] = p.z;
     return r;
