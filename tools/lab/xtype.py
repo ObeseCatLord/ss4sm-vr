@@ -11,7 +11,10 @@ d = display.Display(sys.argv[1])
 shift = d.keysym_to_keycode(XK.string_to_keysym('Shift_L'))
 for ch in sys.argv[2]:
     sym = XK.string_to_keysym(NAMES.get(ch, ch))
-    code = d.keysym_to_keycode(sym)
+    # Prefer a main-keyboard key (keycode < 100, level 0 or Shift): some keysyms, e.g. parentheses, are also on extra
+    # keys (keycode 187/188) that Wine does not translate.
+    codes = sorted((c, i) for c, i in d.keysym_to_keycodes(sym) if i in (0, 1))
+    code = next((c for c, i in codes if c < 100), codes[0][0] if codes else d.keysym_to_keycode(sym))
     shifted = d.keycode_to_keysym(code, 0) != sym
     if shifted: xtest.fake_input(d, X.KeyPress, shift)
     xtest.fake_input(d, X.KeyPress, code); xtest.fake_input(d, X.KeyRelease, code)
