@@ -193,3 +193,24 @@ manual:vrd_button_poll      # R26: per-hand table refresh; not called per tick f
 var:vr_fRotationSensitivity         # R26: read-only, smooth turn speed mapping
 var:vr_fContinuousMovementDeadzone  # R26: read-only, smooth turn speed mapping
 manual:vr_comfort_mode_read # R26: disp32 retarget -> mod comfort-mask mode (turn vignette)
+manual:player_projection    # R27: flat projection reference (device NULL -> persp_fov); not hooked by the recipe
+manual:persp_fov            # R27: reference (horizontal FOV at 16:9)
+manual:player_view_render   # R27: reference (player main view)
+manual:pv_rv_call           # R27: render_view return address = player main view
+manual:camera_render_view   # R27: reference (cutscene / camera entity view)
+manual:cam_rv_call          # R27: render_view return address = camera entity view
+manual:player_views         # R27: hooked: in-pass flag + split-screen view count
+manual:render_maindp_store  # R27: decodes the main flat view drawport global
+manual:gfx_backbuffer_get   # R27: decodes the backbuffer texture global
+manual:rv_viewcmd_store     # R27: decodes the current view command global (PP dst = view + 0x288)
+manual:rv_view_copy         # R27: opcode/offset check for gfx+0xc70 (world-to-view doubles)
+manual:rv_proj_copy         # R27: opcode/offset check for gfx+0xc2c (projection read after the limiter)
+manual:ppcmd_pp_call        # R27: pp_dispatch return address of the per-view PP command
+manual:fmv_pp_call          # R27: pp_dispatch return address of the video/image PP (never upscaled)
+manual:gfx_proj_derive      # R27: reference (drawport/depth remap of the projection)
+manual:proj_revz_read       # R27: decodes the reversed-Z flag global
+manual:render_view          # R27: hooked: flat main-view classification (call target of pv_rv_call / cam_rv_call)
+manual:end_view             # R27: hooked: restores the flat projection after the view (call at pv_rv_call+0x40)
+var:gfx_iAntiAliasingSamples   # R27: flat upscaler gate (must be 1), read only
+var:gfx_pixMaxRenderTargetSize # R27: flat render box (RenderView's 3D-canvas clamp), read only
+var:ren_bForceCAS              # R27: flat render box, read only

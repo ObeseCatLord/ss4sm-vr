@@ -1,7 +1,8 @@
 #pragma once
-// Temporal upscaling / anti-aliasing for the VR eyes: NVIDIA DLSS (DLSS-SR / DLAA, NGX Vulkan) and AMD FSR 3.1
-// (FidelityFX API, Vulkan). Tuned for VR:
-//   - one context per eye (each eye keeps its own history; the engine renders the eyes one after the other);
+// Temporal upscaling / anti-aliasing for the VR eyes and the flat (desktop) main view: NVIDIA DLSS (DLSS-SR / DLAA,
+// NGX Vulkan) and AMD FSR 3.1 (FidelityFX API, Vulkan). Tuned for VR:
+//   - one context per view slot (each eye and the flat view keep their own history; the engine renders the eyes one
+//     after the other);
 //   - per-eye sub-pixel jitter from a Halton(2,3) sequence, the same index for both eyes in a frame;
 //   - history reset on discontinuities (level load, teleport-like camera jumps, recentre);
 //   - light sharpening (lenses magnify ringing), DLSS transformer preset K, DLAA at native resolution;
@@ -53,8 +54,10 @@ struct Frame {
     float nearZ = 0.1f, farZ = 1000.0f, fovY = 1.6f;
     bool depthInverted = false, hdr = true, reset = false;
 };
-// Upscale one eye (1 or 2). Returns false when no backend is active or the call failed (caller keeps its path).
-bool evaluate(int eye, const Frame& f);
-// Drop all histories (level load, recentre); the next evaluate per eye starts fresh.
+// Upscale one view: slot 1 or 2 a VR eye, slot 0 the flat (desktop) main view (docs/re/R27_flat_upscaler.md); each
+// slot keeps its own context and history. Returns false when no backend is active or the call failed (caller keeps
+// its path).
+bool evaluate(int slot, const Frame& f);
+// Drop all histories (level load, recentre); the next evaluate per slot starts fresh.
 void resetHistory();
 }  // namespace up

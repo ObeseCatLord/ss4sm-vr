@@ -25,15 +25,18 @@ VkInstance g_inst;
 VkPhysicalDevice g_pd;
 VkDevice g_dev;
 PFN_vkGetDeviceProcAddr g_gdpa;
-bool g_reset[2] = {true, true};
+// Per view slot: 0 the flat (desktop) main view, 1 and 2 the VR eyes (src/up/integrate.cpp).
+constexpr int kSlots = 3;
+const char* slotName(int slot) { return slot == 0 ? "flat" : slot == 1 ? "eye 1" : "eye 2"; }
+bool g_reset[kSlots] = {true, true, true};
 
 // ---------------- DLSS (NGX Vulkan) ----------------
 struct Dlss {
     bool ready = false;
     NVSDK_NGX_Parameter* params = nullptr;
-    NVSDK_NGX_Handle* feature[2] = {};
-    uint32_t rw[2] = {}, rh[2] = {}, ow[2] = {}, oh[2] = {};
-    int flags[2] = {};
+    NVSDK_NGX_Handle* feature[kSlots] = {};
+    uint32_t rw[kSlots] = {}, rh[kSlots] = {}, ow[kSlots] = {}, oh[kSlots] = {};
+    int flags[kSlots] = {};
 } g_dlss;
 
 NVSDK_NGX_PerfQuality_Value dlssQuality() {
@@ -91,8 +94,8 @@ bool dlssInit(PFN_vkGetInstanceProcAddr gipa, const wchar_t* dir) {
     return true;
 }
 
-bool dlssEvaluate(int eye, const Frame& f) {
-    const int e = eye - 1;
+bool dlssEvaluate(int slot, const Frame& f) {
+    const int e = slot;
     const uint32_t inW = f.renderW ? f.renderW : f.color.width, inH = f.renderH ? f.renderH : f.color.height;
     int flags = NVSDK_NGX_DLSS_Feature_Flags_MVLowRes | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
     if (f.hdr) flags |= NVSDK_NGX_DLSS_Feature_Flags_IsHDR;
@@ -114,14 +117,14 @@ bool dlssEvaluate(int eye, const Frame& f) {
         cp.InFeatureCreateFlags = flags;
         NVSDK_NGX_Result r = NGX_VULKAN_CREATE_DLSS_EXT1(g_dev, f.cmd, 1, 1, &g_dlss.feature[e], g_dlss.params, &cp);
         if (NVSDK_NGX_FAILED(r)) {
-            VRLOG("dlss: eye %d feature creation failed (0x%x)", eye, unsigned(r));
+            VRLOG("dlss: %s feature creation failed (0x%x)", slotName(slot), unsigned(r));
             g_dlss.feature[e] = nullptr;
             return false;
         }
         g_dlss.rw[e] = inW, g_dlss.rh[e] = inH, g_dlss.ow[e] = f.output.width, g_dlss.oh[e] = f.output.height;
         g_dlss.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("dlss: eye %d %ux%u -> %ux%u (quality %d, preset K)", eye, inW, inH, f.output.width, f.output.height, g_quality);
+        VRLOG("dlss: %s %ux%u -> %ux%u (quality %d, preset K)", slotName(slot), inW, inH, f.output.width, f.output.height, g_quality);
     }
     auto res = [](const Image& i, bool rw, VkImageAspectFlags aspect) {
         return NVSDK_NGX_Create_ImageView_Resource_VK(i.view, i.image, {aspect, 0, 1, 0, 1}, i.format, i.width, i.height, rw);
@@ -146,7 +149,7 @@ bool dlssEvaluate(int eye, const Frame& f) {
     g_reset[e] = false;
     if (NVSDK_NGX_FAILED(r)) {
         static int logged;
-        if (logged++ < 4) VRLOG("dlss: eye %d evaluate failed (0x%x)", eye, unsigned(r));
+        if (logged++ < 4) VRLOG("dlss: %s evaluate failed (0x%x)", slotName(slot), unsigned(r));
         return false;
     }
     return true;
@@ -156,9 +159,9 @@ bool dlssEvaluate(int eye, const Frame& f) {
 struct Fsr {
     HMODULE dll = nullptr;
     ffxFunctions fn{};
-    ffxContext ctx[2] = {};
-    uint32_t maxRender[2][2] = {}, maxOut[2][2] = {};
-    uint32_t flags[2] = {};
+    ffxContext ctx[kSlots] = {};
+    uint32_t maxRender[kSlots][2] = {}, maxOut[kSlots][2] = {};
+    uint32_t flags[kSlots] = {};
 } g_fsr;
 
 bool fsrInit(const wchar_t* dir) {
@@ -187,8 +190,8 @@ FfxApiResource fsrRes(const Image& i, uint32_t state, uint32_t usage) {
     return ffxApiGetResourceVK(reinterpret_cast<void*>(i.image), ffxApiGetImageResourceDescriptionVK(i.image, ci, usage), state);
 }
 
-bool fsrEvaluate(int eye, const Frame& f) {
-    const int e = eye - 1;
+bool fsrEvaluate(int slot, const Frame& f) {
+    const int e = slot;
     const uint32_t inW = f.renderW ? f.renderW : f.color.width, inH = f.renderH ? f.renderH : f.color.height;
     uint32_t flags = FFX_UPSCALE_ENABLE_AUTO_EXPOSURE;
     if (f.hdr) flags |= FFX_UPSCALE_ENABLE_HIGH_DYNAMIC_RANGE;
@@ -210,7 +213,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
         cd.maxUpscaleSize = {f.output.width, f.output.height};
         ffxReturnCode_t rc = g_fsr.fn.CreateContext(&g_fsr.ctx[e], &cd.header, nullptr);
         if (rc != FFX_API_RETURN_OK) {
-            VRLOG("fsr: eye %d context creation failed (%u)", eye, unsigned(rc));
+            VRLOG("fsr: %s context creation failed (%u)", slotName(slot), unsigned(rc));
             g_fsr.ctx[e] = nullptr;
             return false;
         }
@@ -218,7 +221,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
         g_fsr.maxOut[e][0] = f.output.width, g_fsr.maxOut[e][1] = f.output.height;
         g_fsr.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("fsr: eye %d %ux%u -> %ux%u (quality %d, near %.4g far %.4g, depth mode %d)", eye, inW, inH, f.output.width,
+        VRLOG("fsr: %s %ux%u -> %ux%u (quality %d, near %.4g far %.4g, depth mode %d)", slotName(slot), inW, inH, f.output.width,
               f.output.height, g_quality, f.nearZ, f.farZ, g_fsrDepth);
     }
     ffxDispatchDescUpscale d{};
@@ -246,7 +249,7 @@ bool fsrEvaluate(int eye, const Frame& f) {
     g_reset[e] = false;
     if (rc != FFX_API_RETURN_OK) {
         static int logged;
-        if (logged++ < 4) VRLOG("fsr: eye %d dispatch failed (%u)", eye, unsigned(rc));
+        if (logged++ < 4) VRLOG("fsr: %s dispatch failed (%u)", slotName(slot), unsigned(rc));
         return false;
     }
     return true;
@@ -314,12 +317,12 @@ void jitter(uint32_t frame, uint32_t renderW, uint32_t outW, float& px, float& p
 
 float mipBias(uint32_t renderW, uint32_t outW) { return g_kind == Kind::Off ? 0.0f : core::upscaleMipBias(renderW, outW); }
 
-bool evaluate(int eye, const Frame& f) {
-    if (eye != 1 && eye != 2) return false;
-    if (g_kind == Kind::DLSS) return dlssEvaluate(eye, f);
-    if (g_kind == Kind::FSR) return fsrEvaluate(eye, f);
+bool evaluate(int slot, const Frame& f) {
+    if (slot < 0 || slot >= kSlots) return false;
+    if (g_kind == Kind::DLSS) return dlssEvaluate(slot, f);
+    if (g_kind == Kind::FSR) return fsrEvaluate(slot, f);
     return false;
 }
 
-void resetHistory() { g_reset[0] = g_reset[1] = true; }
+void resetHistory() { g_reset[0] = g_reset[1] = g_reset[2] = true; }
 }  // namespace up

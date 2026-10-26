@@ -1,4 +1,5 @@
 #include "up/integrate.hpp"
+#include "core/flat_view.hpp"
 #include "core/reproject.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
@@ -43,7 +44,7 @@ std::unordered_set<VkCommandBuffer> g_openPass;  // command buffers inside a ren
 thread_local int t_ppDepth;  // inside realPp
 thread_local uint32_t t_ppFlags;
 thread_local VkCommandBuffer t_ppCb;
-thread_local int t_pendingEye;  // evaluate this eye at the PP's first canvas barrier
+thread_local int t_pendingSlot;  // slot + 1 to evaluate at the PP's first canvas barrier (0: none)
 // PP flags of the per-eye dispatch whose post-processing reads the canvas (learnt from its first barrier).
 volatile LONG g_ppFlags = -1;
 
@@ -269,7 +270,10 @@ bool ensureOutput(uint32_t w, uint32_t h) {
     return ok;
 }
 
-// ---- per-eye camera state ----
+// ---- per-view camera state ----
+// Slots of the per-view arrays: 0 the flat (desktop) main view (docs/re/R27_flat_upscaler.md s5), 1 and 2 the VR eyes.
+constexpr int kSlots = 3;
+const char* slotName(int slot) { return slot == 0 ? "flat" : slot == 1 ? "eye 1" : "eye 2"; }
 struct ProjRec {
     float appliedX = 0, appliedY = 0;  // jitter of the last projection handed to the engine for this eye
     uint32_t appliedFrame = 0;
@@ -283,9 +287,13 @@ struct EyeHistory {
     uint32_t frame = 0;
     core::Pose worldEye{};
     core::Tangents tan{};
+    // Flat: the camera in the engine's doubles, the RenderView caller (player / camera entity) and the render size.
+    double w2v[12] = {}, pos[3] = {};
+    void* ret = nullptr;
+    uint32_t w = 0, h = 0;
 };
-ProjRec g_proj[2];
-EyeHistory g_hist[2];
+ProjRec g_proj[kSlots];
+EyeHistory g_hist[kSlots];
 uint32_t g_frame;
 int64_t g_frameTime;
 float g_jx, g_jy;
@@ -299,7 +307,7 @@ float g_jitterScale = 1.0f;
 bool g_motionOn = true;
 float g_reportScale = 1.0f;
 int g_jitterLag;  // lab: upscale_jitter_lag reports the jitter of frame (current - lag)  // lab: upscale_report_scale (percent) scales the jitter reported to the upscaler  // lab: upscale_mv=0 clears the motion vectors instead of computing them  // lab: upscale_jitter_scale (percent) magnifies the rendered jitter for visibility checks
-LARGE_INTEGER g_lastEval[2];
+LARGE_INTEGER g_lastEval[kSlots];
 
 // Lab logging: the first 4 occurrences, then at most once a second.
 struct LogRate {
@@ -321,15 +329,52 @@ bool g_phaseBReady;  // option, symbols and opcode checks passed, hooks installe
 struct EyeSize {
     uint32_t rw = 0, rh = 0, ow = 0, oh = 0, frame = 0;
 };
-EyeSize g_size[2];
+EyeSize g_size[kSlots];
 // The post-processing dispatch of an eye in phase B (render thread): sizes, and whether the canvas got its
 // output-size image (upscaled or blitted) at the PP's first canvas barrier.
 struct PhaseB {
-    int eye = 0;
+    int slot = -1;
     uint32_t rw = 0, rh = 0, ow = 0, oh = 0;
     bool filled = false;
 };
 thread_local PhaseB t_phaseB;
+
+// ---- Flat (desktop) main view, slot 0 (docs/re/R27_flat_upscaler.md s3, s5) ----
+// Desktop mode only (no VR device): RenderView of the main view inside the player-views pass is classified at entry,
+// its MPix limiter call jitters gfx+0xc2c and reads the camera, its post-processing (by return address and dst) is
+// upscaled as slot 0, and end_view restores the projection.
+constexpr size_t kGfxProj = 0xc2c;       // P[16] floats RenderView copies into view+0x108 (rv_proj_copy)
+constexpr size_t kGfxW2V = 0xc70;        // world-to-view 3x4 doubles (rv_view_copy)
+constexpr size_t kGfxCamPos = 0xe48;     // camera position doubles (-R^T t)
+constexpr size_t kGfxCurrentDp = 0x1c78; // current drawport pointer
+constexpr size_t kViewDpCopy = 0x288;    // view command: copy of the current drawport, the PP command's dst
+bool g_flatReady;          // desktop mode, symbols, opcodes and hooks verified (installFlat)
+void** g_gfxGlobal;        // the engine gfx object (decoded at exec_eye_dp_load + 0x1c)
+uint8_t* g_mainDp;         // the main flat view drawport (decoded at render_maindp_store)
+void** g_backbufferTex;    // the backbuffer texture (decoded at gfx_backbuffer_get)
+void** g_viewCmdGlobal;    // the view command RenderView builds (decoded at rv_viewcmd_store)
+void *g_pvRet, *g_camRet;  // render_view return addresses: player view, camera entity (cutscenes)
+void *g_ppCmdRet, *g_fmvRet;  // pp_dispatch return addresses: the per-view PP command, the video/image PP
+int32_t *g_aaSamples, *g_maxRt, *g_forceCas;  // gfx_iAntiAliasingSamples, gfx_pixMaxRenderTargetSize, ren_bForceCAS (read only)
+// The camera of this frame's flat main view, read at its limiter call before the jitter.
+struct FlatCamera {
+    double w2v[12] = {}, pos[3] = {};
+    bool valid = false;
+} g_flatCam;
+// This frame's flat main view, recorded when its RenderView returns.
+struct FlatView {
+    void* view = nullptr;
+    void* dst = nullptr;  // view + 0x288: the PP command's dst
+    void* ret = nullptr;  // render_view return address (player or camera entity)
+    uint32_t frame = 0;
+} g_flat;
+bool g_flatArmed;            // the current flat main view's limiter call jittered it and read its camera
+volatile bool g_flatExec;    // from the flat main view's RenderView return to end_view (LOD bias)
+float g_projSave[16], g_projJittered[16];  // gfx+0xc2c before / after the jitter, restored after end_view
+bool g_projSaved;
+thread_local int t_inViews, t_viewCount, t_rvDepth;  // inside player_views, its view count, render_view nesting
+thread_local bool t_flatMain;                        // inside the flat main view's RenderView
+thread_local int t_flatBoxW, t_flatBoxH;             // phase A: the HDR box of the flat post-processing
 
 float worldScale() {
     auto* s = se4::build().at<float>(se4::gen::vr_fWorldScale);
@@ -365,36 +410,43 @@ void imageBarrier(VkImageMemoryBarrier& b, VkImage img, VkImageAspectFlags aspec
     b.subresourceRange = {aspect, 0, 1, 0, 1};
 }
 
-void evaluateEye(VkCommandBuffer cb, int eye) {
-    const int e = eye - 1;
+// Slot 0 is the flat main view (camera from the engine's matrices, sizes from the HDR box), 1/2 the VR eyes.
+void evaluateEye(VkCommandBuffer cb, int slot) {
+    const int e = slot;
+    const bool flat = slot == 0;
     PhaseB& pb = t_phaseB;
-    const bool scaled = pb.eye == eye;  // phase B: render pb.rw x pb.rh, output pb.ow x pb.oh
+    const bool scaled = pb.slot == slot;  // phase B: render pb.rw x pb.rh, output pb.ow x pb.oh
     if (!ensureResources() || (!scaled && !g_proj[e].valid)) return;
     core::Pose cur;
-    const bool posed = g_proj[e].valid && worldEye(eye, cur);
+    const bool posed = g_proj[e].valid && (flat ? g_flatCam.valid : worldEye(slot, cur));
     if (!posed) {
         g_hist[e].valid = false;
         if (!scaled) return;  // phase B still fills the canvas at the output size (blit below)
     }
-    const uint32_t W = scaled ? pb.rw : g_res.w, H = scaled ? pb.rh : g_res.h;  // rendered sub-rect at (0,0)
+    // Rendered sub-rect at (0,0): VR phase A the canvas; flat phase A the HDR box, which is smaller than the canvas
+    // with a letterbox or the view-size global (R27 s4.1).
+    const uint32_t W = scaled ? pb.rw : flat ? uint32_t(t_flatBoxW) : g_res.w, H = scaled ? pb.rh : flat ? uint32_t(t_flatBoxH) : g_res.h;
     const uint32_t OW = scaled ? pb.ow : W, OH = scaled ? pb.oh : H;
-    if (!ensureOutput(OW, OH)) return;
+    if (!W || !H || !ensureOutput(OW, OH)) return;
     EyeHistory& h = g_hist[e];
     bool reset = !h.valid || h.frame + 1 != g_frame;
+    if (flat && (h.ret != g_flat.ret || h.w != W || h.h != H)) reset = true;  // player <-> camera entity, box change
+    const float ws = flat ? 1.0f : worldScale();  // engine units per metre
     core::Pose c2p{};
     if (posed && !reset) {
-        c2p = core::currentToPrevious(h.worldEye, cur);
-        const float moved = std::sqrt(core::dot(c2p.p, c2p.p)) * worldScale();  // metres
+        if (flat) reset = !core::currentToPreviousW2V(h.w2v, h.pos, g_flatCam.w2v, g_flatCam.pos, c2p);
+        else c2p = core::currentToPrevious(h.worldEye, cur);
+        const float moved = std::sqrt(core::dot(c2p.p, c2p.p)) * ws;  // metres
         const float turned = 2 * std::acos(std::min(1.0f, std::fabs(c2p.q.w)));
         if (moved > 1.0f || turned > 0.6f) reset = true;  // teleport / respawn / camera cut
     }
     if (reset) c2p = {};
     if (posed) {
-        // Lab diagnostics: camera motion per frame and history resets, once a second per eye.
-        static float maxMove[2], maxTurn[2];
-        static int resets[2], evals[2];
-        static LARGE_INTEGER last[2];
-        const float moved = std::sqrt(core::dot(c2p.p, c2p.p)) * worldScale() * 1000.0f;  // mm
+        // Lab diagnostics: camera motion per frame and history resets, once a second per view.
+        static float maxMove[kSlots], maxTurn[kSlots];
+        static int resets[kSlots], evals[kSlots];
+        static LARGE_INTEGER last[kSlots];
+        const float moved = std::sqrt(core::dot(c2p.p, c2p.p)) * ws * 1000.0f;  // mm
         const float turned = 2 * std::acos(std::min(1.0f, std::fabs(c2p.q.w))) * 180.0f / core::Pi;
         maxMove[e] = std::max(maxMove[e], moved);
         maxTurn[e] = std::max(maxTurn[e], turned);
@@ -405,7 +457,7 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
         QueryPerformanceFrequency(&fq);
         if (t.QuadPart - last[e].QuadPart > fq.QuadPart) {
             if (last[e].QuadPart)
-                VRLOG("upint: eye %d %d evaluations, %d resets, camera motion max %.2f mm %.3f deg per frame", eye, evals[e], resets[e],
+                VRLOG("upint: %s %d evaluations, %d resets, camera motion max %.2f mm %.3f deg per frame", slotName(slot), evals[e], resets[e],
                       maxMove[e], maxTurn[e]);
             last[e] = t;
             maxMove[e] = maxTurn[e] = 0;
@@ -485,7 +537,7 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
         f.depthInverted = true;
         f.hdr = true;
         f.reset = reset;
-        ok = up::evaluate(eye, f);
+        ok = up::evaluate(slot, f);
     }
 
     // 4. copy back into the canvas at (0,0) and restore the engine's layouts. Phase B without an upscaled image blits
@@ -512,7 +564,8 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
                      VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
         vk.barrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, b);
         static LogRate rate;
-        if (logRate(rate)) VRLOG("upint: eye %d phase B blit fallback %ux%u -> %ux%u (%s)", eye, W, H, OW, OH, posed ? "upscaler failed" : "no eye pose");
+        if (logRate(rate))
+            VRLOG("upint: %s phase B blit fallback %ux%u -> %ux%u (%s)", slotName(slot), W, H, OW, OH, posed ? "upscaler failed" : "no eye pose");
     } else if (ok) {
         imageBarrier(b[0], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                      VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
@@ -548,26 +601,25 @@ void evaluateEye(VkCommandBuffer cb, int eye) {
     h.frame = g_frame;
     h.worldEye = cur;
     h.tan = ct;
-    if (g_trace > 0) VRLOG("upint: trace evaluate eye %d frame %u jitter %.3f %.3f", eye, g_frame, g_jx, g_jy);
+    if (flat) {
+        memcpy(h.w2v, g_flatCam.w2v, sizeof h.w2v);
+        memcpy(h.pos, g_flatCam.pos, sizeof h.pos);
+        h.ret = g_flat.ret;
+        h.w = W, h.h = H;
+    }
+    if (g_trace > 0) VRLOG("upint: trace evaluate %s frame %u jitter %.3f %.3f", slotName(slot), g_frame, g_jx, g_jy);
     static volatile LONG logged;
     if (InterlockedIncrement(&logged) <= 4) {
         if (scaled)
-            VRLOG("upint: eye %d %s %ux%u -> %ux%u (phase B, frame %u, jitter %.3f %.3f, reset %d)", eye, ok ? "evaluated" : "evaluate FAILED", W,
-                  H, OW, OH, g_frame, g_jx, g_jy, int(reset));
+            VRLOG("upint: %s %s %ux%u -> %ux%u (phase B, frame %u, jitter %.3f %.3f, reset %d)", slotName(slot), ok ? "evaluated" : "evaluate FAILED",
+                  W, H, OW, OH, g_frame, g_jx, g_jy, int(reset));
         else
-            VRLOG("upint: eye %d %s %ux%u (frame %u, jitter %.3f %.3f, reset %d)", eye, ok ? "evaluated" : "evaluate FAILED", W, H, g_frame,
+            VRLOG("upint: %s %s %ux%u (frame %u, jitter %.3f %.3f, reset %d)", slotName(slot), ok ? "evaluated" : "evaluate FAILED", W, H, g_frame,
                   g_jx, g_jy, int(reset));
     }
 }
 
 // ---- engine hooks ----
-void* hookedHdr(uint32_t a) {
-    g_hdrThread = GetCurrentThreadId();
-    void* r = realHdr(a);
-    g_hdrThread = 0;
-    return r;
-}
-
 VkCommandBuffer engineCommandBuffer(void* gfx) {
     if (!gfx) return VK_NULL_HANDLE;
     auto cb = *reinterpret_cast<VkCommandBuffer*>(static_cast<uint8_t*>(gfx) + kGfxCommandBuffer);
@@ -581,6 +633,28 @@ int deviceEye() {
     return devp && *devp ? *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(*devp) + 0x18) : -1;
 }
 
+uint8_t* gfxObject() { return g_gfxGlobal ? static_cast<uint8_t*>(*g_gfxGlobal) : nullptr; }
+
+// The flat main view is upscaled now (R27 s5 step 9): desktop mode with verified symbols, an upscaler running, and
+// no MSAA (the MSAA scene depth is not single-sample and the canvas is resolved inside the PP).
+bool flatEnabled() {
+    if (!g_flatReady) return false;
+    const int aa = g_aaSamples ? *g_aaSamples : 1;
+    const char* why = nullptr;
+    if (!g_evaluate) why = "upscaler disabled";
+    else if (up::active() == up::Kind::Off) why = "no upscaler backend";
+    else if (aa > 1) why = "MSAA";
+    // Logged once per change of state.
+    static PVOID volatile logged;
+    PVOID state = const_cast<char*>(why ? why : "on");
+    if (InterlockedExchangePointer(&logged, state) != state) {
+        if (!why) VRLOG("upint: flat on: %s, phase %s", up::name(), phaseB() ? "B" : "A");
+        else if (aa > 1) VRLOG("upint: flat off: MSAA x%d (gfx_iAntiAliasingSamples must be 1; the game renders stock)", aa);
+        else VRLOG("upint: flat off: %s", why);
+    }
+    return !why;
+}
+
 // ---- Texture LOD bias while upscaling (docs/re/R23_lod_bias.md) ----
 // A temporal upscaler needs a negative mip bias (log2(render/display) - 1: -1 for DLAA / FSR native AA) or fine
 // texture detail washes out. The engine's two scene texture binds load tex_fLODBias into the sampler state; both loads
@@ -592,16 +666,18 @@ using ExecFn = void(__cdecl*)(void* a1, void* a2, void* a3, void* a4);
 ExecFn realExecute;
 bool upscaling() { return g_evaluate && g_evaluateOn && g_jitterOn && up::active() != up::Kind::Off; }
 thread_local bool t_ppWroteEye;  // phase B: this view's post-processing wrote the eye drawport (skip the rescale)
-// The RenderView limiter call of this eye's view in this frame shrank its render size.
-bool armed(int eye) { return g_size[eye - 1].rw && g_size[eye - 1].frame == g_frame; }
+// The RenderView limiter call of this slot's view in this frame shrank its render size.
+bool armed(int slot) { return g_size[slot].rw && g_size[slot].frame == g_frame; }
 void __cdecl hookedExecute(void* a1, void* a2, void* a3, void* a4) {
     const int eye = deviceEye();
+    // VR eyes 1/2; the flat main view (slot 0) between its RenderView return and end_view.
+    const int slot = (eye == 1 || eye == 2) ? eye : (eye == -1 && g_flatExec) ? 0 : -1;
     t_ppWroteEye = false;
     if (g_extraBias) {
         float bias = 0.0f;
-        if ((eye == 1 || eye == 2) && upscaling()) {
+        if (slot >= 0 && upscaling()) {
             bias = g_lodBias;
-            if (phaseB() && armed(eye)) bias += up::mipBias(g_size[eye - 1].rw, g_size[eye - 1].ow);
+            if (phaseB() && armed(slot)) bias += up::mipBias(g_size[slot].rw, g_size[slot].ow);
         }
         *g_extraBias = bias;
     }
@@ -694,11 +770,189 @@ void boxSize(const void* dp, int& w, int& h) {
     const int32_t* b = reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(dp) + 0x10);
     w = b[2] - b[0], h = b[3] - b[1];
 }
+bool boxAtOrigin(const void* dp) {
+    const int32_t* b = reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(dp) + 0x10);
+    return b[0] == 0 && b[1] == 0;
+}
+
+// ---- Flat main view hooks (docs/re/R27_flat_upscaler.md s3.2, s5 steps 3-5) ----
+// player_views, render_view and end_view take at most four integer/pointer arguments (prologues read rcx, rdx, r8,
+// r9 only): they go through as full registers and the return register is passed back.
+using PassFn = uintptr_t(__cdecl*)(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4);
+PassFn realPlayerViews, realRenderView, realEndView;
+
+const char* rvKind(const void* ret) { return ret == g_pvRet ? "player" : ret == g_camRet ? "camera" : "other"; }
+
+// player_views(dp, pi+0xa8, views, size): the per-frame pass over the local views; views+0xc = their count.
+uintptr_t __cdecl hookedPlayerViews(uintptr_t dp, uintptr_t p2, uintptr_t views, uintptr_t size) {
+    const int savedCount = t_viewCount;
+    t_viewCount = views ? *reinterpret_cast<const int32_t*>(views + 0xc) : 0;
+    ++t_inViews;
+    const uintptr_t r = realPlayerViews(dp, p2, views, size);
+    --t_inViews;
+    t_viewCount = savedCount;
+    return r;
+}
+
+// Lab logging: the main drawport, its texture and the backbuffer texture (width/height at +0x20/+0x24), on change.
+void logMainDp() {
+    static void *lastTex, *lastBb;
+    static int lastW = -1, lastH = -1, lastViews = -1;
+    void* tex = *reinterpret_cast<void**>(g_mainDp);
+    void* bb = *g_backbufferTex;
+    int bw, bh;
+    boxSize(g_mainDp, bw, bh);
+    if (tex == lastTex && bb == lastBb && bw == lastW && bh == lastH && t_viewCount == lastViews) return;
+    lastTex = tex, lastBb = bb, lastW = bw, lastH = bh, lastViews = t_viewCount;
+    const uint32_t* bs = bb ? reinterpret_cast<const uint32_t*>(static_cast<uint8_t*>(bb) + 0x20) : nullptr;
+    VRLOG("upint: flat: main dp %p tex %p box %dx%d backbuffer %ux%u views %d%s", static_cast<void*>(g_mainDp), tex, bw, bh, bs ? bs[0] : 0u,
+          bs ? bs[1] : 0u, t_viewCount, tex == bb ? "" : " (main dp texture is not the backbuffer texture)");
+}
+
+// RenderView (R27 s3.2): the flat main view is the one inside the player-views pass without split screen whose
+// current drawport is on the main drawport's texture (the main dp, its view-size shrink or a camera letterbox).
+uintptr_t __cdecl hookedRenderView(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    void* ret = __builtin_return_address(0);  // MinHook enters by a jmp: the engine caller's return address
+    bool mainView = false;
+    void* cur = nullptr;
+    int cw = 0, ch = 0;
+    if (t_inViews && !t_rvDepth && deviceEye() == -1 && flatEnabled()) {
+        uint8_t* gfx = gfxObject();
+        cur = gfx ? *reinterpret_cast<void**>(gfx + kGfxCurrentDp) : nullptr;
+        void* tex = cur ? *static_cast<void**>(cur) : nullptr;
+        mainView = t_viewCount == 1 && tex && tex == *reinterpret_cast<void**>(g_mainDp);
+        if (cur) boxSize(cur, cw, ch);
+        logMainDp();
+    }
+    if (mainView) g_flatArmed = false;
+    const bool saved = t_flatMain;
+    t_flatMain = mainView;
+    ++t_rvDepth;
+    const uintptr_t r = realRenderView(a1, a2, a3, a4);
+    --t_rvDepth;
+    t_flatMain = saved;
+    if (mainView) {
+        void* view = g_flatArmed ? *g_viewCmdGlobal : nullptr;
+        if (view) {
+            if (g_flat.ret != ret && g_flat.ret)
+                VRLOG("upint: flat rv: caller %s -> %s (history reset)", rvKind(g_flat.ret), rvKind(ret));
+            g_flat = {view, static_cast<uint8_t*>(view) + kViewDpCopy, ret, g_frame};
+            g_flatExec = true;
+        } else g_flatArmed = false;
+        static LogRate rate;
+        if (logRate(rate))
+            VRLOG("upint: flat rv: %s cur %p box %dx%d%s", rvKind(ret), cur, cw, ch, g_flatArmed ? "" : " (not armed: stock view)");
+    }
+    return r;
+}
+
+// end_view pops the drawport stack, which writes back the gfx+0xc2c that RenderView's dp_push saved (the jittered
+// one), so the unjittered projection is restored only after it (R27 s1.5). It is restored only while gfx+0xc2c still
+// holds the matrix the jitter wrote; anything newer is the engine's.
+uintptr_t __cdecl hookedEndView(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    const uintptr_t r = realEndView(a1, a2, a3, a4);
+    uint8_t* gfx = gfxObject();
+    if (g_projSaved && !t_rvDepth && gfx) {
+        float* P = reinterpret_cast<float*>(gfx + kGfxProj);
+        if (!memcmp(P, g_projJittered, sizeof g_projJittered)) {
+            memcpy(P, g_projSave, sizeof g_projSave);
+            g_projSaved = false;
+        } else {
+            static LogRate rate;
+            if (logRate(rate)) VRLOG("upint: flat: end_view: gfx+0xc2c changed since the jitter, not restored here");
+        }
+    }
+    g_flatExec = false;
+    return r;
+}
+
+// The flat main view's limiter call inside RenderView (R27 s5 step 4): render size, then camera and jitter.
+void flatLimiter(int w, int h, int* ow, int* oh) {
+    uint8_t* gfx = gfxObject();
+    void* cur = gfx ? *reinterpret_cast<void**>(gfx + kGfxCurrentDp) : nullptr;
+    if (!cur) return;
+    float* P = reinterpret_cast<float*>(gfx + kGfxProj);
+    static LogRate rate, prate;
+    if (!core::isPerspective(P)) {
+        // Orthographic camera: the engine's own render size and no jitter (stock view).
+        if (logRate(prate)) VRLOG("upint: flat limiter: P[14] %.3f is not a perspective projection - stock view", P[14]);
+        return;
+    }
+    if (g_projSaved) {
+        static LogRate missed;
+        if (logRate(missed)) VRLOG("upint: flat: the previous projection was not restored at end_view (dropped)");
+        g_projSaved = false;
+    }
+    const int engineW = *ow, engineH = *oh;
+    uint32_t tw = uint32_t(w), th = uint32_t(h);
+    if (phaseB()) up::renderSize(uint32_t(w), uint32_t(h), tw, th);  // phase B: out / ratio
+    *ow = int(tw), *oh = int(th);  // phase A: the identity (the user's pixel ratio and MPix limit are bypassed)
+    int bw, bh, rbw, rbh;
+    boxSize(cur, bw, bh);
+    core::flatRenderBox(w, h, *ow, *oh, bw, bh, g_forceCas && *g_forceCas, g_maxRt ? *g_maxRt : 0, rbw, rbh);
+    if (bw <= 0 || bh <= 0 || rbw <= 0 || rbh <= 0) {
+        if (logRate(prate)) VRLOG("upint: flat limiter: empty box %dx%d / render box %dx%d - stock view", bw, bh, rbw, rbh);
+        *ow = engineW, *oh = engineH;
+        return;
+    }
+    if (logRate(rate)) VRLOG("upint: flat limiter: tex %dx%d -> %dx%d render box %dx%d out %dx%d (engine %dx%d)", w, h, *ow, *oh, rbw, rbh, bw, bh, engineW, engineH);
+
+    // Camera (R27 s2), read before the jitter.
+    ProjRec& p = g_proj[0];
+    p.tan = core::projectionTangents(P);
+    const bool nf = core::projectionNearFar(P, p.n, p.f);
+    p.rw = uint32_t(rbw), p.rh = uint32_t(rbh);
+    p.valid = nf && std::isfinite(p.tan.l) && std::isfinite(p.tan.r) && std::isfinite(p.tan.u) && std::isfinite(p.tan.d);
+    memcpy(g_flatCam.w2v, gfx + kGfxW2V, sizeof g_flatCam.w2v);
+    double e48[3], rt[3];
+    memcpy(e48, gfx + kGfxCamPos, sizeof e48);
+    core::viewPosition(g_flatCam.w2v, rt);
+    const double diff = std::sqrt((e48[0] - rt[0]) * (e48[0] - rt[0]) + (e48[1] - rt[1]) * (e48[1] - rt[1]) + (e48[2] - rt[2]) * (e48[2] - rt[2]));
+    // The engine's double camera position when it matches -R^T t (it does for the player, camera entity and precache
+    // views); otherwise the one derived from the matrix.
+    memcpy(g_flatCam.pos, diff < 0.01 ? e48 : rt, sizeof g_flatCam.pos);
+    core::Pose pose;
+    g_flatCam.valid = core::viewPoseFromW2V(g_flatCam.w2v, pose) && std::isfinite(diff);
+    static LogRate poseRate;
+    if (logRate(poseRate))
+        VRLOG("upint: flat pose: pos %.2f %.2f %.2f (e48 vs -Rt diff %.4g) tan %.4f %.4f %.4f %.4f n %.3f f %.0f%s", g_flatCam.pos[0], g_flatCam.pos[1],
+              g_flatCam.pos[2], diff, p.tan.l, p.tan.r, p.tan.u, p.tan.d, p.n, p.f, g_flatCam.valid && p.valid ? "" : " (INVALID)");
+
+    // Jitter (R27 s1.5): one Halton step per flat main view, scaled for the render box; restored after end_view.
+    ++g_frame;
+    g_jitW = uint32_t(rbw), g_jitH = uint32_t(rbh), g_jitOut = uint32_t(bw);
+    if (g_jitterOn) up::jitter(g_frame, g_jitW, g_jitOut, g_jx, g_jy);
+    else g_jx = g_jy = 0;
+    p.appliedX = g_jx, p.appliedY = g_jy, p.appliedFrame = g_frame;
+    if (g_jx || g_jy) {
+        const float p2 = P[2], p6 = P[6];
+        memcpy(g_projSave, P, sizeof g_projSave);
+        core::jitterProjectionMatrix(P, g_jx * g_jitterScale, g_jy * g_jitterScale, g_jitW, g_jitH);
+        memcpy(g_projJittered, P, sizeof g_projJittered);
+        g_projSaved = true;
+        static LogRate jrate;
+        if (logRate(jrate)) VRLOG("upint: flat jitter %.3f %.3f P2 %.6f->%.6f P6 %.6f->%.6f", g_jx, g_jy, p2, P[2], p6, P[6]);
+    }
+    g_size[0] = {uint32_t(rbw), uint32_t(rbh), uint32_t(bw), uint32_t(bh), g_frame};
+    g_flatArmed = true;
+}
 
 float __cdecl hookedLimiter(int w, int h, int* ow, int* oh) {
     const float r = realLimiter(w, h, ow, oh);  // RenderView scales the shadow maps with it below 1: kept as is
     void* ret = __builtin_return_address(0);    // MinHook enters by a jmp: the engine caller's return address
-    if ((ret != g_rvRet && ret != g_hdrRet) || !phaseB()) return r;
+    if (ret != g_rvRet && ret != g_hdrRet) return r;
+    if (ret == g_rvRet && t_flatMain) {  // desktop: the flat main view's RenderView (no VR device)
+        flatLimiter(w, h, ow, oh);
+        return r;
+    }
+    if (ret == g_hdrRet && !phaseB() && deviceEye() == -1 && flatEnabled()) {
+        // Flat phase A: the main view renders its full box, so its HDR canvas is not limited either (R27 s4.3).
+        static LogRate rate;
+        if (logRate(rate)) VRLOG("upint: hdr limiter: identity %dx%d (engine %dx%d, flat)", w, h, *ow, *oh);
+        *ow = w, *oh = h;
+        return r;
+    }
+    if (!phaseB()) return r;
     if (ret == g_hdrRet) {
         // The HDR canvas never shrinks below its input (the eye size of slot 0x068), for every view: a smaller limit
         // would re-create it every frame (R25 s2.2).
@@ -721,9 +975,33 @@ float __cdecl hookedLimiter(int w, int h, int* ow, int* oh) {
     up::renderSize(uint32_t(w), uint32_t(h), rw, rh);  // replaces the user's MPix limit and pixel ratio for the eye
     if (logRate(rate))
         VRLOG("upint: limiter: eye %d %dx%d -> %ux%u (ret %p, engine %dx%d, projection %ux%u)", eye, w, h, rw, rh, ret, *ow, *oh,
-              g_proj[eye - 1].rw, g_proj[eye - 1].rh);
+              g_proj[eye].rw, g_proj[eye].rh);
     *ow = int(rw), *oh = int(rh);
-    g_size[eye - 1] = {rw, rh, uint32_t(w), uint32_t(h), g_frame};
+    g_size[eye] = {rw, rh, uint32_t(w), uint32_t(h), g_frame};
+    return r;
+}
+
+void* hookedHdr(uint32_t a) {
+    g_hdrThread = GetCurrentThreadId();
+    // Flat phase B (R27 s4.2): RenderView made the render-size 3D canvas current, and hdr_targets would size the HDR
+    // canvas from it. It sees the main drawport (RenderView's saved dp) instead, so the canvas stays at the backbuffer
+    // size and post-processing can run at the output size.
+    void** cur = nullptr;
+    void* saved = nullptr;
+    if (t_flatMain && g_flatArmed && phaseB()) {
+        uint8_t* gfx = gfxObject();
+        void** c = gfx ? reinterpret_cast<void**>(gfx + kGfxCurrentDp) : nullptr;
+        void* mainDp = *g_eyeDpGlobal;
+        if (c && *c == g_canvas3dDp && mainDp) {
+            cur = c, saved = *c;
+            *c = mainDp;
+            static LogRate rate;
+            if (logRate(rate)) VRLOG("upint: flat hdr: current dp 3D canvas %p -> saved dp %p", saved, mainDp);
+        }
+    }
+    void* r = realHdr(a);
+    if (cur) *cur = saved;
+    g_hdrThread = 0;
     return r;
 }
 
@@ -734,7 +1012,11 @@ bool skipRescale(const void* src, const void* dst, const char* what) {
     t_ppWroteEye = false;  // one rescale per post-processed eye view
     const LONG n = InterlockedIncrement(&g_skips);
     static LogRate rate;
-    if (logRate(rate)) VRLOG("upint: rescale skipped (%s) eye %d (%ld skips, %ld phase B eye dispatches)", what, deviceEye(), n, g_eyePp);
+    const int eye = deviceEye();
+    if (logRate(rate)) {
+        if (eye == -1) VRLOG("upint: rescale skipped (flat, %s) (%ld skips, %ld phase B dispatches)", what, n, g_eyePp);
+        else VRLOG("upint: rescale skipped (%s) eye %d (%ld skips, %ld phase B eye dispatches)", what, eye, n, g_eyePp);
+    }
     return true;
 }
 uintptr_t __cdecl hookedRescale(void* src, void* dst, uintptr_t mode) { return skipRescale(src, dst, "pass") ? 0 : realRescale(src, dst, mode); }
@@ -742,17 +1024,18 @@ uintptr_t __cdecl hookedCopy(void* gfx, void* src, uintptr_t a, void* dst, uintp
     return skipRescale(src, dst, "copy") ? 0 : realCopy(gfx, src, a, dst, b, filtered);
 }
 
-// Phase B post-processing of an eye (R25 s5 step 6): the HDR canvas box becomes the eye size, the upscaler fills it at
-// the PP's first canvas barrier (onImageBarrier -> evaluateEye), and the PP writes the eye drawport instead of the 3D
-// canvas. Any mismatch runs the stock PP: the engine then rescales the render-size image spatially.
-void ppPhaseB(void* gfx, void* dst, uint32_t flags, void* p4, int eye, VkCommandBuffer cb) {
-    const EyeSize s = g_size[eye - 1];
+// Phase B post-processing of a view (R25 s5 step 6; flat: R27 s4.2): the HDR canvas box becomes the output size, the
+// upscaler fills it at the PP's first canvas barrier (onImageBarrier -> evaluateEye), and the PP writes the saved
+// drawport (the eye, or the flat main dp) instead of the 3D canvas. Any mismatch runs the stock PP: the engine then
+// rescales the render-size image spatially.
+void ppPhaseB(void* gfx, void* dst, uint32_t flags, void* p4, int slot, VkCommandBuffer cb) {
+    const EyeSize s = g_size[slot];
     void* eyeDp = *g_eyeDpGlobal;
     int rw, rh, ow = 0, oh = 0, bw = 0, bh = 0;
     boxSize(dst, rw, rh);  // view+0x288, the copy of the 3D canvas drawport
     if (eyeDp) boxSize(eyeDp, ow, oh);
     const char* why = nullptr;
-    if (!armed(eye)) why = "eye not armed";
+    if (!armed(slot)) why = "eye not armed";
     else if (uint32_t(rw) != s.rw || uint32_t(rh) != s.rh) why = "render size";
     else if (!eyeDp || uint32_t(ow) != s.ow || uint32_t(oh) != s.oh) why = "eye drawport";
     else if (g_color.w < uint32_t(ow) || g_color.h < uint32_t(oh)) why = "canvas smaller than the eye";
@@ -768,27 +1051,27 @@ void ppPhaseB(void* gfx, void* dst, uint32_t flags, void* p4, int eye, VkCommand
     }
     static LogRate rate;
     if (logRate(rate))
-        VRLOG("upint: pp: eye %d dst %dx%d eye %dx%d canvas %ux%u box %dx%d -> %s%s%s", eye, rw, rh, ow, oh, g_color.w, g_color.h, bw, bh,
+        VRLOG("upint: pp: %s dst %dx%d eye %dx%d canvas %ux%u box %dx%d -> %s%s%s", slotName(slot), rw, rh, ow, oh, g_color.w, g_color.h, bw, bh,
               why ? "stock(" : "phaseB", why ? why : "", why ? ")" : "");
     ++t_ppDepth;
     t_ppFlags = flags;
     t_ppCb = cb;
-    t_pendingEye = 0;
+    t_pendingSlot = 0;
     if (why) {
         realPp(gfx, dst, flags, p4);
         --t_ppDepth;
         return;
     }
-    t_phaseB = {eye, uint32_t(rw), uint32_t(rh), uint32_t(ow), uint32_t(oh), false};
-    t_pendingEye = eye;
+    t_phaseB = {slot, uint32_t(rw), uint32_t(rh), uint32_t(ow), uint32_t(oh), false};
+    t_pendingSlot = slot + 1;
     realPp(gfx, eyeDp, flags, p4);
     const bool filled = t_phaseB.filled;
-    if (t_pendingEye) {
+    if (t_pendingSlot) {
         static volatile LONG logged;
-        if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: eye %d: no canvas barrier seen in post-processing", t_pendingEye);
+        if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: %s: no canvas barrier seen in post-processing", slotName(t_pendingSlot - 1));
     }
     t_phaseB = {};
-    t_pendingEye = 0;
+    t_pendingSlot = 0;
     hdrSubrect(1, rw, rh);  // the engine's box again for the rest of the view
     --t_ppDepth;
     if (filled) {
@@ -799,32 +1082,63 @@ void ppPhaseB(void* gfx, void* dst, uint32_t flags, void* p4, int eye, VkCommand
     // The canvas never got its output-size image, so the eye drawport holds a partial one. Post-process again the stock
     // way into the 3D canvas; the engine's rescale then overwrites the eye drawport.
     static LogRate redo;
-    if (logRate(redo)) VRLOG("upint: eye %d phase B canvas not filled - stock post-processing again", eye);
+    if (logRate(redo)) VRLOG("upint: %s phase B canvas not filled - stock post-processing again", slotName(slot));
     realPp(gfx, dst, flags, p4);
+}
+
+// The flat main view's post-processing (R27 s3.2): the PP command's call (ppcmd_pp_call + 5) with dst = view + 0x288
+// of this frame's recorded main view. The video/image PP (fmv_pp_call) and other callers are never upscaled. Phase A
+// evaluates the HDR box (t_flatBoxW/H), which must start at (0,0) and fit the canvas.
+bool flatPp(void* ret, void* dst, uint32_t flags, bool want) {
+    if (ret != g_ppCmdRet) {
+        static LogRate rate;
+        if (logRate(rate)) VRLOG("upint: pp: fmv/other ret %p skipped (%s)", ret, ret == g_fmvRet ? "fmv" : "other");
+        return false;
+    }
+    int bw = 0, bh = 0;
+    if (g_hdrCanvasDp) boxSize(g_hdrCanvasDp, bw, bh);
+    const bool origin = g_hdrCanvasDp && boxAtOrigin(g_hdrCanvasDp);
+    const char* why = nullptr;
+    if (dst != g_flat.dst) why = "dst";
+    else if (!g_flatArmed || g_flat.frame != g_frame) why = "view not armed";
+    else if (!want) why = (flags & 1) ? "flags" : LONG(flags) != g_ppFlags ? "not the canvas dispatch" : "upscaler idle";
+    else if (!phaseB() && (!origin || bw <= 0 || bh <= 0 || uint32_t(bw) > g_color.w || uint32_t(bh) > g_color.h)) why = "hdr box";
+    static LogRate rate;
+    if (logRate(rate))
+        VRLOG("upint: pp: flat ret %p dst %p (expect %p) flags 0x%x hdr box %dx%d canvas %ux%u -> %s%s%s", ret, dst, g_flat.dst, flags, bw, bh,
+              g_color.w, g_color.h, why ? "stock(" : "evaluate", why ? why : "", why ? ")" : "");
+    t_flatBoxW = bw, t_flatBoxH = bh;
+    return !why;
 }
 
 void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
     if (g_extraBias) *g_extraBias = 0.0f;  // post-processing and what follows in the view are unbiased
+    void* ret = __builtin_return_address(0);  // MinHook enters by a jmp: the engine caller's return address
     const int eye = deviceEye();
     const VkCommandBuffer cb = engineCommandBuffer(gfx);
     // The scene pass is usually still open here (the engine ends passes lazily): the work is recorded at the PP's
     // own first canvas barrier instead (onImageBarrier), where no pass can be open.
     const bool want = g_evaluate && g_evaluateOn && up::active() != up::Kind::Off && (flags & 1) == 0 && LONG(flags) == g_ppFlags &&
-                      (eye == 1 || eye == 2) && !t_ppDepth && cb && player_vr::localVrd();
-    if (want && phaseB()) {
-        ppPhaseB(gfx, dst, flags, p4, eye, cb);
+                      !t_ppDepth && cb;
+    int slot = -1;  // the view this dispatch post-processes: VR eye 1/2, or the flat main view 0
+    if (eye == 1 || eye == 2) {
+        if (want && player_vr::localVrd()) slot = eye;
+    } else if (eye == -1 && !t_ppDepth && flatEnabled() && flatPp(ret, dst, flags, want))
+        slot = 0;
+    if (slot >= 0 && phaseB()) {
+        ppPhaseB(gfx, dst, flags, p4, slot, cb);
         return;
     }
     ++t_ppDepth;
     t_ppFlags = flags;
     t_ppCb = cb;
-    t_pendingEye = want ? eye : 0;
+    t_pendingSlot = slot >= 0 ? slot + 1 : 0;
     realPp(gfx, dst, flags, p4);
-    if (t_pendingEye) {
+    if (t_pendingSlot) {
         static volatile LONG logged;
-        if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: eye %d: no canvas barrier seen in post-processing", t_pendingEye);
+        if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: %s: no canvas barrier seen in post-processing", slotName(t_pendingSlot - 1));
     }
-    t_pendingEye = 0;
+    t_pendingSlot = 0;
     --t_ppDepth;
 }
 
@@ -874,6 +1188,74 @@ bool installPhaseB() {
     g_phaseBReady = true;
     VRLOG("upint: phase B ready (3D canvas dp %p, eye dp global %p, limiter returns %p / %p)", static_cast<void*>(g_canvas3dDp),
           static_cast<void*>(g_eyeDpGlobal), g_rvRet, g_hdrRet);
+    return true;
+}
+
+// R27 s5 step 1 (desktop mode only): symbols, call sites, gfx offsets and the globals decoded from verified
+// instructions. Any failure leaves flat upscaling off and the game renders stock.
+bool installFlat() {
+    const auto& b = se4::build();
+    auto* rv = b.at<uint8_t>(se4::gen::render_view);
+    auto* views = b.at<uint8_t>(se4::gen::player_views);
+    auto* endView = b.at<uint8_t>(se4::gen::end_view);
+    auto* mainStore = b.at<uint8_t>(se4::gen::render_maindp_store);  // movups [main dp], xmm3
+    auto* bbGet = b.at<uint8_t>(se4::gen::gfx_backbuffer_get);       // mov rax, [backbuffer texture]; ret
+    auto* viewStore = b.at<uint8_t>(se4::gen::rv_viewcmd_store);     // mov [view command], rcx
+    auto* viewCopy = b.at<uint8_t>(se4::gen::rv_view_copy);          // movsd xmm0, [rax+0xc70]
+    auto* projCopy = b.at<uint8_t>(se4::gen::rv_proj_copy);          // movups xmm0, [rax+0xc2c]
+    auto* ppCall = b.at<uint8_t>(se4::gen::ppcmd_pp_call);
+    auto* pvCall = b.at<uint8_t>(se4::gen::pv_rv_call);
+    auto* camCall = b.at<uint8_t>(se4::gen::cam_rv_call);
+    auto* fmvCall = b.at<uint8_t>(se4::gen::fmv_pp_call);
+    auto* lim = b.at<uint8_t>(se4::gen::mpix_limiter);
+    auto* rvCall = b.at<uint8_t>(se4::gen::rv_limiter_call);
+    auto* hdrCall = b.at<uint8_t>(se4::gen::hdr_limiter_call);
+    auto* pp = b.at<uint8_t>(se4::gen::pp_dispatch);
+    auto* eyeLoad = b.at<uint8_t>(se4::gen::exec_eye_dp_load);  // +0x1c: mov [gfx], rdi (R25 s7 "global: gfx")
+    auto* canvas = b.at<uint8_t>(se4::gen::hdr_canvas);
+    static const uint8_t kProjCopy[7] = {0x0F, 0x10, 0x80, 0x2C, 0x0C, 0x00, 0x00};
+    static const uint8_t kViewCopy[8] = {0xF2, 0x0F, 0x10, 0x80, 0x70, 0x0C, 0x00, 0x00};
+    const char* why = nullptr;
+    if (!rv || !views || !endView || !mainStore || !bbGet || !viewStore || !viewCopy || !projCopy || !ppCall || !pvCall || !camCall || !lim ||
+        !rvCall || !hdrCall || !pp || !eyeLoad || !canvas)
+        why = "symbols missing in this build";
+    else if (mainStore[0] != 0x0F || mainStore[1] != 0x11 || mainStore[2] != 0x1D) why = "main drawport store does not match";
+    else if (bbGet[0] != 0x48 || bbGet[1] != 0x8B || bbGet[2] != 0x05 || bbGet[7] != 0xC3) why = "backbuffer getter does not match";
+    else if (viewStore[0] != 0x48 || viewStore[1] != 0x89 || viewStore[2] != 0x0D) why = "view command store does not match";
+    else if (memcmp(projCopy, kProjCopy, sizeof kProjCopy)) why = "RenderView projection copy (gfx+0xc2c) does not match";
+    else if (memcmp(viewCopy, kViewCopy, sizeof kViewCopy)) why = "RenderView world-to-view copy (gfx+0xc70) does not match";
+    else if (!callsTo(ppCall, pp)) why = "PP command call does not match";
+    else if (!callsTo(pvCall, rv) || !callsTo(camCall, rv)) why = "render_view call sites do not match";
+    else if (!callsTo(pvCall + 0x40, endView)) why = "player view end_view call does not match";
+    else if (!callsTo(rvCall, lim) || !callsTo(hdrCall, lim)) why = "limiter call sites do not match";
+    else if (eyeLoad[0x1c] != 0x48 || eyeLoad[0x1d] != 0x89 || eyeLoad[0x1e] != 0x3D) why = "gfx global store does not match";
+    if (why) return VRLOG("upint: flat off: %s", why), false;
+    g_mainDp = mainStore + 7 + rel32(mainStore + 3);
+    g_backbufferTex = reinterpret_cast<void**>(bbGet + 7 + rel32(bbGet + 3));
+    g_viewCmdGlobal = reinterpret_cast<void**>(viewStore + 7 + rel32(viewStore + 3));
+    g_gfxGlobal = reinterpret_cast<void**>(eyeLoad + 0x1c + 7 + rel32(eyeLoad + 0x1f));
+    g_pvRet = pvCall + 5, g_camRet = camCall + 5, g_ppCmdRet = ppCall + 5;
+    g_fmvRet = fmvCall && callsTo(fmvCall, pp) ? fmvCall + 5 : nullptr;  // logging only
+    g_rvRet = rvCall + 5, g_hdrRet = hdrCall + 5;
+    g_hdrCanvasDp = canvas;
+    g_aaSamples = b.at<int32_t>(se4::gen::gfx_iAntiAliasingSamples);
+    g_maxRt = b.at<int32_t>(se4::gen::gfx_pixMaxRenderTargetSize);
+    g_forceCas = b.at<int32_t>(se4::gen::ren_bForceCAS);
+    auto hook = [](void* at, void* fn, void** real) { return MH_CreateHook(at, fn, real) == MH_OK && MH_EnableHook(at) == MH_OK; };
+    // The limiter is already hooked when phase B is installed.
+    const MH_STATUS limState = realLimiter ? MH_EnableHook(lim) : MH_UNKNOWN;
+    bool ok = realLimiter ? (limState == MH_OK || limState == MH_ERROR_ENABLED)
+                          : hook(lim, reinterpret_cast<void*>(hookedLimiter), reinterpret_cast<void**>(&realLimiter));
+    ok = ok && hook(views, reinterpret_cast<void*>(hookedPlayerViews), reinterpret_cast<void**>(&realPlayerViews)) &&
+         hook(endView, reinterpret_cast<void*>(hookedEndView), reinterpret_cast<void**>(&realEndView)) &&
+         hook(rv, reinterpret_cast<void*>(hookedRenderView), reinterpret_cast<void**>(&realRenderView));
+    if (!ok) return VRLOG("upint: flat off: hooks FAILED"), false;
+    if (!g_aaSamples) VRLOG("upint: flat: gfx_iAntiAliasingSamples is not in this build - MSAA is not checked");
+    g_flatReady = true;
+    VRLOG("upint: flat ready (main dp %p, backbuffer texture global %p, view command global %p, gfx global %p, MSAA %d; render_view returns "
+          "player %p camera %p, PP command return %p, video PP return %p)",
+          static_cast<void*>(g_mainDp), static_cast<void*>(g_backbufferTex), static_cast<void*>(g_viewCmdGlobal), static_cast<void*>(g_gfxGlobal),
+          g_aaSamples ? *g_aaSamples : -1, g_pvRet, g_camRet, g_ppCmdRet, g_fmvRet);
     return true;
 }
 }  // namespace
@@ -987,18 +1369,19 @@ void onEndPass(VkCommandBuffer cb) {
 
 void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkImageLayout) {
     if (!t_ppDepth || image != g_color.image || cb != t_ppCb) return;
-    if (t_pendingEye) {
-        const int eye = t_pendingEye;
-        t_pendingEye = 0;
+    if (t_pendingSlot) {
+        const int slot = t_pendingSlot - 1;
+        t_pendingSlot = 0;
         bool open;
         {
             std::lock_guard<std::mutex> l(g_passLock);
             open = g_openPass.count(cb) != 0;
         }
-        if (from == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !open) evaluateEye(cb, eye);
+        if (from == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !open) evaluateEye(cb, slot);
         else {
             static volatile LONG logged;
-            if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: eye %d not evaluated (canvas layout %d, pass open %d)", eye, int(from), int(open));
+            if (InterlockedIncrement(&logged) <= 3)
+                VRLOG("upint: %s not evaluated (canvas layout %d, pass open %d)", slotName(slot), int(from), int(open));
         }
         return;
     }
@@ -1035,7 +1418,7 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
         if (g_evaluate && g_jitterOn && up::active() != up::Kind::Off && g_jitW) up::jitter(g_frame, g_jitW, g_jitOut, g_jx, g_jy);
         else g_jx = g_jy = 0;
     }
-    ProjRec& p = g_proj[eye - 1];
+    ProjRec& p = g_proj[eye];
     p.appliedX = g_jx, p.appliedY = g_jy, p.appliedFrame = g_frame;
     p.rw = g_jitW, p.rh = g_jitH;
     p.tan = core::tangents(fov);
@@ -1079,6 +1462,8 @@ bool install() {
     if (!se4::options::get("upscale_phase_b", 1)) VRLOG("upint: phase B off: upscale_phase_b=0");
     else if (!quality) VRLOG("upint: phase B off: upscale_quality 0 (native AA at the eye size)");
     else installPhaseB();
+    // Desktop play: the flat main view as slot 0 (docs/re/R27_flat_upscaler.md). Never in VR mode.
+    if (flatWanted()) installFlat();
     if (g_evaluate) installLodBias();
     return true;
 }

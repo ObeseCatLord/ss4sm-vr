@@ -1032,5 +1032,85 @@
   "src": "0x1401dac25",
   "len": 24,
   "_note": "mov eax,[rip+vr_bEnableComfortLocomotion] (8B 05 disp32, disp at +2) in the VR view's comfort-mask pass 0x1401dabf0 (called from 0x1401dcbe0): 0 off, 1 on anchor turns (viewer+0x120 set by 0x140441e80/0x140441e40), 2 always; retarget to a mod int to control the turn vignette (R26 s3.4)"
+ },
+ "player_projection": {
+  "src": "0x140478a80",
+  "len": 32,
+  "_note": "float* (player, float out[16], float aspect in xmm2): device && device+0x18 -> device slot 0x70(out, eye, ren_fNearClipPlaneDistance, ren_fFarClipPlaneDistance); else persp_fov(out, clamp(fov 0x140477aa0,5,135)*fovmul 0x140477e60*pi/180, aspect, near, far). Main caller player_view_render; also a HUD wrapper 0x140478b60 and 0x140480020 (R13 s4.6, R27 s1)"
+ },
+ "persp_fov": {
+  "src": "0x141111460",
+  "len": 24,
+  "_note": "float* (float out[16], float fovRad, float aspect, float n, float f): h = n*tan(fov/2)/(16/9) (horizontal FOV at 16:9), frustum(out, -h*aspect, h*aspect, h, -h, n, f) 0x141111290; row-major GL clip (m2,m6 offsets, m10,m11 depth, m14 = -1); 16 callers (R27 s1)"
+ },
+ "player_view_render": {
+  "src": "0x14048dad0",
+  "len": 48,
+  "_note": "player view (player vt+0xe18 0x14048fc20 -> here): projection player_projection(aspect = current dp box) -> gfx+0xdf0/+0xc2c, placement vt+0xdf8 -> world-to-view doubles gfx+0xc70 (3x4), camera position gfx+0xe48, prev view gfx+0xd30; render_view at pv_rv_call; execute_view via 0x14004dca0 (flat) / 0x140ac9440 (VR); end_view (R13 s4.1, R27 s1-2)"
+ },
+ "pv_rv_call": {
+  "src": "0x14048f5ab",
+  "len": 24,
+  "_note": "call site E8 -> render_view inside player_view_render; return address +5 identifies the player's main view (R27 s3)"
+ },
+ "camera_render_view": {
+  "src": "0x14062d810",
+  "len": 48,
+  "_note": "camera entity render (vt+0x620; reached through 0x14062d7d0 from the player dispatcher 0x14048fad0 / viewer 0x140415200): inline persp_fov(cam vt+0x658 rad, dp aspect, vt+0x670, vt+0x678) or ortho 0x141111ac0 when cam+0x90 == 1; letterboxes into a local drawport when cam vt+0x648 aspect differs > 11 percent; writes gfx+0xdf0/+0xc2c/+0xc70/+0xd30/+0xe48 like the player (R27 s1)"
+ },
+ "cam_rv_call": {
+  "src": "0x14062f16c",
+  "len": 32,
+  "_note": "call site E8 -> render_view inside camera_render_view (cutscene / camera views); return address +5 (R27 s1, s3)"
+ },
+ "player_views": {
+  "src": "0x14005be70",
+  "len": 24,
+  "_note": "(dp, pi+0xa8, views, int size[2]) local player views inside project_render: views+0xc = count; > 1 = split screen (sub-drawports pushed); each view object vt+0x28 (0x140415200) renders its player or camera (R11 s3, R27 s3)"
+ },
+ "render_maindp_store": {
+  "src": "0x140053d6b",
+  "len": 24,
+  "_note": "movups [rip+main view drawport], xmm3 in project_render: decode the main flat view drawport global (Sam4 0x1422737e0, 0x38 bytes; copy of the backbuffer drawport, shrunk by gfx_fAspectRatio / view size); gfx+0x1c78 points at it during the player views (R27 s3)"
+ },
+ "gfx_backbuffer_get": {
+  "src": "0x140b5b220",
+  "len": 32,
+  "_note": "tex* (gfx): mov rax,[rip+backbuffer texture]; ret. The main loop renders into the default drawport of this texture; hdr_targets' limiter input when no device (R27 s3-4)"
+ },
+ "rv_viewcmd_store": {
+  "src": "0x140bc2791",
+  "len": 24,
+  "_note": "mov [rip+current view command], rcx inside render_view: decode the view command global (Sam4 0x1422d4d18); the post-processing command passes view+0x288 as the PP destination (R27 s3)"
+ },
+ "rv_view_copy": {
+  "src": "0x140bc280c",
+  "len": 24,
+  "_note": "movsd xmm0,[rax+0xc70] inside render_view: world-to-view 3x4 doubles copied into the view command (+0xa8 floats); offset check for gfx+0xc70 (R27 s2)"
+ },
+ "rv_proj_copy": {
+  "src": "0x140bc295a",
+  "len": 24,
+  "_note": "movups xmm0,[rax+0xc2c] inside render_view: logical projection (16 floats, row-major) copied into the view command +0x108, after rv_limiter_call; the flat jitter is written to gfx+0xc2c between the two (R27 s1)"
+ },
+ "ppcmd_pp_call": {
+  "src": "0x140ed33b1",
+  "len": 24,
+  "_note": "call site E8 -> pp_dispatch inside the post-processing command 0x140ed32a0 (rdx = view + 0x288); return address +5 separates per-view PP from fmv_pp_call (R27 s3)"
+ },
+ "fmv_pp_call": {
+  "src": "0x140151f66",
+  "len": 24,
+  "_note": "call site E8 -> pp_dispatch (flags 0x1e) inside 0x140151c20: video / full-screen image drawn into the HDR canvas and post-processed; never a 3D view (R25 s1, R27 s3)"
+ },
+ "gfx_proj_derive": {
+  "src": "0x140b603d0",
+  "len": 24,
+  "_note": "void (gfx, float proj[16], double* view3x4): adjusts the projection in place for the current drawport box inside its texture, the mirror clip plane (gfx+0x2b8 bit 0) and depth remap z' = -0.5 z + 0.5 w when proj_revz_read's global is set (reversed Z) (R27 s2)"
+ },
+ "proj_revz_read": {
+  "src": "0x140b604a1",
+  "len": 24,
+  "_note": "cmp [rip+reversed depth flag], 0 inside gfx_proj_derive: decode the depth-convention global (Sam4 0x14224cdc8, .data value 1 = reversed Z) (R27 s2)"
  }
 }

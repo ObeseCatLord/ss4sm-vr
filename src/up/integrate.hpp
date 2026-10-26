@@ -23,8 +23,12 @@
 
 namespace upint {
 bool install();
-// Desktop play (VR not enabled) with an upscaler selected: the flat main view is upscaled as "eye 1"
-// (docs/re/R27_flat_upscaler.md).
+// Desktop play (VR not enabled) with an upscaler selected (docs/re/R27_flat_upscaler.md): the flat main view is
+// upscaled as slot 0. RenderView of the main view (inside the player-views pass, current drawport on the main
+// drawport's texture) is classified at entry; its MPix limiter call returns the identity (phase A) or out/ratio
+// (phase B), reads the camera (gfx+0xc70 doubles, P at gfx+0xc2c) and jitters gfx+0xc2c, which end_view restores;
+// its PP (ppcmd_pp_call + 5, dst = view + 0x288) evaluates the HDR box. Off with MSAA; every flat branch requires no
+// VR device.
 bool flatWanted();
 // Phase B is on now (two-pass stereo, an upscaler running at a ratio > 1, symbols and opcodes verified).
 bool phaseB();
