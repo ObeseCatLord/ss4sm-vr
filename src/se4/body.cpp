@@ -2,7 +2,7 @@
 // CPlayerVRData, registered last on the player model's animation queue; after the native blend it re-aims
 // both arms so each Left/RightWeapon bone lands on that hand's controller placement (the replicated pose
 // for remote players). Legs, hips and spine stay native in this first version; the head follows the
-// native look. Option body_ik (default 0 until verified on the headset).
+// native look. Option body_ik (default 1; lab-verified 2026-10-26 on remote VR players, arms and fingers).
 #include "se4/body.hpp"
 #include "core/body_ik.hpp"
 #include "se4/build.hpp"
@@ -328,7 +328,7 @@ void onVrdTick(void** vrd) {
 }
 
 bool install() {
-    if (!se4::options::get("body_ik", 0)) return false;
+    if (!se4::options::get("body_ik", 1)) return false;
     const auto& b = se4::build();
     mhRegister = reinterpret_cast<RegisterFn>(b.at<void>(se4::gen::mh_register));
     auto* baseCtor = b.at<uint8_t>(se4::gen::mh_base_ctor);

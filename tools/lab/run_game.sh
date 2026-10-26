@@ -26,7 +26,7 @@ unset WAYLAND_DISPLAY SteamAppId SteamGameId SteamClientLaunch
 export DISPLAY=$D
 mkdir -p "$LAB/prefix/$NAME"
 export STEAM_COMPAT_DATA_PATH="$LAB/prefix/$NAME" STEAM_COMPAT_CLIENT_INSTALL_PATH=$HOME/.local/share/Steam
-export WINEDLLOVERRIDES="msimg32=n,b" PROTON_LOG=0 WINEDEBUG=-all
+export WINEDLLOVERRIDES="msimg32=$([ "${NOMOD:-0}" = 1 ] && echo b || echo n,b)" PROTON_LOG=0 WINEDEBUG=-all  # NOMOD=1: the mod is not loaded
 if [ "${VR:-1}" = 1 ]; then export SS4SMVR_VR=1; else unset SS4SMVR_VR; XR=0; fi
 export XDG_RUNTIME_DIR=/tmp/ss4vr-xr   # the lab Monado's private IPC directory (tools/lab/monado.sh)
 if [ "${XR:-1}" = 1 ]; then
