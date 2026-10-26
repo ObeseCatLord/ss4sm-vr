@@ -431,10 +431,13 @@
     - Desktop-guard peers (the dedicated server) sweep remote VR players' melee. The server counted 12 knife hits from
       the VR client (`MELEE=1 mp_lab.sh`).
     - Final single-player regression on the current build (single pass default): **SS4 21/21, SM 21/21**.
+  - Polish (2026-10-26, docs/MULTIPLAYER_TEST.md §3):
+    - Remote VR players' finger curls are relayed and shown on their third-person hands.
+    - Body IK is on by default, desktop peers included.
+    - The server-side facing follows native turns (checked in SS4 and SM).
+    - The engine's "Code guard was activated" log line also appears with the mod not loaded (`run_game.sh NOMOD=1`)
+      and in the user's own Steam logs. It is a vanilla warning under Proton.
   - Still open:
-    - Using the relayed grip and trigger data on remote bodies (the arms follow the native replicated controller
-      placements).
-    - Checking the server-side heading after a turn.
     - The internet test (docs/MULTIPLAYER_TEST.md §2: a remote server with gbe_fork `custom_broadcasts.txt` or a
       direct IP, and port forwarding).
 - **Performance (docs/PERF.md, 2026-10-26):**

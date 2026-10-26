@@ -53,13 +53,23 @@ Goal: check that VR works against a remote server, not only on localhost.
    (`/home/obesecatlord/Backup/Downloads/SmartSteamEmu147.7z`, in its own empty directory), or OnlineFix as a compromise.
    Never use the user's Steam install or saves.
 
-## 3. Open
-- Native VR turning (R26) works in the lab, in single player and in native mode. It is needed in multiplayer, where
-  the client always sends `ClientActionVR`. The anchor yaw is folded into the head that the server receives.
-  Checking the server-side heading after a turn is still open.
-- Remote bodies do not use the relayed grip and trigger data yet. Their arms follow the engine's replicated controller
-  placements.
-- **Melee in multiplayer works (lab, 2026-10-26).** With `MELEE=1 tools/lab/mp_lab.sh ss4 …`, the dedicated server
-  spawns enemies in front of the VR player (`lab_lua_server`). The VR client swings the knife, and the server, as the
-  damage authority, logged 12 knife hits from the replicated hand. The client's own sweep logged 8, which do not
-  count.
+## 3. Body, fingers and facing (lab, 2026-10-26)
+`BODY=1 tools/lab/mp_lab.sh ss4|sm …` checks:
+- **Facing.** The VR client turns about 180° with the right stick (native turning). The server's own view of the VR
+  player's look changes accordingly: SS4 −2.36 → 0.79 rad, SM −2.95 → 0.11 rad. This is the mod's server log
+  `net: server look of VR player`.
+- **Arms and fingers.** The server keeps the desktop player 1.6 m in front of the VR player. The VR player holds its
+  arms out with the left hand in a fist, and the desktop client's capture shows the VR player's arms following the
+  controllers. The empty left hand closes with the grip and opens on release, in both games.
+- **How:**
+  - finger curls travel in the pose packet (`FingersValid`);
+  - the third-person finger bones bend toward the palm, using a palm normal derived from the rest skeleton;
+  - a hand holding a weapon keeps the native grip animation;
+  - `body_ik` is now on by default, on desktop-guard peers too.
+
+Note: the lab's "dedicated" server still spawns its own idle player ("playerid 16" in the logs; a third Sam stands at
+the spawn). The engine's dedicated mode (`gam_bDedicatedServer`) does not stop that when the game is started through
+`gamStartServer`/`gamStart`. It does not affect the tests.
+
+## 4. Open
+- The internet test (§2), which needs a second machine.
