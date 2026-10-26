@@ -139,7 +139,8 @@
   "hud_layout_map": "0x1400dd1a0",
   "gfx_safe_area": "0x140b99060",
   "vr_loco_in_air": "0x14043aae0",
-  "gfx_text": "0x140b953c0"
+  "gfx_text": "0x140b953c0",
+  "execute_view": "0x140bc0d20"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -416,7 +417,8 @@
   "hud_layout_map": "0x1400dd270",
   "gfx_safe_area": "0x140b99710",
   "vr_loco_in_air": "0x14043ac60",
-  "gfx_text": "0x140b95a30"
+  "gfx_text": "0x140b95a30",
+  "execute_view": "0x140bc1410"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",

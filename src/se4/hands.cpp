@@ -2,6 +2,7 @@
 #include "core/math.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
+#include "se4/names.hpp"
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
 #include "se4/arms.hpp"
@@ -39,6 +40,8 @@ constexpr size_t kFlags = 0x168;            // en_ulWeaponFlags
 constexpr uint32_t kGripped = 0x20;         // WF_GRIPPED_WITH_TWO_HANDS
 constexpr uint32_t kCheckedInitialFire = 0x800;
 constexpr size_t kTwoHanded = 0x1b4;        // wp_bTwoHanded
+constexpr float kForegripAhead = 0.25f;     // m: the support hand's place ahead of the main hand along the barrel
+constexpr float kForegripReach = 0.15f;     // m: how near it the off hand must be to grip
 constexpr size_t kSnapDistance = 0x214;     // wp_fHandSnapMinDistance (< 0: the player's VR params default)
 constexpr float kDefaultSnap = 0.2f;        // stand-in for CPlayerVRParams+0xcc (unreached)
 
@@ -154,9 +157,19 @@ bool decideTwoHandable(uint8_t* weapon, int mainRole) {
     float ws = 1.0f;
     if (auto* sc = se4::build().at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) ws = *sc;
     const float dist = std::sqrt(core::dot(d, d)) * ws;
-    st = dist >= 0.12f ? 1 : 2;
+    // Two-handable by weapon (lab 2026-10-26: the grip attachment's distance does not tell, e.g. the assault rifle's sits
+    // 0.11 m from the hand, the knife reports 0.50, the minigun has none; wp_bTwoHanded is 0 on every SS4 weapon).
+    const char* file = se4::names::weaponFile(weapon);
+    static const char* const oneHanded[] = {"Pistol", "Revolver", "Knife", "Machete", "GenericMelee", "Gadget", "Hands", "Injector",
+                                            "Sign", "Melee"};
+    bool one = false;
+    for (const char* k : oneHanded) one |= file && strstr(file, k) != nullptr;
+    st = file ? (one ? 2 : 1) : (dist >= 0.12f ? 1 : 2);
     const core::Vec3 local = core::rotate(core::inverse(core::normalize({hand7[0], hand7[1], hand7[2], hand7[3]})), d) * ws;
-    VRLOG("hands: weapon %p foregrip %.2f m from the hand (hand frame %.3f %.3f %.3f): %s", weapon, dist, local.x, local.y, local.z,
+    const char* base = file ? strrchr(file, '/') : nullptr;
+    uint8_t* params = at<uint8_t*>(weapon, kParams);
+    VRLOG("hands: weapon %p (%s, native two-handed %d) foregrip %.2f m from the hand (hand frame %.3f %.3f %.3f): %s", weapon,
+          base ? base + 1 : file ? file : "?", params ? at<int32_t>(params, kTwoHanded) : -1, dist, local.x, local.y, local.z,
           st == 1 ? "two-handable" : "one-handed");
     return st == 1;
 }
@@ -196,7 +209,10 @@ void hookedStep(uint8_t* weapon, void* arg) {
     const bool rightHand = params && at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0;
     const bool native = params && at<int32_t>(params, kTwoHanded) != 0;
     // Only a right-hand weapon takes the left hand as its support hand (a left weapon is the dual-wield one).
-    const bool twoHand = params && (native || (g_gripAll && rightHand && decideTwoHandable(weapon, 0)));
+    // The off hand must be free: no second weapon in it (dual wielding).
+    const size_t leftOff = se4::build().off(se4::gen::CPlayerActorPuppetEntity_en_henCurrentLeftHandWeapon);
+    const bool offFree = !player || !leftOff || at<int32_t>(player, leftOff) == 0;
+    const bool twoHand = params && offFree && (native || (g_gripAll && rightHand && decideTwoHandable(weapon, 0)));
     {
         const int offXr = rightHand ? 0 : 1;
         const auto& hs = xr::input().hand(offXr);
@@ -218,12 +234,22 @@ void hookedStep(uint8_t* weapon, void* arg) {
     if (o.weapon != weapon) o = {}, o.weapon = weapon;
 
     // Reach: the off controller against the weapon's grip attachment, with the weapon's snap distance.
-    float grip7[7] = {}, off7[7] = {};
+    float grip7[7] = {}, off7[7] = {}, main7[7] = {};
     barrelPlacement(weapon, grip7, barrelCtx(), g_gripIdent, 0, 0, 1);
     player_vr::controllerWorld(player_vr::localVrd(), offRole, off7);
-    const core::Vec3 d{grip7[4] - off7[4], grip7[5] - off7[5], grip7[6] - off7[6]};
+    player_vr::controllerWorld(player_vr::localVrd(), right ? 0 : 1, main7);
+    // The foregrip for reach: 25 cm ahead of the main hand along the barrel (-Z). The models' LeftHandGripEffector is
+    // not a foregrip in VR (lab 2026-10-26: 0.10 m to the side of the hand on the assault rifle, missing on several
+    // weapons); the native two-hand aim only needs the two hands.
+    float wsc = 1.0f;
+    if (auto* sc = se4::build().at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) wsc = *sc;
+    const core::Vec3 gripP = core::Vec3{main7[4], main7[5], main7[6]} +
+                             core::rotate(core::normalize({main7[0], main7[1], main7[2], main7[3]}), {0, 0, -kForegripAhead / wsc});
+    (void)grip7;
+    const core::Vec3 d = gripP - core::Vec3{off7[4], off7[5], off7[6]};
     float snap = at<float>(params, kSnapDistance);
     if (!(snap >= 0.0f && snap < 2.0f)) snap = kDefaultSnap;
+    snap = std::fmax(snap, kForegripReach / wsc);
     o.inReach = core::dot(d, d) <= snap * snap;
     {
         static ULONGLONG last;

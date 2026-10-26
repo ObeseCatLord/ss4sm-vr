@@ -3,11 +3,13 @@
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
+#include "se4/patch.hpp"
 #include "se4/player_vr.hpp"
 #include "up/upscaler.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
 #include <MinHook.h>
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -481,7 +483,75 @@ VkCommandBuffer engineCommandBuffer(void* gfx) {
     return cb;
 }
 
+// ---- Texture LOD bias while upscaling (docs/re/R23_lod_bias.md) ----
+// A temporal upscaler needs a negative mip bias (log2(render/display) - 1: -1 for DLAA / FSR native AA) or fine
+// texture detail washes out. The engine's two scene texture binds load tex_fLODBias into the sampler state; both loads
+// jump to stubs that add g_extraBias (the cvar itself is never written). g_extraBias is set only while an eye's scene
+// executes with the upscaler evaluating, and cleared before its post-processing.
+volatile float* g_extraBias;
+float g_lodBias = -1.0f;  // option upscale_lod_bias (hundredths), default -100
+using ExecFn = void(__cdecl*)(void* a1, void* a2, void* a3, void* a4);
+ExecFn realExecute;
+bool upscaling() { return g_evaluate && g_evaluateOn && g_jitterOn && up::active() != up::Kind::Off; }
+void __cdecl hookedExecute(void* a1, void* a2, void* a3, void* a4) {
+    void** devp = se4::build().at<void*>(se4::gen::vr_device_global);
+    const int eye = devp && *devp ? *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(*devp) + 0x18) : -1;
+    if (g_extraBias) *g_extraBias = (eye == 1 || eye == 2) && upscaling() ? g_lodBias : 0.0f;
+    realExecute(a1, a2, a3, a4);
+    if (g_extraBias) *g_extraBias = 0.0f;
+}
+bool installLodBias() {
+    const auto& b = se4::build();
+    auto* tex = b.at<uint8_t>(se4::gen::tex_fLODBias);
+    void* exec = b.at<void>(se4::gen::execute_view);
+    if (!tex || !exec || g_lodBias == 0.0f) return false;
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(b.base);
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(b.base + dos->e_lfanew);
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    uint8_t* lo = reinterpret_cast<uint8_t*>(b.base + sec->VirtualAddress);
+    uint8_t* hi = lo + sec->Misc.VirtualSize - 16;
+    // site 1: 74 05 0F 57 F6 EB 08 | F3 0F 10 35 <rel32 tex> (xmm6); site 2: 48 8D 53 0A | F3 0F 10 05 <rel32 tex> (xmm0)
+    uint8_t *site[2] = {}, n[2] = {};
+    const uint8_t pre1[7] = {0x74, 0x05, 0x0F, 0x57, 0xF6, 0xEB, 0x08}, pre2[4] = {0x48, 0x8D, 0x53, 0x0A};
+    for (uint8_t* p = lo; p < hi; ++p) {
+        if (p[0] != 0xF3 || p[1] != 0x0F || p[2] != 0x10 || (p[3] != 0x35 && p[3] != 0x05)) continue;
+        if (p + 8 + *reinterpret_cast<int32_t*>(p + 4) != tex) continue;
+        if (p[3] == 0x35 && p - 7 >= lo && !memcmp(p - 7, pre1, 7)) site[0] = p, ++n[0];
+        if (p[3] == 0x05 && p - 4 >= lo && !memcmp(p - 4, pre2, 4)) site[1] = p, ++n[1];
+    }
+    if (n[0] != 1 || n[1] != 1) return VRLOG("upint: texture LOD bias loads found %d/%d, expected 1/1 - no bias", n[0], n[1]), false;
+    uint8_t* blk = se4::patch::allocNear(site[0], 64);
+    if (!blk || std::llabs(blk - site[1]) > 0x7fff0000ll) return VRLOG("upint: no stub memory for the LOD bias"), false;
+    g_extraBias = reinterpret_cast<volatile float*>(blk + 56);
+    *g_extraBias = 0.0f;
+    for (int i = 0; i < 2; ++i) {
+        uint8_t* st = blk + i * 24;
+        const uint8_t reg = site[i][3];  // 0x35 xmm6 / 0x05 xmm0
+        auto rel = [](uint8_t* from, const void* to) { return int32_t(static_cast<const uint8_t*>(to) - from); };
+        uint8_t code[21] = {0xF3, 0x0F, 0x10, reg, 0, 0, 0, 0, 0xF3, 0x0F, 0x58, reg, 0, 0, 0, 0, 0xE9, 0, 0, 0, 0};
+        int32_t r = rel(st + 8, tex);
+        memcpy(code + 4, &r, 4);
+        r = rel(st + 16, const_cast<float*>(g_extraBias));
+        memcpy(code + 12, &r, 4);
+        r = rel(st + 21, site[i] + 8);
+        memcpy(code + 17, &r, 4);
+        DWORD old;
+        VirtualProtect(st, sizeof code, PAGE_EXECUTE_READWRITE, &old);
+        memcpy(st, code, sizeof code);
+        uint8_t expect[8], patch[8] = {0xE9, 0, 0, 0, 0, 0x90, 0x90, 0x90};
+        memcpy(expect, site[i], 8);
+        r = rel(site[i] + 5, st);
+        memcpy(patch + 1, &r, 4);
+        if (!se4::patch::writeCode(site[i], expect, patch, 8)) return VRLOG("upint: LOD bias patch FAILED at %p", static_cast<void*>(site[i])), false;
+    }
+    if (MH_CreateHook(exec, reinterpret_cast<void*>(hookedExecute), reinterpret_cast<void**>(&realExecute)) != MH_OK || MH_EnableHook(exec) != MH_OK)
+        return VRLOG("upint: execute-view hook FAILED - LOD bias stays 0"), false;
+    VRLOG("upint: texture LOD bias %+.2f while upscaling (binds %p, %p)", g_lodBias, static_cast<void*>(site[0]), static_cast<void*>(site[1]));
+    return true;
+}
+
 void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
+    if (g_extraBias) *g_extraBias = 0.0f;  // post-processing and what follows in the view are unbiased
     void** devp = se4::build().at<void*>(se4::gen::vr_device_global);
     const int eye = devp && *devp ? *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(*devp) + 0x18) : -1;
     const VkCommandBuffer cb = engineCommandBuffer(gfx);
@@ -643,6 +713,7 @@ bool install() {
     if (!g_evaluate) return false;
     g_jitterOn = se4::options::get("upscale_jitter", 1) != 0;
     g_evaluateOn = se4::options::get("upscale_evaluate", 1) != 0;
+    g_lodBias = se4::options::get("upscale_lod_bias", -100) / 100.0f;
     g_jitterScale = se4::options::get("upscale_jitter_scale", 100) / 100.0f;
     g_motionOn = se4::options::get("upscale_mv", 1) != 0;
     g_reportScale = se4::options::get("upscale_report_scale", 100) / 100.0f;
@@ -664,6 +735,7 @@ bool install() {
         return false;
     }
     VRLOG("upint: upscaler hooks on the HDR canvas and post-processing dispatch");
+    if (g_evaluate) installLodBias();
     return true;
 }
 }  // namespace upint

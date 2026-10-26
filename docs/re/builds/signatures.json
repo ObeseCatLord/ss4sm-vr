@@ -847,5 +847,15 @@
   "src": "0x140b953c0",
   "len": 48,
   "_note": "gfx text draw (gfx, CString*, xyz*, colour): the HUD flush draws each queued text record with it (R18 s7.2); diagnostic hook only"
+ },
+ "execute_view": {
+  "src": "0x140bc0d20",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140bc1410",
+   "len": 48
+  },
+  "_note": "execute a view's render commands (the eye's scene, then its post-processing): the upscaler LOD bias window (R23 s4.2)"
  }
 }

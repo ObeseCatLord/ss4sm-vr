@@ -2,6 +2,7 @@
 #include "core/vr_controls.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
+#include "se4/names.hpp"
 #include "se4/options.hpp"
 #include "se4/patch.hpp"
 #include "se4/player_vr.hpp"
@@ -81,36 +82,11 @@ bool isLocalVr(uint8_t* player) {
     const unsigned off = player_vr::vrdOffset();
     return player && off && player_vr::localVrd() && at<void*>(player, off) == player_vr::localVrd();
 }
-// A readable ASCII string at p (3+ characters), else null.
-const char* ascii(const void* p) {
-    MEMORY_BASIC_INFORMATION mbi;
-    if (!p || reinterpret_cast<uintptr_t>(p) < 0x10000 || !VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
-        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) || !(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)))
-        return nullptr;
-    const char* s = static_cast<const char*>(p);
-    const size_t room = static_cast<const uint8_t*>(mbi.BaseAddress) + mbi.RegionSize - static_cast<const uint8_t*>(p);
-    for (size_t i = 0; i < room && i < 260; ++i) {
-        if (!s[i]) return i >= 3 ? s : nullptr;
-        if (s[i] < 0x20 || s[i] > 0x7e) return nullptr;
-    }
-    return nullptr;
-}
-// The artifact weapon: its params resource file (en_pwpWeaponParams -> rs_prf +0x10 -> rf_strAssetFN +0x18, R17 s2) is
-// SirianInjector.ep (SS4) / SirianInjector_SM.ep (SM). The string is read at the field or one pointer away.
+// The artifact weapon: its params resource file is SirianInjector.ep (SS4) / SirianInjector_SM.ep (SM) (R17 s2).
 bool isArtifact(uint8_t* weapon) {
-    uint8_t* params = at<uint8_t*>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_pwpWeaponParams));
-    uint8_t* prf = params ? at<uint8_t*>(params, 0x10) : nullptr;
-    if (!prf || reinterpret_cast<uintptr_t>(prf) < 0x10000) return false;
-    void* field = at<void*>(prf, 0x18);
-    const char* fn = ascii(field);
-    if (!fn) {
-        MEMORY_BASIC_INFORMATION mbi;
-        if (field && reinterpret_cast<uintptr_t>(field) > 0x10000 && VirtualQuery(field, &mbi, sizeof mbi) && mbi.State == MEM_COMMIT &&
-            (mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY)) && !(mbi.Protect & PAGE_GUARD))
-            fn = ascii(*static_cast<void**>(field));
-    }
+    const char* fn = se4::names::weaponFile(weapon);
     static uint8_t* logged;
-    if (logged != params) logged = params, VRLOG("artifact: generic weapon animation \"Use\" with weapon params '%s'", fn ? fn : "?");
+    if (logged != weapon) logged = weapon, VRLOG("artifact: generic weapon animation \"Use\" with weapon params '%s'", fn ? fn : "?");
     return fn && strstr(fn, "SirianInjector");
 }
 
