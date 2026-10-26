@@ -371,5 +371,14 @@
   - vehicle grab steering in the lab: SS4 06_Countryside has 4 vehicles (Harvester first); the lab Lua can teleport
     the player there, but MountRide(v, "Default") does not board and the use button did not either; Wait() in lab
     chunks only resumes once;
-  - HUD near the lens edges; upscaler quality; multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
+  - upscaler quality; multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
+- **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
+  redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by
+  `hud_inset_scale`, centred on the eye's optical axis; world-projected points are untouched. Lab: health/armour/ammo
+  moved in from the image edges.
+- **Riding crash guard (R21 s3):** boarding a vehicle drops the player's physics body and the native VR locomotion
+  handlers read it unchecked (lab crash at 0x14043aaf5 after MountRide). The vrd tick hook now clears the VR
+  game-movement bit (vrd+0x2bc 0x10) while a VR player rides or has no body and restores it afterwards, for every VR
+  player. Not yet exercised: the lab could not board a vehicle (06_Countryside vehicles locked; the 06b ATV is
+  spawned later by the level script).
 - Priority (user, 2026-10-25): finish and test everything in SS4 first, then bring SM to parity.

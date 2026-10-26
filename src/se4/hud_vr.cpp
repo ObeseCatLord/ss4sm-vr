@@ -287,6 +287,79 @@ bool spotsInWheelRender() {
     return true;
 }
 
+// ---- HUD inset (R22): the flat HUD laid out inside the central part of each eye ----
+// Every screen-anchored element maps its 640x480 layout through the HUD layout map, which takes its margins and
+// unit from the engine safe area. While a flat-HUD element renders in an eye pass, the map's safe-area calls are
+// redirected so the layout uses hud_inset percent of the eye (sizes scaled by hud_inset_scale), centred on the eye's
+// optical axis. World-projected points (crosshair, markers' projections, damage numbers) do not use the map.
+struct Inset {
+    bool on = false;
+    float s = 0.7f, k = 0.7f, px = 0.5f, py = 0.5f;
+} g_in;
+using SafeFn = float*(__cdecl*)(float* out);
+SafeFn realSafeArea, realSafePos;
+int g_insetPct = 70, g_insetScalePct = 70;
+bool g_insetAxis = true;
+void* g_objHolderRender;
+float* __cdecl layoutMargins(float* o) {
+    realSafeArea(o);
+    if (g_in.on) o[0] *= g_in.s, o[1] *= g_in.s;
+    return o;
+}
+float* __cdecl layoutUnit(float* o) {
+    realSafeArea(o);
+    if (g_in.on) o[1] *= g_in.k;  // only .y is read at the size sites
+    return o;
+}
+float* __cdecl layoutPos(float* o) {
+    realSafePos(o);
+    if (g_in.on && g_in.s < 0.999f) o[0] = g_in.px, o[1] = g_in.py;
+    return o;
+}
+bool installInset() {
+    const auto& b = se4::build();
+    auto* map = b.at<uint8_t>(se4::gen::hud_layout_map);
+    auto* safe = b.at<uint8_t>(se4::gen::gfx_safe_area);
+    if (!map || !safe || g_insetPct >= 100) return false;
+    auto target = [](uint8_t* site) { return site[0] == 0xE8 ? site + 5 + *reinterpret_cast<int32_t*>(site + 1) : nullptr; };
+    uint8_t* margins = map + 0xd3;
+    uint8_t* pos = map + 0x144;
+    if (target(margins) != safe || !target(pos)) return VRLOG("hud_vr: HUD layout safe-area calls not found - no inset"), false;
+    realSafeArea = reinterpret_cast<SafeFn>(safe);
+    realSafePos = reinterpret_cast<SafeFn>(target(pos));
+    uint8_t* sizes[8];
+    int n = 0;
+    for (uint8_t* p = map - 0xa00; p < map + 0x400 && n < 8; ++p)
+        if (p != margins && target(p) == safe) sizes[n++] = p;
+    auto retarget = [](uint8_t* site, void* fn) {
+        void* jump = se4::patch::nearJump(site, fn);
+        return jump && se4::patch::retargetCall(site, jump);
+    };
+    if (!retarget(margins, reinterpret_cast<void*>(layoutMargins)) || !retarget(pos, reinterpret_cast<void*>(layoutPos)))
+        return VRLOG("hud_vr: HUD inset retarget FAILED"), false;
+    if (n == 7)
+        for (int i = 0; i < n; ++i) retarget(sizes[i], reinterpret_cast<void*>(layoutUnit));
+    VRLOG("hud_vr: flat HUD inset to %d%% of each eye (sizes %d%%, %d size sites%s)", g_insetPct, g_insetScalePct, n,
+          n == 7 ? "" : " - sizes left native");
+    return true;
+}
+// Turn the inset on for this element's render (flat 2D eye pass, screen-anchored elements only).
+bool insetOn(void** vt) {
+    const int eye = vrdev::currentEye();
+    if (!realSafeArea || g_mode != 0 || (eye != 1 && eye != 2) || !vt) return false;
+    if (vt[0x80 / 8] == g_crosshairRender || vt[0x80 / 8] == g_objHolderRender) return false;
+    g_in.s = g_insetPct / 100.0f, g_in.k = g_insetScalePct / 100.0f, g_in.px = g_in.py = 0.5f;
+    float l, r, u, d;
+    if (g_insetAxis && g_in.s < 0.999f && vrdev::eyeFov(eye, l, r, u, d)) {
+        const float tl = std::tan(l), tr = std::tan(r), tu = std::tan(u), td = std::tan(d);
+        const float xc = -tl / (tr - tl), yc = tu / (tu - td);  // the optical axis as fractions of W, H (y down)
+        g_in.px = std::fmin(1.0f, std::fmax(0.0f, (xc - g_in.s / 2) / (1 - g_in.s)));
+        g_in.py = std::fmin(1.0f, std::fmax(0.0f, (yc - g_in.s / 2) / (1 - g_in.s)));
+    }
+    g_in.on = true;
+    return true;
+}
+
 // One crosshair element draw: in the flat HUD natively (projected per eye by src/se4/crosshair.cpp), on the 3D path
 // at the target's depth or in 2D.
 void drawCrosshair(void** ctx, uint8_t* e, float dist) {
@@ -320,7 +393,9 @@ void hookedElement(void** ctx, uint8_t* e) {
     uint8_t* params = e ? *reinterpret_cast<uint8_t**>(e + kParams) : nullptr;
     uint8_t* dp = ctx[9] ? *static_cast<uint8_t**>(ctx[9]) : nullptr;
     if (!vt || !params || !dp || !ctx[7] || !*static_cast<int32_t*>(ctx[7]) || !ctx[8]) {
+        const bool inset = !(ctx[7] && *static_cast<int32_t*>(ctx[7])) && insetOn(vt);  // the flat 2D branch
         realElement(ctx, e);
+        if (inset) g_in.on = false;
         return;
     }
     if (g_all2d && vt[0x80 / 8] != g_wheelRender) return crosshair2d(ctx, e, dp);
@@ -404,6 +479,11 @@ bool install() {
     if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
     g_spotDx = float(se4::options::get("wheel_spot_dx", 220));
     if (g_sd.text) spotsInWheelRender();
+    g_insetPct = se4::options::get("hud_inset", 70);
+    g_insetScalePct = se4::options::get("hud_inset_scale", g_insetPct);
+    g_insetAxis = se4::options::get("hud_inset_axis", 1) != 0;
+    g_objHolderRender = b.at<void>(se4::gen::object_holder_render);
+    installInset();
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))
         for (int i = 0; i < 0x100 && !g_gfx; ++i)

@@ -812,5 +812,25 @@
    "len": 48
   },
   "_note": "HUD text centred on xy, same arguments as hud_text (R18 s7)"
+ },
+ "hud_layout_map": {
+  "src": "0x1400dd1a0",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1400dd270",
+   "len": 64
+  },
+  "_note": "HUD layout map: virtual 640x480 point -> canvas pixels with the engine safe area (R22)"
+ },
+ "gfx_safe_area": {
+  "src": "0x140b99060",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140b99710",
+   "len": 48
+  },
+  "_note": "float* (float out[2]): the engine safe area (clamped 0.85..1) (R22 s0)"
  }
 }
