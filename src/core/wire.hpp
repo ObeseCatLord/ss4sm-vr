@@ -13,7 +13,7 @@ constexpr uint16_t kMagic = 0x5653;  // "SV"
 constexpr uint8_t kVersion = 1;
 
 enum PoseFlags : uint8_t {
-    HeadValid = 1, LeftValid = 2, RightValid = 4, LeftGrip = 8, RightGrip = 16, Crouch = 32,
+    HeadValid = 1, LeftValid = 2, RightValid = 4, LeftGrip = 8, RightGrip = 16, Crouch = 32, FingersValid = 64,
 };
 
 #pragma pack(push, 1)
@@ -26,7 +26,8 @@ struct PosePacket {
     uint32_t rot[3]{};         // smallest-three quaternions, 10 bits per component + 2-bit index
     uint8_t trigger[2]{}, grip[2]{};  // 0..255
     uint8_t weaponSlot[2]{};   // native weapon id per hand (presentation only)
-    uint8_t reserved[20]{};
+    uint8_t curl[2][5]{};      // finger curls 0..255 per hand (0 left, 1 right): thumb, index, middle, ring, pinky (FingersValid)
+    uint8_t reserved[10]{};
 };
 #pragma pack(pop)
 static_assert(sizeof(PosePacket) == 64, "PosePacket must stay 64 bytes");
@@ -91,6 +92,14 @@ inline PosePacket encode(uint32_t seq, const Pose poses[3], uint8_t flags, const
         p.grip[h] = uint8_t(std::lround(std::fmin(std::fmax(grip[h], 0.0f), 1.0f) * 255));
     }
     return p;
+}
+
+inline void setCurls(PosePacket& p, int hand, const float curl[5]) {
+    for (int f = 0; f < 5; ++f) p.curl[hand][f] = uint8_t(std::lround(std::fmin(std::fmax(curl[f], 0.0f), 1.0f) * 255));
+    p.flags |= FingersValid;
+}
+inline void curls(const PosePacket& p, int hand, float out[5]) {
+    for (int f = 0; f < 5; ++f) out[f] = float(p.curl[hand][f]) / 255.0f;
 }
 
 inline bool decode(const void* data, size_t size, PosePacket& out) {

@@ -8,6 +8,9 @@
 # usage: mp_lab.sh ss4|sm <out-dir> [dedicated|listen]   (listen: the server is a flat player too)
 #   MELEE=1: the server spawns enemies in front of the VR player (lab_lua_server) and the VR client swings the knife;
 #   the server (the damage authority) must log "melee: knife hit".
+#   BODY=1: body IK on both clients; the VR client turns ~180 degrees with the stick (the server logs the VR player's
+#   look direction before and after: server-side facing), the server places the desktop player in front of it, the
+#   VR client raises both hands (left fist, right open) and the desktop client's view is captured (arms, fingers).
 #   Leaves everything running for inspection; stop with tools/lab/stop_lab.sh.
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"; ID="$ROOT/lab/monado/input_driver"
 G=$1; OUT=$2; MODE=${3:-dedicated}; mkdir -p "$OUT"
@@ -28,6 +31,28 @@ waitlog() { timeout "$3" bash -c "until grep -aq \"$2\" \"$(tree "$1")/Log/$LOGF
 # Server (instance 2): flat, started from its console once the main menu is up.
 opts 2 mp_guards=1 mp_log=1
 rm -f "$(tree 2)/Bin/x64/ss4smvr/lab.lua"
+if [ "${BODY:-0}" = 1 ]; then
+  opts 2 mp_guards=1 mp_log=1 lab_lua_server=1 lab_lua_delay=600
+  cat > "$(tree 2)/Bin/x64/ss4smvr/lab.lua" <<'EOF'
+-- lab only (server): keep the desktop player 1.6 m in front of the VR player (the mod logs the VR player's look)
+local wi = worldGlobals.worldInfo
+RunAsync(function()
+  while true do
+    local ps = wi:GetAllEntitiesOfClass("CPlayerPuppetEntity")
+    local desk, vr = ps[1], ps[2]  -- lab 2026-10-26: the desktop client's puppet comes first in this list
+    if vr and not IsDeleted(vr) then
+      local d = vr:GetLookDir(true)
+      if desk and not IsDeleted(desk) then
+        local qv = desk:GetPlacement()
+        qv:SetVect(vr:GetPlacement():GetVect() + d * 1.6)
+        desk:SetPlacement(qv)
+      end
+    end
+    Wait(Delay(2))
+  end
+end)
+EOF
+fi
 if [ "${MELEE:-0}" = 1 ]; then
   opts 2 mp_guards=1 mp_log=1 lab_lua_server=1 lab_lua_delay=600
   cat > "$(tree 2)/Bin/x64/ss4smvr/lab.lua" <<'EOF'
@@ -73,7 +98,7 @@ waitlog 2 'roundstart gamemode=.Cooperative' 300 && echo "server: cooperative ga
 
 # VR client (instance 1). The lab Monado starts now: left without a client for minutes it exits.
 "$HERE/monado.sh" >/dev/null 2>&1 || { echo "lab monado failed"; exit 1; }
-opts 1 lab_giveall=0 mp_log=1 native_vr_action=1
+opts 1 lab_giveall=0 mp_log=1 native_vr_action=1 $([ "${BODY:-0}" = 1 ] && echo body_ik=1)
 KEEP_RUNNING=1 LAB_INSTANCE=1 "$HERE/run_game.sh" "$G" 180 +gam_strConnectToIP 127.0.0.1 | sed 's/^/vr client: /'
 waitlog 1 "Connection opened" 120 && echo "vr client: connected" || echo "vr client: no connection"
 "$HERE/until_player.sh" "$G" 400 | sed 's/^/vr client: /'
@@ -93,7 +118,7 @@ if [ "${MELEE:-0}" = 1 ]; then  # knife from the right wheel, then swings; the s
 fi
 # Desktop client (instance 3).
 if [ "${DESKTOP:-1}" = 1 ]; then
-  opts 3 mp_guards=1 mp_log=1
+  opts 3 mp_guards=1 mp_log=1 $([ "${BODY:-0}" = 1 ] && echo body_ik=1)
   KEEP_RUNNING=1 VR=0 LAB_INSTANCE=3 "$HERE/run_game.sh" "$G" 180 +gam_strConnectToIP 127.0.0.1 | sed 's/^/desktop client: /'
   waitlog 3 "Connection opened" 120 && echo "desktop client: connected" || echo "desktop client: no connection"
   for k in $(seq 1 30); do grep -aq "Started simulation on '$LEVEL'" "$(tree 3)/Log/$LOGF" && break; sleep 5; done
@@ -101,6 +126,17 @@ if [ "${DESKTOP:-1}" = 1 ]; then
 fi
 "$ID" head=0,1.6,0,0,0,0 lpos=-0.25,1.3,-0.35 rpos=0.25,1.3,-0.35 >/dev/null; sleep 20
 "$ID" head=0,1.6,0,0,0,0 lpos=-0.25,1.3,-0.35 rpos=0.25,1.6,-0.35 >/dev/null; sleep 3  # wave the right hand
+if [ "${BODY:-0}" = 1 ]; then
+  look() { grep -a "server look of VR player" "$(tree 2)/Bin/x64/ss4smvr/ss4smvr.log" | tail -1 | sed 's/.*player [0-9-]*: //' | tr -d '\r'; }
+  echo "body: server sees the VR player looking $(look) before the turn"
+  "$ID" head=0,1.6,0,0,0,0 lpos=-0.25,1.3,-0.35 rpos=0.25,1.3,-0.35 rstick=1,0 >/dev/null; sleep 1.2
+  "$ID" head=0,1.6,0,0,0,0 lpos=-0.25,1.3,-0.35 rpos=0.25,1.3,-0.35 >/dev/null; sleep 6
+  echo "body: server sees the VR player looking $(look) after ~180 degrees of stick turn"
+  # hands up in front of the chest: left fist (grip + trigger), right open
+  "$ID" head=0,1.6,0,0,0,0 lpos=-0.22,1.35,-0.4 rpos=0.22,1.35,-0.4 lgrip=1 ltrig=1 >/dev/null; sleep 6
+  focus 3 && W=$(python3 -I "$HERE/xfocus.py" :3 "$TITLE" "$(tree 3)/Bin/x64") && DISPLAY=:3 timeout 10 import -window "$W" "$OUT/desktop-sees-vr.png"
+  grep -a "body:" "$(tree 3)/Bin/x64/ss4smvr/ss4smvr.log" | tr -d '\r' | tail -3
+fi
 "$HERE/capture.sh" Monado "$OUT/vr-client.png" 50 >/dev/null 2>&1
 [ "${DESKTOP:-1}" = 1 ] && focus 3 && "$HERE/capture.sh" "$TITLE" "$OUT/desktop-client.png" 50 >/dev/null 2>&1
 for i in 2 1 3; do

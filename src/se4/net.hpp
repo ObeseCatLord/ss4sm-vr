@@ -16,6 +16,8 @@ void tick(void* vrd, bool localVr);
 // True while this machine is a client of a remote server (the latest session's network interface is a client's). The
 // local VR player then sends ClientActionVR and turns natively (player_vr), so the server has its head and hands.
 bool clientSession();
+// Finger curls (thumb..pinky, 0..1) of the local XR hand `hand` (0 left, 1 right) from its controller state.
+void fingerCurls(int hand, float curl[5]);
 // The latest relayed pose of a remote player (by en_iPlayerIndex) and its age; false if none within 0.5 s.
 bool remotePose(int32_t playerIndex, core::wire::PosePacket& out);
 }  // namespace net

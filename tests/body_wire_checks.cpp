@@ -46,6 +46,21 @@ int main() {
         float dotq = std::fabs(q.q.x * p[i].q.x + q.q.y * p[i].q.y + q.q.z * p[i].q.z + q.q.w * p[i].q.w);
         assert(dotq > 0.9995f);  // < ~3.6 degrees
     }
+    {  // finger curls ride in the packet behind FingersValid, 1/255 resolution, both hands independent
+        core::wire::PosePacket p;
+        const float l[5] = {0.1f, 0.0f, 0.5f, 1.0f, 2.0f}, r[5] = {0.7f, 1.0f, 0.25f, 0.0f, -1.0f};
+        assert(!(p.flags & core::wire::FingersValid));
+        core::wire::setCurls(p, 0, l);
+        core::wire::setCurls(p, 1, r);
+        assert(p.flags & core::wire::FingersValid);
+        float bl[5], br[5];
+        core::wire::curls(p, 0, bl);
+        core::wire::curls(p, 1, br);
+        for (int f = 0; f < 5; ++f) {
+            assert(std::fabs(bl[f] - std::fmin(std::fmax(l[f], 0.0f), 1.0f)) < 0.003f);
+            assert(std::fabs(br[f] - std::fmin(std::fmax(r[f], 0.0f), 1.0f)) < 0.003f);
+        }
+    }
     std::puts("body_wire_checks: ok");
     return 0;
 }

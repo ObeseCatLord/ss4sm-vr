@@ -1,6 +1,7 @@
 #include "se4/net.hpp"
 #include "core/math.hpp"
 #include "core/net_proto.hpp"
+#include "core/hand_pose.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
@@ -104,6 +105,14 @@ void storeRemote(const PoseMsg& m) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 
+// Finger curls of an XR hand (0 left, 1 right) from its controller state (core/hand_pose.hpp).
+void localCurls(int hand, float curl[core::FingerCount]) {
+    const auto& hs = xr::input().hand(hand);
+    const core::ControllerFingers cf{hs.trigger, (hs.buttons & xr::BtnTriggerTouch) != 0, hs.squeeze,
+                                     (hs.buttons & (xr::BtnStickTouch | xr::BtnPrimary | xr::BtnSecondary)) != 0};
+    core::curlsFromController(cf, curl);
+}
+
 // The local VR player's head and hands relative to its renderable placement.
 bool localPose(void* vrd, PoseMsg& out) {
     auto* player = static_cast<uint8_t*>(*static_cast<void**>(vrd));
@@ -126,6 +135,11 @@ bool localPose(void* vrd, PoseMsg& out) {
     if (grip[1] > 0.5f) flags |= core::wire::RightGrip;
     out.playerIndex = playerIndexOf(player);
     out.pose = core::wire::encode(++g_client.sequence, poses, flags, trig, grip);
+    for (int h = 0; h < 2; ++h) {  // finger curls from the controller state, for the body's hands on other machines
+        float curl[core::FingerCount];
+        localCurls(h, curl);
+        core::wire::setCurls(out.pose, h, curl);
+    }
     return core::finite(poses[0]) && core::finite(poses[1]) && core::finite(poses[2]);
 }
 
@@ -221,6 +235,14 @@ void tick(void* vrd, bool localVr) {
     }
     const ULONGLONG now = GetTickCount64();
     if (isServer(netif)) {
+        if (!localVr && g_log) {  // lab: the server's view of a remote VR player's look (Euler H P B at player+0x22c0, R26 s2)
+            static ULONGLONG lastLook;
+            if (now - lastLook > 2000) {
+                lastLook = now;
+                const float* eul = reinterpret_cast<const float*>(static_cast<uint8_t*>(player) + 0x22c0 + (int(player_vr::vrdOffset()) - 0x25c8));
+                VRLOG("net: server look of VR player %d: H %.2f P %.2f", playerIndexOf(player), eul[0], eul[1]);
+            }
+        }
         // A VR player on the server (listen host) sends its pose to every acknowledged client.
         if (!localVr || now - g_client.lastPose < 33) return;
         g_client.lastPose = now;
@@ -252,6 +274,7 @@ void tick(void* vrd, bool localVr) {
 }
 
 bool clientSession() { return g_clientSession; }
+void fingerCurls(int hand, float curl[5]) { localCurls(hand, curl); }
 
 bool remotePose(int32_t playerIndex, core::wire::PosePacket& out) {
     bool ok = false;
