@@ -29,7 +29,8 @@
   "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94",
   "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
   "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
-  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8",
+  "CPlayerActorPuppetEntity::en_iPlayerIndex": "0xf70"
  },
  "Sam4_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -61,7 +62,8 @@
   "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf94",
   "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
   "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
-  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8",
+  "CPlayerActorPuppetEntity::en_iPlayerIndex": "0xf70"
  },
  "SamSM": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -93,7 +95,8 @@
   "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c",
   "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
   "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
-  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8",
+  "CPlayerActorPuppetEntity::en_iPlayerIndex": "0xf78"
  },
  "SamSM_Unrestricted": {
   "CPuppetEntity::en_henRide": "0x75c",
@@ -125,6 +128,7 @@
   "CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon": "0xf9c",
   "CPSGenericWeaponAnimation::es_idAnimation": "0x28",
   "CPSGenericWeaponAnimation::es_bStartedPlayingAnim": "0x6c",
-  "CWeaponEntity::en_pwpWeaponParams": "0xa8"
+  "CWeaponEntity::en_pwpWeaponParams": "0xa8",
+  "CPlayerActorPuppetEntity::en_iPlayerIndex": "0xf78"
  }
 }

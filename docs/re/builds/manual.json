@@ -142,7 +142,15 @@
   "gfx_text": "0x140b953c0",
   "execute_view": "0x140bc0d20",
   "is_third_person_view": "0x1402be4d0",
-  "get_camera_mode": "0x1404789f0"
+  "get_camera_mode": "0x1404789f0",
+  "nm_script_rpc_ctor": "0x140eafa90",
+  "nm_script_rpc_dtor": "0x140eafaf0",
+  "nm_script_rpc_process": "0x140eafe30",
+  "rpc_args_append": "0x140e75fb0",
+  "pi_world": "0x140b7cc30",
+  "net_client_send": "0x140bb8d00",
+  "net_server_broadcast": "0x140bbc440",
+  "net_server_send_one": "0x140bbc520"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -279,7 +287,14 @@
   "vr_loco_in_air": "0x14043d210",
   "gfx_text": "0x140b97d70",
   "is_third_person_view": "0x1402c0b90",
-  "get_camera_mode": "0x14047b120"
+  "get_camera_mode": "0x14047b120",
+  "nm_script_rpc_ctor": "0x140eb2620",
+  "nm_script_rpc_dtor": "0x140eb2680",
+  "rpc_args_append": "0x140e78b40",
+  "pi_world": "0x140b7f5e0",
+  "net_client_send": "0x140bbb6d0",
+  "net_server_broadcast": "0x140bbf020",
+  "net_server_send_one": "0x140bbf100"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -424,7 +439,15 @@
   "gfx_text": "0x140b95a30",
   "execute_view": "0x140bc1410",
   "is_third_person_view": "0x1402be2c0",
-  "get_camera_mode": "0x140479020"
+  "get_camera_mode": "0x140479020",
+  "nm_script_rpc_ctor": "0x140eb0960",
+  "nm_script_rpc_dtor": "0x140eb09c0",
+  "rpc_args_append": "0x140e76e80",
+  "nm_script_rpc_process": "0x140eb0d00",
+  "pi_world": "0x140b7d070",
+  "net_client_send": "0x140bb93d0",
+  "net_server_broadcast": "0x140bbcb20",
+  "net_server_send_one": "0x140bbcc00"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -561,6 +584,13 @@
   "vr_loco_in_air": "0x14043d380",
   "gfx_text": "0x140b983d0",
   "is_third_person_view": "0x1402c0970",
-  "get_camera_mode": "0x14047b740"
+  "get_camera_mode": "0x14047b740",
+  "nm_script_rpc_ctor": "0x140eb34e0",
+  "nm_script_rpc_dtor": "0x140eb3540",
+  "rpc_args_append": "0x140e79a00",
+  "pi_world": "0x140b7fa10",
+  "net_client_send": "0x140bbbd90",
+  "net_server_broadcast": "0x140bbf6f0",
+  "net_server_send_one": "0x140bbf7d0"
  }
 }

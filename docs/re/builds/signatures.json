@@ -867,5 +867,70 @@
   "src": "0x1404789f0",
   "len": 64,
   "_note": "int (CPlayerActorPuppetEntity*): PCM_* from the profile/prj (riding) view option, stored in en_pcmPlayerCameraMode (R24)"
+ },
+ "nm_script_rpc_ctor": {
+  "src": "0x140eafa90",
+  "len": 48,
+  "_note": "CNMScriptRPC ctor (msg[0x30]): +0x18 reliable, +0x1c name hash, +0x20 CStaticStackArray<UBYTE> args (R13 s2.3)"
+ },
+ "nm_script_rpc_dtor": {
+  "src": "0x140eafaf0",
+  "len": 48,
+  "_note": "CNMScriptRPC dtor (R13 s2.3)"
+ },
+ "nm_script_rpc_process": {
+  "src": "0x140eafe30",
+  "len": 64,
+  "_note": "void (ctx, netif, msg): CNMScriptRPC::Process, hash -> worldGlobals[name] (R13 s2.3); detoured for the mod's hashes",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140eb0d00",
+   "len": 64
+  }
+ },
+ "rpc_args_append": {
+  "src": "0x140e75fb0",
+  "len": 48,
+  "_note": "(CStaticStackArray<UBYTE>*, const void*, int len): append bytes, engine allocator (R13 s2.2)"
+ },
+ "pi_world": {
+  "src": "0x140b7cc30",
+  "len": 32,
+  "_note": "CWorld* (project instance): the current world (R13 s6)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140b7d070",
+   "len": 32
+  }
+ },
+ "net_client_send": {
+  "src": "0x140bb8d00",
+  "len": 48,
+  "_note": "client netif vt+0xe0 (netif, msg): enqueue to the server connection (R13 s2.4)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140bb93d0",
+   "len": 48
+  }
+ },
+ "net_server_broadcast": {
+  "src": "0x140bbc440",
+  "len": 48,
+  "_note": "server netif vt+0xe0 (netif, msg): to every in-game client while +0xd794 (R13 s2.4)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140bbcb20",
+   "len": 48
+  }
+ },
+ "net_server_send_one": {
+  "src": "0x140bbc520",
+  "len": 48,
+  "_note": "server netif vt+0xe8 (netif, msg, const int* slot): to one client, no gate (R13 s2.4)",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140bbcc00",
+   "len": 48
+  }
  }
 }

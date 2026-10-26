@@ -20,6 +20,7 @@
 #include "se4/hud_vr.hpp"
 #include "se4/artifact.hpp"
 #include "se4/prompts.hpp"
+#include "se4/net.hpp"
 #include "up/integrate.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
@@ -94,7 +95,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
     }
     if (!se4::g_vrEnabled) {
         // Flat play: no hooks, unless this desktop player opts into guards for VR peers in multiplayer.
-        if (se4::options::get("mp_guards", 0)) player_vr::install(false);
+        if (se4::options::get("mp_guards", 0) && player_vr::install(false)) net::install();
         return;
     }
     if (!(skip & 2)) se4::installProcAddressHook();
@@ -118,6 +119,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         if (!(skip & 0x4000)) hud_vr::install();
         if (!(skip & 0x8000)) artifact::install();
         if (!(skip & 0x10000)) prompts::install();
+        if (!(skip & 0x20000)) net::install();
     }
 }
 

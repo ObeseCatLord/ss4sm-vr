@@ -166,3 +166,11 @@ manual:execute_view      # R23: texture LOD bias window
 var:tex_fLODBias
 manual:is_third_person_view  # R24: riding view kept first person for the local VR player
 manual:get_camera_mode       # R24: diagnostic / optional companion
+manual:nm_script_rpc_ctor   # R13: mod network channel (src/se4/net.cpp)
+manual:nm_script_rpc_dtor
+manual:nm_script_rpc_process
+manual:rpc_args_append
+manual:pi_world
+manual:net_client_send
+manual:net_server_broadcast
+manual:net_server_send_one

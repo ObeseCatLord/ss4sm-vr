@@ -29,3 +29,4 @@ CPlayerActorPuppetEntity::en_henCurrentLeftHandWeapon
 CPSGenericWeaponAnimation::es_idAnimation           # R17: the played weapon anim (IDENT)
 CPSGenericWeaponAnimation::es_bStartedPlayingAnim   # R17: set when the anim started on this machine
 CWeaponEntity::en_pwpWeaponParams                   # R17: weapon params (resource -> asset file name)
+CPlayerActorPuppetEntity::en_iPlayerIndex  # the cross-machine player key (R13 s3, net handshake)
