@@ -203,7 +203,7 @@ void setupDevice(VkPhysicalDevice pd, uint32_t family) {
     se4::payloadDirectory(dir, MAX_PATH);
     up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
     upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
-    if (g.flat) gfxmenu::onUpscalerReady();  // desktop menu mode: DLSS / FSR 3.1 in the Rescaling Filter list
+    gfxmenu::onUpscalerReady();  // menu mode (desktop or VR): DLSS / FSR 3.1 in the Rescaling Filter list, the sharpening slider
     if (!g.flat) scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
 }
 

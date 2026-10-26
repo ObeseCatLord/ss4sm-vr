@@ -37,6 +37,16 @@ bool flatReady();
 // Desktop menu mode (src/se4/gfx_menu.cpp): switch the upscaler backend (or off) at the next frame boundary, the entry
 // of the player-views pass, so one frame never mixes backends. Any thread.
 void requestKind(up::Kind k);
+// VR menu mode (docs/re/R29_upscaler_menu_vr_sharpening.md, up::menuMode() in VR): the eye render size is a
+// percentage of the eye target size per axis (the game's Mpix row, relabelled in VR); the switch to a new backend or
+// percentage, and the stereo path (single pass only without an upscaler at 100 %), happen in onVrFrameBegin.
+bool vrMenu();
+// The render-size hooks are in (phase B installed): the VR render resolution row can work.
+bool vrSizeReady();
+void setVrPercent(int pct);  // any thread; 1..100
+int vrPercent();
+// Device slot 0x030 (start of a VR frame).
+void onVrFrameBegin();
 // Phase B is on now (two-pass stereo, an upscaler running at a ratio > 1, symbols and opcodes verified). In desktop
 // menu mode the ratio is the engine's own: on while this frame's flat limiter result is below the output size.
 bool phaseB();

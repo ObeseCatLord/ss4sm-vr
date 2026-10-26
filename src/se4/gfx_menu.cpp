@@ -1,13 +1,18 @@
 #include "se4/gfx_menu.hpp"
 #include "core/upscaler_menu.hpp"
 #include "se4/build.hpp"
+#include "se4/foliage.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "up/integrate.hpp"
 #include "up/upscaler.hpp"
 #include <windows.h>
 #include <MinHook.h>
+#include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -26,32 +31,74 @@ constexpr size_t kLinkColl = 0x10;           // CWidgetCvarLink: +0 CString cvar
 constexpr size_t kOptStride = 0x30, kOptValue = 0x10;  // collection {options*, int count}; option +0x10 CString value
 constexpr int kStockOptions = 6;                       // ren_iRescalingFilter 0..5
 const char* const kCvar = "ren_iRescalingFilter";
+const char* const kMpixCvar = "ren_fMax3DRenderingMPix";
+// R29 s2: CSliderWidget fields (both builds), the screen's menu object, a widget's parent handle and a panel's children.
+constexpr size_t kSliderSize = 0x1b8;
+constexpr size_t kSliderStep = 0x17c, kSliderMin = 0x180, kSliderMax = 0x184, kSliderShowValue = 0x1ac, kSliderShowValue2 = 0x1b0;
+constexpr size_t kWidgetName = 0x08, kWidgetParent = 0x24;
+constexpr size_t kPanelChildren = 0x28, kPanelChildCount = 0x30;
+constexpr size_t kScreenForceCas = 0x1f8;  // CMSGraphicsOptions::ms_pcwForceCAS (reflected), the row after the filter
+constexpr uint64_t kFmtString = 0xabcd0009;  // the engine's "%1" argument tag for a C string (R29 s2)
 
 using PassFn = uintptr_t(__cdecl*)(uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4);
 using OptAddFn = void(__cdecl*)(void* coll, const void* label, const void* value);  // copies both CStrings
 using StrCtorFn = void*(__cdecl*)(void* str, const char* text);
 using StrDtorFn = void(__cdecl*)(void* str);
 using StrAssignFn = void(__cdecl*)(void* str, const char* text);
-PassFn realInit, realStep, realGet, realSet, realReset;
+using AllocFn = void*(__cdecl*)(size_t size, uintptr_t type);
+using SliderCtorFn = void*(__cdecl*)(void* widget, void* menu);
+using AddChildFn = void(__cdecl*)(void* widget, void* parent);
+using SetLabelFn = void(__cdecl*)(void* widget, const char* label, int one);
+using SetTooltipFn = void(__cdecl*)(void* widget, void* menu, const char* fmt, uint64_t tag, const char* text);
+using BindFn = void*(__cdecl*)(void* widget, const char* cvar);
+using IdentFn = void**(__cdecl*)(void** out, const char* name);
+using HandleFn = void*(__cdecl*)(int32_t handle);
+PassFn realInit, realStep, realGet, realSet, realReset, realSnap;
 OptAddFn optAdd;
 StrCtorFn strCtor;
 StrDtorFn strDtor;
 StrAssignFn strAssign;
-uint8_t *g_init, *g_step, *g_get, *g_set, *g_reset;
+AllocFn engineAlloc;
+SliderCtorFn sliderCtor;
+AddChildFn addChild;
+SetLabelFn setLabel;
+SetTooltipFn setTooltip;
+BindFn wlinkBind;
+IdentFn identCtor;
+HandleFn handleObject;
+uintptr_t* g_sliderType;  // the slider's allocation type global (decoded at slider_alloc_site)
+bool g_sliderOk;          // the slider symbols and site verified
+// R29 s5: a multichoice row like the filter row, from gfxopt_init's own construction of it (+0xd0c, +0xda4).
+using CtorFn = void*(__cdecl*)(void* obj, void* arg);
+using CollCtorFn = void*(__cdecl*)(void* coll);
+CtorFn mcCtor;
+CollCtorFn collCtor;
+uintptr_t *g_mcType, *g_collType;
+bool g_choiceOk;
+uint8_t *g_init, *g_step, *g_get, *g_set, *g_reset, *g_snap;
 int32_t* g_cvarValue;  // ren_iRescalingFilter, read for logging only
 bool g_prepared, g_installed;
+bool g_vr;  // VR menu mode: the choice is saved as vr_upscaler and the Mpix row becomes the VR render resolution
 std::atomic<int> g_choice{0};  // MenuUpscaler shown in the list and requested from the upscaler
+std::atomic<int> g_sharpPct{core::kSharpnessDefault};
+std::atomic<int> g_sway{core::kSwayDefault};
 wchar_t g_statePath[MAX_PATH];
+core::MenuState g_state;  // what the file holds (the other mode's keys are kept when saving)
+SRWLOCK g_stateLock = SRWLOCK_INIT;
+// Mpix collections converted to percentages (VR): their link reads report the mod's value. A screen is rebuilt on
+// every open, so the last few are kept.
+void* volatile g_pctColl[4];
+volatile LONG g_pctCollNext;
 
 up::Kind kindOf(MenuUpscaler m) { return m == MenuUpscaler::Dlss ? up::Kind::DLSS : m == MenuUpscaler::Fsr ? up::Kind::FSR : up::Kind::Off; }
 MenuUpscaler choiceOf(up::Kind k) { return k == up::Kind::DLSS ? MenuUpscaler::Dlss : k == up::Kind::FSR ? MenuUpscaler::Fsr : MenuUpscaler::Off; }
 const char* label(MenuUpscaler m) { return m == MenuUpscaler::Dlss ? "DLSS" : m == MenuUpscaler::Fsr ? "FSR 3.1" : "off"; }
 int cvarValue() { return g_cvarValue ? *g_cvarValue : -1; }
 
-bool readState(MenuUpscaler& out) {
+bool readState(core::MenuState& out) {
     HANDLE f = CreateFileW(g_statePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return false;
-    char buf[1024];
+    char buf[2048];
     DWORD n = 0;
     ReadFile(f, buf, sizeof buf - 1, &n, nullptr);
     CloseHandle(f);
@@ -59,10 +106,14 @@ bool readState(MenuUpscaler& out) {
     return core::parseMenuState(buf, out);
 }
 
-// The mod's own file next to the payload (written through a temporary file, then renamed over the old one).
-void saveState(MenuUpscaler m) {
-    char buf[256];
-    const int n = core::formatMenuState(m, buf, sizeof buf);
+// The mod's own file next to the payload (written through a temporary file, then renamed over the old one). `what`
+// names the change for the log. Menu thread.
+void saveState(const char* what) {
+    char buf[512];
+    AcquireSRWLockExclusive(&g_stateLock);
+    const int n = core::formatMenuState(g_state, buf, sizeof buf);
+    ReleaseSRWLockExclusive(&g_stateLock);
+    if (n <= 0 || n >= int(sizeof buf)) return;
     wchar_t tmp[MAX_PATH];
     wcscpy(tmp, g_statePath);
     wcscat(tmp, L".tmp");
@@ -71,10 +122,10 @@ void saveState(MenuUpscaler m) {
     const bool ok = f != INVALID_HANDLE_VALUE && WriteFile(f, buf, DWORD(n), &written, nullptr) && written == DWORD(n);
     if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
     if (ok && MoveFileExW(tmp, g_statePath, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        VRLOG("menu: saved upscaler=%s (ss4smvr/upscaler_menu.txt)", core::menuName(m));
+        VRLOG("menu: saved %s (ss4smvr/upscaler_menu.txt)", what);
     else {
         DeleteFileW(tmp);
-        VRLOG("menu: saving upscaler=%s FAILED (error %lu) - the choice applies to this session only", core::menuName(m), GetLastError());
+        VRLOG("menu: saving %s FAILED (error %lu) - it applies to this session only", what, GetLastError());
     }
 }
 
@@ -82,7 +133,68 @@ void saveState(MenuUpscaler m) {
 void choose(MenuUpscaler m) {
     if (MenuUpscaler(g_choice.exchange(int(m))) == m) return;
     upint::requestKind(kindOf(m));
-    saveState(m);
+    AcquireSRWLockExclusive(&g_stateLock);
+    (g_vr ? g_state.hasVrUpscaler : g_state.hasUpscaler) = true;
+    (g_vr ? g_state.vrUpscaler : g_state.upscaler) = m;
+    ReleaseSRWLockExclusive(&g_stateLock);
+    char what[48];
+    snprintf(what, sizeof what, "%s=%s", g_vr ? "vr_upscaler" : "upscaler", core::menuName(m));
+    saveState(what);
+}
+
+void chooseSharpness(int pct) {
+    pct = std::clamp(pct, 0, 100);
+    up::setSharpness(pct / 100.0f);
+    if (g_sharpPct.exchange(pct) == pct) return;
+    AcquireSRWLockExclusive(&g_stateLock);
+    g_state.sharpness = pct;
+    ReleaseSRWLockExclusive(&g_stateLock);
+    char what[32];
+    snprintf(what, sizeof what, "sharpness=%d", pct);
+    saveState(what);
+}
+
+void chooseVrPercent(int pct) {
+    if (upint::vrPercent() == pct) return;
+    upint::setVrPercent(pct);
+    AcquireSRWLockExclusive(&g_stateLock);
+    g_state.vrPercent = pct;
+    ReleaseSRWLockExclusive(&g_stateLock);
+    char what[32];
+    snprintf(what, sizeof what, "vr_render=%d", pct);
+    saveState(what);
+}
+
+void chooseSway(int m) {
+    foliage::setMode(m);
+    if (g_sway.exchange(m) == m) return;
+    AcquireSRWLockExclusive(&g_stateLock);
+    g_state.hasSway = true;
+    g_state.sway = m;
+    ReleaseSRWLockExclusive(&g_stateLock);
+    char what[40];
+    snprintf(what, sizeof what, "foliage_sway=%s", core::swayName(m));
+    saveState(what);
+}
+
+const char* linkName(uintptr_t link) { return link ? *reinterpret_cast<const char* const*>(link) : nullptr; }
+bool isSwayLink(uintptr_t link) {
+    const char* n = linkName(link);
+    return n && !strcmp(n, core::kSwayLink);
+}
+bool isSharpLink(uintptr_t link) {
+    const char* n = linkName(link);
+    return n && !strcmp(n, core::kSharpnessLink);
+}
+// A VR Mpix link whose collection the mod converted to percentages.
+bool isPctLink(uintptr_t link) {
+    if (!g_vr || !link) return false;
+    const char* n = linkName(link);
+    if (!n || strcmp(n, kMpixCvar)) return false;
+    void* coll = *reinterpret_cast<void* const*>(link + kLinkColl);
+    for (void* c : g_pctColl)
+        if (c && c == coll) return true;
+    return false;
 }
 
 bool isFilterLink(uintptr_t link) {
@@ -168,9 +280,175 @@ bool ensureEntries(uint8_t* w, const char* when) {
     return now > kStockOptions;
 }
 
+// The panel holding the Rescaling Filter row (its parent handle) and the screen's menu object (the CMenuScreen
+// getter is `[[screen+0xb8]+0x30]` in both builds, R29 s2).
+uint8_t* panelOf(uint8_t* filter) {
+    return filter ? static_cast<uint8_t*>(handleObject(*reinterpret_cast<const int32_t*>(filter + kWidgetParent))) : nullptr;
+}
+void* menuOf(uintptr_t self) {
+    uint8_t* hub = *reinterpret_cast<uint8_t**>(self + 0xb8);
+    return hub ? *reinterpret_cast<void**>(hub + 0x30) : nullptr;
+}
+int childCount(const uint8_t* panel) {
+    const int n = *reinterpret_cast<const int32_t*>(panel + kPanelChildCount);
+    return n >= 0 && n < 512 ? n : 0;
+}
+uint8_t** children(uint8_t* panel) { return *reinterpret_cast<uint8_t***>(panel + kPanelChildren); }
+int childIndex(uint8_t* panel, const void* w) {
+    uint8_t** c = children(panel);
+    for (int i = 0; c && i < childCount(panel); ++i)
+        if (c[i] == w) return i;
+    return -1;
+}
+// The links of a widget (a CWidget base field), at most 64.
+int linksOf(const uint8_t* w, uintptr_t*& out) {
+    out = *reinterpret_cast<uintptr_t* const*>(w + kWidgetLinks);
+    const int n = *reinterpret_cast<const int32_t*>(w + kWidgetLinkCount);
+    return out && n > 0 && n <= 64 ? n : 0;
+}
+
+// Moves `w` (the panel's last child) right after `after`.
+void placeAfter(uint8_t* panel, const void* after, uint8_t* w) {
+    const int at = childIndex(panel, after), from = childIndex(panel, w);
+    uint8_t** c = children(panel);
+    if (at < 0 || from <= at + 1) return;
+    for (int i = from; i > at + 1; --i) c[i] = c[i - 1];
+    c[at + 1] = w;
+}
+
+// R29 s3: the "Upscaler Sharpening" slider (0..100 %, steps of 5), built like the engine's XML menu builder builds a
+// slider, placed right after the Rescaling Filter / FidelityFX CAS rows. Its link is bound through the filter cvar (so
+// the engine's bind-time snapshot reads a declared cvar) and then renamed: every read, write and reset of it is the
+// mod's own (hookedGet / hookedSet / hookedReset), so no Lua runs and no cvar is touched for it.
+uint8_t* addSharpnessSlider(uintptr_t self, uint8_t* filter) {
+    if (!g_sliderOk || !filter) return nullptr;
+    uint8_t* panel = panelOf(filter);
+    void* menu = menuOf(self);
+    if (!panel || !menu || childIndex(panel, filter) < 0) {
+        VRLOG("menu: sharpening slider not added: panel %p menu %p (filter row %s)", static_cast<void*>(panel), menu,
+              panel ? "not among its children" : "has no panel");
+        return nullptr;
+    }
+    uint8_t* w = static_cast<uint8_t*>(engineAlloc(kSliderSize, *g_sliderType));
+    if (!w) return nullptr;
+    sliderCtor(w, menu);
+    addChild(w, panel);
+    void* id = nullptr;
+    identCtor(&id, "UpscalerSharpness");
+    *reinterpret_cast<void**>(w + kWidgetName) = id;
+    setLabel(w, "Upscaler Sharpening", 1);
+    setTooltip(w, menu, "%1", kFmtString,
+               "Sharpening after DLSS or FSR 3.1 (AMD RCAS), 0 to 100 %. Applies while the mod's upscaler runs.");
+    *reinterpret_cast<float*>(w + kSliderMin) = 0.0f;
+    *reinterpret_cast<float*>(w + kSliderMax) = 100.0f;
+    *reinterpret_cast<float*>(w + kSliderStep) = 5.0f;
+    void* link = wlinkBind(w, kCvar);
+    if (link) strAssign(link, core::kSharpnessLink);
+    *reinterpret_cast<int32_t*>(w + kSliderShowValue) = 1;
+    *reinterpret_cast<int32_t*>(w + kSliderShowValue2) = 0;
+    // After the FidelityFX CAS checkbox (shown instead of the filter row by the stock step), else after the filter.
+    uint8_t* cas = *reinterpret_cast<uint8_t**>(self + kScreenForceCas);
+    placeAfter(panel, childIndex(panel, cas) >= 0 ? cas : filter, w);
+    VRLOG("menu: sharpening slider %p added (link %p, row %d of %d, value %d%%)", static_cast<void*>(w), link, childIndex(panel, w),
+          childCount(panel), g_sharpPct.load());
+    return w;
+}
+
+// R29 s5: "Foliage Sway (DLSS / FSR)": Game Setting / Off, applied while an upscaler runs (src/se4/foliage.hpp).
+// Built like the filter row (multichoice, option collection, link) after the sharpening slider; the link is renamed
+// after binding, as for the slider, so its reads and writes are the mod's only.
+void addSwayRow(uintptr_t self, uint8_t* filter, uint8_t* after) {
+    if (!g_choiceOk || !g_sliderOk || !filter) return;
+    uint8_t* panel = panelOf(filter);
+    void* menu = menuOf(self);
+    if (!panel || !menu) return;
+    uint8_t* w = static_cast<uint8_t*>(engineAlloc(0x1f0, *g_mcType));
+    uint8_t* coll = static_cast<uint8_t*>(engineAlloc(0x18, *g_collType));
+    if (!w || !coll) return;
+    mcCtor(w, menu);
+    collCtor(coll);
+    addChild(w, panel);
+    void* id = nullptr;
+    identCtor(&id, "FoliageSway");
+    *reinterpret_cast<void**>(w + kWidgetName) = id;
+    setLabel(w, "Foliage Sway (DLSS / FSR)", 1);
+    setTooltip(w, menu, "%1", kFmtString,
+               "Leaves and bushes sway without motion vectors, which DLSS and FSR cannot follow (shimmer). Off keeps foliage still "
+               "while the mod's upscaler runs; Game Setting keeps the game's own sway.");
+    uint8_t* link = static_cast<uint8_t*>(wlinkBind(w, kCvar));
+    if (!link) return;
+    strAssign(link, core::kSwayLink);
+    *reinterpret_cast<uint8_t**>(link + kLinkColl) = coll;
+    for (int m : core::kSwayModes) {
+        void *l = nullptr, *v = nullptr;
+        strCtor(&l, core::swayLabel(m));
+        strCtor(&v, core::swayValue(m));
+        optAdd(coll, &l, &v);
+        strDtor(&l);
+        strDtor(&v);
+    }
+    *reinterpret_cast<float*>(w + kWidgetLabelWidth) = -1.0f;
+    placeAfter(panel, after, w);
+    VRLOG("menu: foliage sway row %p added (row %d, %s)", static_cast<void*>(w), childIndex(panel, w), core::swayName(g_sway.load()));
+}
+
+// R29 s4 (VR): the "Max 3D rendering Mpix" row (a multichoice bound to ren_fMax3DRenderingMPix, 8 numeric options)
+// becomes the VR render resolution: its options' labels and values are rewritten to the percentages, and its link reads
+// and writes are answered by the mod (the cvar keeps its value; the desktop list is untouched outside VR).
+void convertMpixRow(uintptr_t self, uint8_t* filter) {
+    if (!g_vr || !upint::vrSizeReady() || !filter) return;
+    uint8_t* panel = panelOf(filter);
+    void* menu = menuOf(self);
+    if (!panel || !menu) return;
+    const void* mcVtable = *reinterpret_cast<void* const*>(filter);
+    uint8_t** c = children(panel);
+    for (int i = 0; c && i < childCount(panel); ++i) {
+        uint8_t* w = c[i];
+        if (!w || *reinterpret_cast<void* const*>(w) != mcVtable) continue;  // multichoice rows only
+        uintptr_t* links;
+        const int n = linksOf(w, links);
+        for (int k = 0; k < n; ++k) {
+            const char* name = linkName(links[k]);
+            if (!name || strcmp(name, kMpixCvar)) continue;
+            uint8_t* coll = *reinterpret_cast<uint8_t**>(links[k] + kLinkColl);
+            uint8_t* items = coll ? *reinterpret_cast<uint8_t**>(coll) : nullptr;
+            const int count = coll ? *reinterpret_cast<const int32_t*>(coll + 8) : 0;
+            const char* why = nullptr;
+            if (!items || count != 8) why = "not 8 options";
+            for (int o = 0; !why && o < count; ++o) {
+                const char* v = *reinterpret_cast<const char* const*>(items + o * kOptStride + kOptValue);
+                char* end = nullptr;
+                if (!v || (strtod(v, &end), end == v || *end)) why = "a non-numeric option";
+                else if (*reinterpret_cast<const int32_t*>(items + o * kOptStride + 0x28)) why = "an option with aliases";
+            }
+            if (why) {
+                VRLOG("menu: VR render resolution row not made: Mpix row %p has %s", static_cast<void*>(w), why);
+                return;
+            }
+            for (int o = 0; o < 8; ++o) {
+                strAssign(items + o * kOptStride, core::vrPercentLabel(core::kVrPercents[o]));
+                strAssign(items + o * kOptStride + kOptValue, core::vrPercentValue(core::kVrPercents[o]));
+            }
+            g_pctColl[InterlockedIncrement(&g_pctCollNext) & 3] = coll;
+            setLabel(w, "VR Render Resolution", 1);
+            setTooltip(w, menu, "%1", kFmtString,
+                       "Render resolution in percent of the headset's full eye resolution (per axis). Below 100 % DLSS or FSR 3.1 "
+                       "upscales to full resolution; without them the game's Rescaling Filter does.");
+            *reinterpret_cast<float*>(w + kWidgetLabelWidth) = -1.0f;
+            VRLOG("menu: Mpix row %p is the VR render resolution (%d%%)", static_cast<void*>(w), upint::vrPercent());
+            return;
+        }
+    }
+    VRLOG("menu: VR render resolution row not made: no Mpix row on the panel");
+}
+
 uintptr_t __cdecl hookedInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
     const uintptr_t r = realInit(self, a2, a3, a4);
-    ensureEntries(filterWidget(self), "init");
+    uint8_t* filter = filterWidget(self);
+    ensureEntries(filter, "init");
+    uint8_t* slider = addSharpnessSlider(self, filter);
+    if (slider) addSwayRow(self, filter, slider);
+    convertMpixRow(self, filter);
     return r;
 }
 
@@ -192,7 +470,21 @@ uintptr_t __cdecl hookedStep(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr
 
 // wlink_get(link, CString* out) -> out: the mod's value while its upscaler is chosen, so the row shows it.
 uintptr_t __cdecl hookedGet(uintptr_t link, uintptr_t out, uintptr_t a3, uintptr_t a4) {
+    if (out && isSharpLink(link)) {  // `out` is raw: wlink_get constructs it
+        char buf[16];
+        snprintf(buf, sizeof buf, "%d", g_sharpPct.load());
+        strCtor(reinterpret_cast<void*>(out), buf);
+        return out;
+    }
+    if (out && isSwayLink(link)) {
+        strCtor(reinterpret_cast<void*>(out), core::swayValue(g_sway.load()));
+        return out;
+    }
     const uintptr_t r = realGet(link, out, a3, a4);
+    if (out && isPctLink(link)) {
+        strAssign(reinterpret_cast<void*>(out), core::vrPercentValue(core::snapVrPercent(upint::vrPercent())));
+        return r;
+    }
     const MenuUpscaler m = MenuUpscaler(g_choice.load(std::memory_order_relaxed));
     if (m != MenuUpscaler::Off && out && isFilterLink(link) && hasOption(link, m)) strAssign(reinterpret_cast<void*>(out), core::menuValue(m));
     return r;
@@ -200,6 +492,36 @@ uintptr_t __cdecl hookedGet(uintptr_t link, uintptr_t out, uintptr_t a3, uintptr
 
 // wlink_set(link, const CString* value): a mod value never reaches Lua (the cvar is never written).
 uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintptr_t a4) {
+    if (isSharpLink(link)) {
+        const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
+        char* end = nullptr;
+        const double d = v ? strtod(v, &end) : 0.0;
+        if (v && end != v && std::isfinite(d)) {
+            const int pct = int(std::lround(std::clamp(d, 0.0, 100.0)));
+            if (pct != g_sharpPct.load()) VRLOG("menu: sharpening %d%%", pct);
+            chooseSharpness(pct);
+        }
+        return 0;  // the link names no cvar: nothing goes to Lua
+    }
+    if (isSwayLink(link)) {
+        const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
+        int m;
+        if (core::swayFromValue(v, m)) {
+            VRLOG("menu: foliage sway %s", core::swayName(m));
+            chooseSway(m);
+        }
+        return 0;
+    }
+    if (isPctLink(link)) {
+        const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
+        int pct;
+        if (core::vrPercentFromValue(v, pct)) {
+            VRLOG("menu: VR render resolution %d%% (ren_fMax3DRenderingMPix untouched)", pct);
+            chooseVrPercent(pct);
+            return 0;
+        }
+        // Anything else (KeepSettings' revert of the snapshot) is the engine's own write of the cvar's own value.
+    }
     if (isFilterLink(link)) {
         const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
         MenuUpscaler m;
@@ -218,8 +540,29 @@ uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintp
     return realSet(link, value, a3, a4);
 }
 
+// wlink_snapshot(link): the popup and Apply snapshot each link's cvar by name; the mod's rows name no cvar, so they
+// keep the empty snapshot (otherwise the engine logs "Cannot get values for cvar ...").
+uintptr_t __cdecl hookedSnap(uintptr_t link, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    if (isSharpLink(link) || isSwayLink(link)) return 0;
+    return realSnap(link, a2, a3, a4);
+}
+
 // wlink_reset(link): "Default" writes the cvar's default (not through wlink_set) and turns the mod's upscaler off.
 uintptr_t __cdecl hookedReset(uintptr_t link, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    if (isSharpLink(link)) {
+        VRLOG("menu: sharpening default %d%%", core::kSharpnessDefault);
+        chooseSharpness(core::kSharpnessDefault);
+        return 0;
+    }
+    if (isSwayLink(link)) {
+        VRLOG("menu: foliage sway default %s", core::swayName(core::kSwayDefault));
+        chooseSway(core::kSwayDefault);
+        return 0;
+    }
+    if (isPctLink(link)) {
+        VRLOG("menu: VR render resolution default %d%%", core::kVrPercentDefault);
+        chooseVrPercent(core::kVrPercentDefault);
+    }
     if (isFilterLink(link) && MenuUpscaler(g_choice.load()) != MenuUpscaler::Off) {
         VRLOG("menu: rescaling default/revert -> mode off");
         choose(MenuUpscaler::Off);
@@ -247,6 +590,7 @@ bool prepare() {
     g_get = b.at<uint8_t>(se4::gen::wlink_get);
     g_set = b.at<uint8_t>(se4::gen::wlink_set);
     g_reset = b.at<uint8_t>(se4::gen::wlink_reset);
+    g_snap = b.at<uint8_t>(se4::gen::wlink_snapshot);
     auto* add = b.at<uint8_t>(se4::gen::optcoll_add);
     auto* sync = b.at<uint8_t>(se4::gen::mc_sync);
     auto* setsel = b.at<uint8_t>(se4::gen::mc_setsel);
@@ -258,20 +602,42 @@ bool prepare() {
     // s7; the same bytes and offsets in all four exes).
     static const uint8_t kInit[8] = {0x40, 0x55, 0x56, 0x57, 0x41, 0x54, 0x48, 0x8D}, kStep[8] = {0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x81},
                          kGet[8] = {0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83}, kSet[8] = {0x40, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x30},
-                         kReset[8] = {0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x48, 0x48};
+                         kReset[8] = {0x40, 0x53, 0x57, 0x48, 0x83, 0xEC, 0x48, 0x48}, kSnap[8] = {0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B};
     const char* why = nullptr;
-    if (!g_init || !g_step || !g_get || !g_set || !g_reset || !add || !sync || !setsel || !ctor || !dtor || !assign) why = "symbols missing in this build";
-    else if (memcmp(g_init, kInit, 8) || memcmp(g_step, kStep, 8) || memcmp(g_get, kGet, 8) || memcmp(g_set, kSet, 8) || memcmp(g_reset, kReset, 8))
+    if (!g_init || !g_step || !g_get || !g_set || !g_reset || !g_snap || !add || !sync || !setsel || !ctor || !dtor || !assign)
+        why = "symbols missing in this build";
+    else if (memcmp(g_init, kInit, 8) || memcmp(g_step, kStep, 8) || memcmp(g_get, kGet, 8) || memcmp(g_set, kSet, 8) || memcmp(g_reset, kReset, 8) ||
+             memcmp(g_snap, kSnap, 8))
         why = "a hooked function's prologue does not match";
     else if (!callsTo(sync + 0x80, g_get)) why = "mc_sync does not read through wlink_get";
     else if (!callsTo(setsel + 0x111, g_set)) why = "mc_setsel does not write through wlink_set";
     else if (!callsTo(g_get + 0x37, dtor)) why = "wlink_get does not match (CString temporary)";
     else if (callsWithin(g_init, 0x4000, add) < kStockOptions) why = "gfxopt_init does not fill option collections";
-    // Startup choice: options.txt `upscaler` when set (the manual override), else the menu's saved file, else off.
+    // Startup choice: options.txt `upscaler` when set (the manual override), else the menu's saved file (upscaler on
+    // the desktop, vr_upscaler in VR), else off.
+    g_vr = se4::g_vrEnabled;
     se4::payloadDirectory(g_statePath, MAX_PATH - 32);
     wcscat(g_statePath, L"\\upscaler_menu.txt");
-    MenuUpscaler saved = MenuUpscaler::Off;
-    const bool haveFile = readState(saved);
+    const bool haveFile = readState(g_state) && (g_vr ? g_state.hasVrUpscaler : g_state.hasUpscaler);
+    const MenuUpscaler saved = g_vr ? g_state.vrUpscaler : g_state.upscaler;
+    // Sharpening (both modes): option upscale_sharpness overrides the file; default 25 %. VR render resolution: the file,
+    // default 100 %.
+    const int sharp = se4::options::has("upscale_sharpness") ? se4::options::get("upscale_sharpness", core::kSharpnessDefault)
+                      : g_state.sharpness >= 0                ? g_state.sharpness
+                                                              : core::kSharpnessDefault;
+    g_sharpPct = std::clamp(sharp, 0, 100);
+    up::setSharpness(g_sharpPct.load() / 100.0f);
+    if (g_vr) upint::setVrPercent(g_state.vrPercent > 0 ? g_state.vrPercent : core::kVrPercentDefault);
+    // Foliage sway while upscaling: option upscale_foliage_sway (-1 game, 0 off; 1 / 2 cap the game's level) overrides the file.
+    const int sway = se4::options::has("upscale_foliage_sway") ? std::clamp(se4::options::get("upscale_foliage_sway", core::kSwayDefault), -1, 2)
+                     : g_state.hasSway                         ? g_state.sway
+                                                               : core::kSwayDefault;
+    foliage::setMode(sway);
+    g_sway = sway == 0 ? 0 : -1;  // the row shows Off or Game Setting (lab levels 1 / 2 show as the latter)
+    VRLOG("menu: startup foliage sway while upscaling: %s (level %d)", core::swayName(g_sway.load()), sway);
+    VRLOG("menu: startup sharpening %d%% (%s)", g_sharpPct.load(),
+          se4::options::has("upscale_sharpness") ? "options.txt upscale_sharpness" : g_state.sharpness >= 0 ? "upscaler_menu.txt" : "default");
+    if (g_vr) VRLOG("menu: startup VR render resolution %d%% (%s)", upint::vrPercent(), g_state.vrPercent > 0 ? "upscaler_menu.txt" : "default");
     int start;
     if (se4::options::has("upscaler")) {
         start = se4::options::get("upscaler", 0);
@@ -279,7 +645,8 @@ bool prepare() {
               haveFile ? core::menuName(saved) : "", haveFile ? ")" : "");
     } else {
         start = saved == MenuUpscaler::Dlss ? 2 : saved == MenuUpscaler::Fsr ? 1 : 0;
-        VRLOG("menu: startup upscaler %s (%s)", core::menuName(saved), haveFile ? "ss4smvr/upscaler_menu.txt" : "no saved choice: pick DLSS or FSR 3.1 in Options > Graphics > Rescaling Filter");
+        VRLOG("menu: startup %supscaler %s (%s)", g_vr ? "VR " : "", core::menuName(haveFile ? saved : MenuUpscaler::Off),
+              haveFile ? "ss4smvr/upscaler_menu.txt" : "no saved choice: pick DLSS or FSR 3.1 in Options > Graphics > Rescaling Filter");
     }
     up::setMenuStart(start);
     if (why) return VRLOG("menu: Rescaling Filter entries off: %s (the list stays stock)", why), false;
@@ -287,6 +654,48 @@ bool prepare() {
     strCtor = reinterpret_cast<StrCtorFn>(ctor);
     strDtor = reinterpret_cast<StrDtorFn>(dtor);
     strAssign = reinterpret_cast<StrAssignFn>(assign);
+    // The sharpening slider (R29 s2): the XML builder's slider site gives the allocation type and its ctor call.
+    auto* site = b.at<uint8_t>(se4::gen::slider_alloc_site);
+    auto* alloc = b.at<uint8_t>(se4::gen::engine_alloc);
+    auto* sctor = b.at<uint8_t>(se4::gen::slider_ctor);
+    const char* swhy = nullptr;
+    if (!site || !alloc || !sctor || !b.at<void>(se4::gen::widget_add_child) || !b.at<void>(se4::gen::widget_set_label) ||
+        !b.at<void>(se4::gen::widget_set_tooltip) || !b.at<void>(se4::gen::wlink_bind) || !b.at<void>(se4::gen::ident_ctor) ||
+        !b.at<void>(se4::gen::handle_entity))
+        swhy = "symbols missing in this build";
+    else if (site[0] != 0xB9 || rel32(site + 1) != int32_t(kSliderSize) || site[9] != 0x48 || site[10] != 0x8B || site[11] != 0x15 ||
+             !callsTo(site + 0x13, alloc) || !callsTo(site + 0x23, sctor))
+        swhy = "the slider site does not match";
+    if (swhy) VRLOG("menu: sharpening slider off: %s (sharpening stays at %d%%; option upscale_sharpness sets it)", swhy, g_sharpPct.load());
+    else {
+        g_sliderType = reinterpret_cast<uintptr_t*>(site + 9 + 7 + rel32(site + 12));
+        engineAlloc = reinterpret_cast<AllocFn>(alloc);
+        sliderCtor = reinterpret_cast<SliderCtorFn>(sctor);
+        addChild = reinterpret_cast<AddChildFn>(b.at<void>(se4::gen::widget_add_child));
+        setLabel = reinterpret_cast<SetLabelFn>(b.at<void>(se4::gen::widget_set_label));
+        setTooltip = reinterpret_cast<SetTooltipFn>(b.at<void>(se4::gen::widget_set_tooltip));
+        wlinkBind = reinterpret_cast<BindFn>(b.at<void>(se4::gen::wlink_bind));
+        identCtor = reinterpret_cast<IdentFn>(b.at<void>(se4::gen::ident_ctor));
+        handleObject = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
+        g_sliderOk = true;
+    }
+    // The filter row's own construction in gfxopt_init (R29 s5; the same offsets in all four exes): the multichoice
+    // allocation `mov rdx,[rip+type]; mov ecx,0x1f0; call engine_alloc; test; je; mov rdx,rsi; mov rcx,rax; call ctor` at
+    // +0xd0c and the collection's `mov rdx,[rip+type]; mov ecx,0x18; call engine_alloc; test; je; mov rcx,rax; call ctor`
+    // at +0xda4.
+    const uint8_t* mc = g_init ? g_init + 0xd0c : nullptr;
+    const uint8_t* co = g_init ? g_init + 0xda4 : nullptr;
+    static const uint8_t kMc[] = {0xB9, 0xF0, 0x01, 0x00, 0x00}, kCo[] = {0xB9, 0x18, 0x00, 0x00, 0x00};
+    static const uint8_t kMcTail[] = {0x48, 0x85, 0xC0, 0x74, 0x0D, 0x48, 0x8B, 0xD6, 0x48, 0x8B, 0xC8}, kCoTail[] = {0x48, 0x85, 0xC0, 0x74, 0x0D, 0x48, 0x8B, 0xC8};
+    if (g_sliderOk && mc && co && !memcmp(mc, "\x48\x8B\x15", 3) && !memcmp(mc + 7, kMc, 5) && callsTo(mc + 12, alloc) && !memcmp(mc + 17, kMcTail, 11) &&
+        mc[28] == 0xE8 && !memcmp(co, "\x48\x8B\x15", 3) && !memcmp(co + 7, kCo, 5) && callsTo(co + 12, alloc) && !memcmp(co + 17, kCoTail, 8) &&
+        co[25] == 0xE8) {
+        g_mcType = reinterpret_cast<uintptr_t*>(const_cast<uint8_t*>(mc) + 7 + rel32(mc + 3));
+        g_collType = reinterpret_cast<uintptr_t*>(const_cast<uint8_t*>(co) + 7 + rel32(co + 3));
+        mcCtor = reinterpret_cast<CtorFn>(const_cast<uint8_t*>(mc) + 33 + rel32(mc + 29));
+        collCtor = reinterpret_cast<CollCtorFn>(const_cast<uint8_t*>(co) + 30 + rel32(co + 26));
+        g_choiceOk = true;
+    } else VRLOG("menu: foliage sway row off: the filter row's construction does not match (option upscale_foliage_sway sets it)");
     g_prepared = true;
     return true;
 }
@@ -296,7 +705,7 @@ void onUpscalerReady() {
     const bool dlss = up::available(up::Kind::DLSS), fsr = up::available(up::Kind::FSR);
     const char* why = nullptr;
     if (!dlss && !fsr) why = "no upscaler backend available";
-    else if (!upint::flatReady()) why = "the flat upscaler path is not ready";
+    else if (!g_vr && !upint::flatReady()) why = "the flat upscaler path is not ready";
     if (why) return VRLOG("menu: Rescaling Filter entries off: %s (the list stays stock)", why);
     g_choice = int(choiceOf(up::active()));
     // All or nothing: create every hook, then enable them together.
@@ -308,7 +717,8 @@ void onUpscalerReady() {
                  {g_step, reinterpret_cast<void*>(hookedStep), &realStep},
                  {g_get, reinterpret_cast<void*>(hookedGet), &realGet},
                  {g_set, reinterpret_cast<void*>(hookedSet), &realSet},
-                 {g_reset, reinterpret_cast<void*>(hookedReset), &realReset}};
+                 {g_reset, reinterpret_cast<void*>(hookedReset), &realReset},
+                 {g_snap, reinterpret_cast<void*>(hookedSnap), &realSnap}};
     int created = 0;
     bool ok = true;
     for (H& h : hooks) {

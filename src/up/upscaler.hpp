@@ -10,7 +10,8 @@
 // Options (ss4smvr/options.txt):
 //   upscaler        = auto | 0 off | 1 fsr | 2 dlss      (auto: DLSS on NVIDIA RTX when available, else FSR)
 //   upscale_quality = 0 native AA (DLAA / FSR native) | 1 quality | 2 balanced | 3 performance   (default 0)
-//   upscale_sharpness = 0..100 (default 15)
+//   upscale_sharpness = 0..100 (default 25): the mod's RCAS sharpening after either backend; the game menu's
+//                     "Upscaler Sharpening" slider replaces it (src/se4/gfx_menu.cpp)
 //   upscale_phase_b = 1 render at output / ratio for quality 1..3 (default) | 0 render at output size (src/up/integrate.cpp)
 //   desktop_upscaler = 1 desktop menu mode (VR off): DLSS and FSR 3.1 are both initialised and chosen at runtime from the
 //                    game's Options > Graphics > Rescaling Filter list (src/se4/gfx_menu.cpp); the render size is the
@@ -21,13 +22,16 @@
 namespace up {
 enum class Kind { Off, FSR, DLSS };
 
-// Desktop upscaler menu mode (docs/re/R28_rescaling_filter_menu.md): VR off and option desktop_upscaler.
+// Upscaler menu mode (docs/re/R28_rescaling_filter_menu.md, R29): desktop with option desktop_upscaler, or VR (default
+// on; off with vr_upscaler_menu=0 or single_pass=1).
 bool menuMode();
 // An upscaler may run in this session: option upscaler set, or desktop menu mode.
 bool wanted();
 // The startup choice in desktop menu mode, in the encoding of option upscaler (-1 auto, 0 off, 1 FSR, 2 DLSS); set
 // before init (src/se4/gfx_menu.cpp). Without it, option upscaler.
 void setMenuStart(int opt);
+// That startup choice (-2 when not set).
+int menuStart();
 
 // Extensions DLSS needs on the game's instance/device (added by the Vulkan layer at creation; in desktop menu mode
 // always, when the driver's NGX core loads).
@@ -77,6 +81,10 @@ struct Frame {
 // slot keeps its own context and history. Returns false when no backend is active or the call failed (caller keeps
 // its path).
 bool evaluate(int slot, const Frame& f);
+// Sharpening strength 0..1 of the mod's RCAS pass on the upscaled image (src/up/integrate.cpp), for both backends
+// (FSR's own sharpener stays off; DLSS has none since 2.2.9). setSharpness: the menu, at any time.
+float sharpness();
+void setSharpness(float s);
 // Drop all histories (level load, recentre); the next evaluate per slot starts fresh.
 void resetHistory();
 }  // namespace up

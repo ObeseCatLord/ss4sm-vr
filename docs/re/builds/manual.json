@@ -195,7 +195,13 @@
   "optcoll_add": "0x14015e3c0",
   "optcoll_find": "0x14015e5d0",
   "mc_setsel": "0x140918bf0",
-  "mc_sync": "0x1409199e0"
+  "mc_sync": "0x1409199e0",
+  "slider_ctor": "0x14091f520",
+  "widget_add_child": "0x14015a9a0",
+  "widget_set_label": "0x140907d10",
+  "widget_set_tooltip": "0x14015ab70",
+  "slider_alloc_site": "0x140856bab",
+  "wlink_snapshot": "0x14015ecd0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -384,7 +390,13 @@
   "optcoll_add": "0x140160d70",
   "optcoll_find": "0x140160f80",
   "mc_setsel": "0x14091b320",
-  "mc_sync": "0x14091c110"
+  "mc_sync": "0x14091c110",
+  "widget_add_child": "0x14015d350",
+  "widget_set_tooltip": "0x14015d520",
+  "slider_alloc_site": "0x1408592db",
+  "slider_ctor": "0x140921c50",
+  "widget_set_label": "0x14090a440",
+  "wlink_snapshot": "0x140161680"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -582,7 +594,13 @@
   "optcoll_add": "0x14015f060",
   "optcoll_find": "0x14015f270",
   "mc_setsel": "0x1409192f0",
-  "mc_sync": "0x14091a170"
+  "mc_sync": "0x14091a170",
+  "widget_add_child": "0x14015b640",
+  "widget_set_tooltip": "0x14015b810",
+  "slider_alloc_site": "0x1408569ab",
+  "slider_ctor": "0x14091fcc0",
+  "widget_set_label": "0x140908340",
+  "wlink_snapshot": "0x14015f980"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -771,6 +789,12 @@
   "optcoll_add": "0x140161a00",
   "optcoll_find": "0x140161c10",
   "mc_setsel": "0x14091ba10",
-  "mc_sync": "0x14091c890"
+  "mc_sync": "0x14091c890",
+  "widget_add_child": "0x14015dfe0",
+  "widget_set_tooltip": "0x14015e1b0",
+  "slider_alloc_site": "0x1408590cb",
+  "slider_ctor": "0x1409223e0",
+  "widget_set_label": "0x14090aa60",
+  "wlink_snapshot": "0x140162320"
  }
 }

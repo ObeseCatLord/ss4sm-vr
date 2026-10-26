@@ -1162,5 +1162,35 @@
   "src": "0x1409199e0",
   "len": 32,
   "_note": "int (CMultichoiceWidget*, CString* outLabel, void** outPtr): index of the option matching each link's wlink_get text (with its cached display label), else the manual index or 'Custom'; run by the widget update vt+0x20 and the popup (R28 s1.3)"
+ },
+ "slider_ctor": {
+  "call_of": "slider_alloc_site",
+  "index": 1,
+  "_note": "CSliderWidget::CSliderWidget(widget, menu) (0x1b8 bytes, vtable 0x141bde730): value +0x178 (float), step +0x17c, min +0x180, max +0x184, show-value mode +0x1ac/+0x1b0 (R29 s2); 2nd call after slider_alloc_site"
+ },
+ "widget_add_child": {
+  "src": "0x14015a9a0",
+  "len": 64,
+  "_note": "(widget, parent): unlinks from the old parent (handle +0x24), appends to parent+0x28 (count +0x30) (R29 s2)"
+ },
+ "widget_set_label": {
+  "call_of": "slider_alloc_site",
+  "index": 5,
+  "_note": "(widget, const char* label, int 1): ETRS/DTRS/TTRS keys are translated, other text shown verbatim (R28 s1.2, R29 s2); 6th call after slider_alloc_site"
+ },
+ "widget_set_tooltip": {
+  "src": "0x14015ab70",
+  "len": 64,
+  "_note": "variadic (widget, menu, const char* fmt, ...): gfxopt_init passes \"%1\", 0xabcd0009, const char* text (R29 s2)"
+ },
+ "slider_alloc_site": {
+  "src": "0x140856bab",
+  "len": 48,
+  "_note": "XML menu builder's slider creation: mov ecx,0x1b8; ...; mov rdx,[rip+type]; ...; call engine_alloc; ...; call slider_ctor at +0x23 (R29 s2): the slider's allocation type global"
+ },
+ "wlink_snapshot": {
+  "call_of": "wlink_bind",
+  "index": 3,
+  "_note": "(link): link+8 = cvar_get_str(link name) (R29 s2); 4th call in wlink_bind (alloc, link ctor, cstring_assign, snapshot)"
  }
 }

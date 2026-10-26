@@ -174,6 +174,7 @@ void* sEyeRT(Object*, void* gfx, int eye) {
 }
 void sBeginFrame(Object*) {
     NOTE(0x030);
+    upint::onVrFrameBegin();  // menu mode: backend / render resolution switch and stereo path (R29)
     scope::beginFrame();
 }
 void sPhase1(Object*) {
@@ -618,8 +619,11 @@ bool install() {
     // Stereo path: vr_iUsingSinglePassStereo is recomputed every frame from vr_bSinglePrepareRendering
     // (0x140b6b5b0). Single pass (one CPU prepare for both eyes) is the default: about 15 % less game CPU time at the
     // same GPU time, and both lab suites pass with it (docs/PERF.md). The upscalers are integrated with two-pass, so
-    // selecting one defaults to two-pass. Option single_pass=0|1 overrides.
-    const bool singlePass = se4::options::get("single_pass", se4::options::get("upscaler", 0) ? 0 : 1) != 0;
+    // selecting one defaults to two-pass. Option single_pass=0|1 overrides. In VR menu mode (R29) the startup choice
+    // decides (two-pass with an upscaler or a render resolution below 100 %), and upint switches it with the menu.
+    const bool upscaling = up::menuMode() ? (up::menuStart() != 0 && up::menuStart() != -2) || upint::vrPercent() < 100
+                                          : se4::options::get("upscaler", 0) != 0;
+    const bool singlePass = se4::options::get("single_pass", upscaling ? 0 : 1) != 0;
     se4::setIndex(se4::gen::vr_bSinglePrepareRendering, singlePass ? 1 : 0);
     VRLOG("vrdev: COpenXRDevice installed at %p (global %p)", static_cast<void*>(&g_obj), static_cast<void*>(global));
     return true;

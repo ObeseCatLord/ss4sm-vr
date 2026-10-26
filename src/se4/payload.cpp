@@ -23,6 +23,7 @@
 #include "se4/net.hpp"
 #include "se4/turn.hpp"
 #include "se4/gfx_menu.hpp"
+#include "se4/foliage.hpp"
 #include "up/integrate.hpp"
 #include "up/upscaler.hpp"
 #include "se4/options.hpp"
@@ -107,6 +108,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
             se4::installProcAddressHook();
             upint::install();
             if (up::menuMode()) gfxmenu::prepare();
+            foliage::install();
         }
         return;
     }
@@ -116,7 +118,8 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         vrdev::hookShutdown();
         vrdev::hookViewport();
         vrdev::hookRender();
-        upint::install();
+        if (up::menuMode()) gfxmenu::prepare();  // VR: the saved upscaler, render resolution and sharpening (R29)
+        if (upint::install()) foliage::install();
     }
     if (!(skip & 0x10) && player_vr::install(true)) {
         if (!(skip & 0x40000)) turn::install();

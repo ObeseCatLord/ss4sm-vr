@@ -69,6 +69,70 @@ int main() {
     formatMenuState(MenuUpscaler::Dlss, small, sizeof small);
     assert(strlen(small) == sizeof small - 1);
 
+    // R29: the full state (desktop and VR choices, VR render resolution, sharpening).
+    {
+        MenuState st;
+        assert(parseMenuState("upscaler=dlss\nvr_upscaler=fsr\nvr_render=67\nsharpness=40\n", st));
+        assert(st.hasUpscaler && st.upscaler == MenuUpscaler::Dlss && st.hasVrUpscaler && st.vrUpscaler == MenuUpscaler::Fsr);
+        assert(st.vrPercent == 67 && st.sharpness == 40);
+        MenuState round;
+        const int n = formatMenuState(st, buf, sizeof buf);
+        assert(n > 0 && n < int(sizeof buf));
+        assert(parseMenuState(buf, round) && round.hasUpscaler && round.upscaler == st.upscaler && round.hasVrUpscaler &&
+               round.vrUpscaler == st.vrUpscaler && round.vrPercent == 67 && round.sharpness == 40);
+        // Keys left unset stay out of the file and parse back as unset.
+        MenuState only;
+        only.sharpness = 0;
+        formatMenuState(only, buf, sizeof buf);
+        MenuState back;
+        assert(parseMenuState(buf, back) && !back.hasUpscaler && !back.hasVrUpscaler && back.vrPercent == -1 && back.sharpness == 0);
+        // The desktop-only parse ignores the VR key.
+        MenuUpscaler d = MenuUpscaler::Fsr;
+        assert(!parseMenuState("vr_upscaler=dlss\n", d) && d == MenuUpscaler::Fsr);
+        // Ranges and snapping: sharpness 0..100, vr_render 1..100 snapped to the listed percentages.
+        MenuState r;
+        assert(!parseMenuState("sharpness=101\nsharpness=-1\nsharpness=abc\nvr_render=0\nvr_render=150\n", r));
+        assert(r.sharpness == -1 && r.vrPercent == -1);
+        assert(parseMenuState("vr_render=70\n", r) && r.vrPercent == 67);
+        assert(parseMenuState("vr_render=80\n", r) && r.vrPercent == 83);
+        assert(parseMenuState("vr_render=1\n", r) && r.vrPercent == 33);
+        assert(parseMenuState("vr_render=100\nsharpness=100\n", r) && r.vrPercent == 100 && r.sharpness == 100);
+    }
+    // VR percent values: round trip, exact text only.
+    for (int p : kVrPercents) {
+        int back = 0;
+        assert(vrPercentValue(p) && vrPercentLabel(p) && vrPercentFromValue(vrPercentValue(p), back) && back == p);
+        assert(snapVrPercent(p) == p);
+    }
+    {
+        int back = 7;
+        for (const char* v : {"67", "ss4smvr:pct", "ss4smvr:pct66", "ss4smvr:pct67 ", "1.0", "0"}) assert(!vrPercentFromValue(v, back));
+        assert(!vrPercentFromValue(nullptr, back) && back == 7);
+        assert(!vrPercentValue(66) && !vrPercentLabel(0));
+        assert(snapVrPercent(0) == 33 && snapVrPercent(200) == 100 && snapVrPercent(53) == 50 && snapVrPercent(54) == 58);
+        assert(!strcmp(kSharpnessLink, "ss4smvr_upscaler_sharpness") && kSharpnessDefault == 25 && kVrPercentDefault == 100);
+    }
+
+    // Foliage sway: state key and row values.
+    {
+        MenuState st;
+        assert(parseMenuState("foliage_sway=game\n", st) && st.hasSway && st.sway == -1);
+        assert(parseMenuState("foliage_sway=off\n", st) && st.sway == 0);
+        MenuState bad;
+        assert(!parseMenuState("foliage_sway=2\nfoliage_sway=Off\nfoliage_sway=limited\n", bad) && !bad.hasSway && bad.sway == kSwayDefault);
+        st.hasSway = true, st.sway = -1;
+        formatMenuState(st, buf, sizeof buf);
+        MenuState back;
+        assert(parseMenuState(buf, back) && back.hasSway && back.sway == -1);
+        for (int m : kSwayModes) {
+            int r = 7;
+            assert(swayValue(m) && swayLabel(m) && swayName(m) && swayFromValue(swayValue(m), r) && r == m);
+        }
+        int r = 7;
+        assert(!swayFromValue("ss4smvr:sway", r) && !swayFromValue("ss4smvr:sway_limited", r) && !swayFromValue(nullptr, r) && r == 7 &&
+               !swayValue(1) && !swayValue(2));
+    }
+
     std::puts("upscaler menu checks passed");
     return 0;
 }

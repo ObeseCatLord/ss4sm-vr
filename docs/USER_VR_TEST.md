@@ -89,5 +89,13 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    Quality = "Max 3D rendering Mpix" in the same menu: Unlimited (or a cap above your resolution) is native AA
    (DLAA / FSR native), a lower cap renders fewer pixels and upscales. MSAA must be off. Check the image while moving
    and the frame rate at two Mpix settings; log lines `menu: rescaling select` and `upint: flat limiter (menu`.
+8d. Upscaler extras (R29), desktop and VR, in Options > Graphics:
+   - **"Upscaler Sharpening"** (0..100 %, default 25): sharpening after DLSS / FSR. Look at fine detail and edges.
+   - **"Foliage Sway (DLSS / FSR)"** (default Off): stops leaves and bushes from swaying while the upscaler runs, which
+     removes their shimmer. Set it to Game Setting and compare a bush.
+   - **VR only, "VR Render Resolution"** (the Mpix row in VR): percent of the headset's eye resolution. 100 % with
+     DLSS is DLAA; 67 % is DLSS Quality. Check the frame rate and image at 100 / 67 / 50 %.
+   - Log lines: `menu: sharpening`, `menu: foliage sway`, `menu: VR render resolution`, `upint: phase B on: DLSS at
+     N% of the eye size`, `upint: VR stereo`.
 9. Note frame rate (`mirror: N fps`) and any `vrdev: first call slot` lines that are new.
 Send the log back; it contains no personal data beyond file paths.

@@ -1,6 +1,8 @@
 #!/bin/sh
-# Kill running Sam4/SamSM game processes and their Proton launch wrappers (never shells).
+# Kill running LAB Sam4/SamSM game processes and their Proton launch wrappers (never shells). Only processes started
+# from the lab copies (cwd or environment under lab/): a game the user runs from the Steam install is never touched.
 exec 2>/dev/null
+LAB="$(cd "$(dirname "$0")/../.." && pwd)/lab"
 for d in /proc/[0-9]*; do
   a0=$(tr '\0' '\n' < "$d/cmdline" 2>/dev/null | head -1)
   a1=$(tr '\0' '\n' < "$d/cmdline" 2>/dev/null | sed -n 2p)
@@ -11,6 +13,9 @@ for d in /proc/[0-9]*; do
     *steam.exe) case "$a1" in *Sam4*.exe|*SamSM*.exe) hit=1;; esac;;
     python3) case "$a2" in run|waitforexitandrun) case "$(tr '\0' ' ' < "$d/cmdline")" in *Sam4*.exe*|*SamSM*.exe*) hit=1;; esac;; esac;;
   esac
+  if [ -n "$hit" ]; then
+    case "$(readlink "$d/cwd")" in "$LAB"/*) ;; *) tr '\0' '\n' < "$d/environ" | grep -q "^STEAM_COMPAT_DATA_PATH=$LAB/" || hit=;; esac
+  fi
   [ -n "$hit" ] && { echo "kill ${d#/proc/} $a0 $a1"; kill -9 "${d#/proc/}"; }
 done
 # Lab wineservers only (their environment carries the lab's private XDG_RUNTIME_DIR): a server that outlives

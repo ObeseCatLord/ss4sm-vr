@@ -21,7 +21,8 @@ namespace {
 std::atomic<Kind> g_kind{Kind::Off};
 int g_quality = 0;       // 0 native AA, 1 quality, 2 balanced, 3 performance
 int g_menuStart = -2;    // desktop menu mode: the startup choice (option upscaler encoding); -2 = not set
-float g_sharpness = 0.15f;
+bool g_sharpnessSet;     // the menu's saved value replaced option upscale_sharpness
+std::atomic<float> g_sharpness{0.25f};  // the mod's RCAS pass after either backend (src/up/integrate.cpp)
 // Lab switch upscale_fsr_depth: the depth range given to FSR for the reverse-Z depth. 0 swapped (near = far plane),
 // 1 as is, 2 infinite (FFX_UPSCALE_ENABLE_DEPTH_INFINITE, near = FLT_MAX, far = the near plane, as AMD's sample does).
 int g_fsrDepth;
@@ -111,11 +112,13 @@ bool dlssEvaluate(int slot, const Frame& f) {
                         g_dlss.oh[e] != f.output.height || g_dlss.flags[e] != flags;
     if (!g_dlss.feature[e] || resize) {
         if (g_dlss.feature[e]) NVSDK_NGX_VULKAN_ReleaseFeature(g_dlss.feature[e]), g_dlss.feature[e] = nullptr;
-        // Transformer model (preset K) for every mode: best temporal stability, which matters most in VR.
+        // Transformer model (preset K) for every mode: best temporal stability, which matters most in VR. Lab option
+        // dlss_preset (the SDK's enum value: 5 E, 6 F, 10 J, 11 K, 12 L, 13 M) compares others.
+        const unsigned preset = unsigned(std::clamp(se4::options::get("dlss_preset", NVSDK_NGX_DLSS_Hint_Render_Preset_K), 0, 15));
         for (const char* p : {NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality,
                               NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance,
                               NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance})
-            NVSDK_NGX_Parameter_SetUI(g_dlss.params, p, NVSDK_NGX_DLSS_Hint_Render_Preset_K);
+            NVSDK_NGX_Parameter_SetUI(g_dlss.params, p, preset);
         NVSDK_NGX_DLSS_Create_Params cp{};
         cp.Feature.InWidth = inW;
         cp.Feature.InHeight = inH;
@@ -133,7 +136,8 @@ bool dlssEvaluate(int slot, const Frame& f) {
         g_dlss.rw[e] = inW, g_dlss.rh[e] = inH, g_dlss.ow[e] = f.output.width, g_dlss.oh[e] = f.output.height;
         g_dlss.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("dlss: %s %ux%u -> %ux%u (quality %d, preset K)", slotName(slot), inW, inH, f.output.width, f.output.height, int(quality));
+        VRLOG("dlss: %s %ux%u -> %ux%u (quality %d, preset %c)", slotName(slot), inW, inH, f.output.width, f.output.height, int(quality),
+              preset ? char('A' + preset - 1) : '0');
     }
     auto res = [](const Image& i, bool rw, VkImageAspectFlags aspect) {
         return NVSDK_NGX_Create_ImageView_Resource_VK(i.view, i.image, {aspect, 0, 1, 0, 1}, i.format, i.width, i.height, rw);
@@ -246,8 +250,8 @@ bool fsrEvaluate(int slot, const Frame& f) {
     d.motionVectorScale = {f.motionScaleX, f.motionScaleY};
     d.renderSize = {inW, inH};  // at (0,0); the resource descriptions keep the image extents
     d.upscaleSize = {f.output.width, f.output.height};
-    d.enableSharpening = g_sharpness > 0.0f;
-    d.sharpness = g_sharpness;
+    d.enableSharpening = false;  // the mod's own RCAS pass sharpens after either backend (up::sharpness)
+    d.sharpness = 0.0f;
     d.frameTimeDelta = f.frameMs;
     d.preExposure = 1.0f;
     d.reset = g_reset[e] || f.reset;
@@ -287,14 +291,21 @@ bool initMenu(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice 
     if (opt == 1) k = fsr ? Kind::FSR : dlss ? Kind::DLSS : Kind::Off;
     else if (opt != 0) k = dlss ? Kind::DLSS : fsr ? Kind::FSR : Kind::Off;  // DLSS or auto
     g_kind = k;
-    VRLOG("upscaler: desktop menu mode: DLSS %s, FSR 3.1 %s; start %s (requested %d; quality from %s, sharpness %.2f)", dlss ? "available" : "unavailable",
-          fsr ? "available" : "unavailable", name(), opt, se4::options::has("upscale_quality") ? "upscale_quality" : "the engine's Max 3D rendering Mpix",
-          g_sharpness);
+    VRLOG("upscaler: %s menu mode: DLSS %s, FSR 3.1 %s; start %s (requested %d; quality from %s, sharpness %.2f)", se4::g_vrEnabled ? "VR" : "desktop", dlss ? "available" : "unavailable",
+          fsr ? "available" : "unavailable", name(), opt,
+          se4::g_vrEnabled ? "the VR render resolution row" : se4::options::has("upscale_quality") ? "upscale_quality" : "the engine's Max 3D rendering Mpix",
+          g_sharpness.load());
     return dlss || fsr;
 }
 }  // namespace
 
-bool menuMode() { return !se4::g_vrEnabled && se4::options::get("desktop_upscaler", 0) != 0; }
+// Desktop: option desktop_upscaler. VR (R29): on unless option vr_upscaler_menu=0 or single_pass=1 forces single-pass
+// stereo (the upscalers and the VR render resolution need two-pass).
+bool menuMode() {
+    if (!se4::g_vrEnabled) return se4::options::get("desktop_upscaler", 0) != 0;
+    return se4::options::get("vr_upscaler_menu", 1) != 0 && se4::options::get("single_pass", 0) == 0;
+}
+int menuStart() { return g_menuStart; }
 bool wanted() { return se4::options::get("upscaler", 0) != 0 || menuMode(); }
 void setMenuStart(int opt) { g_menuStart = std::clamp(opt, -1, 2); }
 
@@ -321,7 +332,7 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
     g_inst = inst, g_pd = pd, g_dev = dev, g_gdpa = gdpa;
     int opt = se4::options::get("upscaler", 0);  // off until validated in the lab; auto = -1
     g_quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
-    g_sharpness = std::clamp(se4::options::get("upscale_sharpness", 15), 0, 100) / 100.0f;
+    if (!g_sharpnessSet) g_sharpness = std::clamp(se4::options::get("upscale_sharpness", 25), 0, 100) / 100.0f;
     g_fsrDepth = std::clamp(se4::options::get("upscale_fsr_depth", 0), 0, 2);
     if (menuMode()) return initMenu(inst, gipa, pd, dir);
     if (opt == 0) {
@@ -332,7 +343,7 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
     if ((opt == 2 || (opt < 0 && nvidia)) && dlssInit(gipa, dir)) g_kind = Kind::DLSS;
     else if (opt != 2 && fsrInit(dir)) g_kind = Kind::FSR;
     else if (opt == 2 && fsrInit(dir)) g_kind = Kind::FSR;  // DLSS requested but unavailable
-    VRLOG("upscaler: %s (quality %d, sharpness %.2f)", name(), g_quality, g_sharpness);
+    VRLOG("upscaler: %s (quality %d, sharpness %.2f)", name(), g_quality, g_sharpness.load());
     return g_kind != Kind::Off;
 }
 
@@ -372,6 +383,12 @@ bool evaluate(int slot, const Frame& f) {
     if (k == Kind::DLSS) return dlssEvaluate(slot, f);
     if (k == Kind::FSR) return fsrEvaluate(slot, f);
     return false;
+}
+
+float sharpness() { return g_sharpness.load(std::memory_order_relaxed); }
+void setSharpness(float s) {
+    g_sharpnessSet = true;
+    g_sharpness = std::clamp(s, 0.0f, 1.0f);
 }
 
 void resetHistory() { g_reset[0] = g_reset[1] = g_reset[2] = true; }

@@ -3,6 +3,8 @@
 #include "core/reproject.hpp"
 #include "core/upscale.hpp"
 #include "se4/build.hpp"
+#include "se4/cvars.hpp"
+#include "se4/foliage.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "se4/patch.hpp"
@@ -25,6 +27,9 @@ namespace upint {
 namespace {
 const uint32_t kMotionSpv[] =
 #include "motion.comp.inc"
+    ;
+const uint32_t kRcasSpv[] =
+#include "rcas.comp.inc"
     ;
 
 using HdrFn = void*(__cdecl*)(uint32_t a);
@@ -108,6 +113,11 @@ struct Resources {
     VkImageView colorView = VK_NULL_HANDLE, depthView = VK_NULL_HANDLE;
     OwnImage motion, output;
     VkDescriptorSet set = VK_NULL_HANDLE;
+    // RCAS sharpening (up::sharpness): output -> sharp, then sharp is copied to the canvas. Made at the output size.
+    OwnImage sharp;
+    uint32_t sw = 0, sh = 0;
+    VkDescriptorSet sharpSet = VK_NULL_HANDLE;
+    bool sharpFailed = false;
 } g_res;
 
 // Created once per device.
@@ -116,6 +126,9 @@ VkDescriptorSetLayout g_dsl;
 VkPipelineLayout g_pl;
 VkPipeline g_pipe;
 VkDescriptorPool g_pool;
+VkDescriptorSetLayout g_rcasDsl;
+VkPipelineLayout g_rcasPl;
+VkPipeline g_rcasPipe;
 
 uint32_t memType(uint32_t bits) {
     for (uint32_t i = 0; i < vk.mem.memoryTypeCount; ++i)
@@ -195,13 +208,44 @@ bool createPipeline() {
     VkResult r = vk.createCompute(vk.dev, VK_NULL_HANDLE, 1, &cp, nullptr, &g_pipe);
     vk.destroyShader(vk.dev, mod, nullptr);
     if (r != VK_SUCCESS) return false;
-    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4}};
+    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 8}};
     VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dp.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     dp.maxSets = 4;
     dp.poolSizeCount = 2;
     dp.pPoolSizes = ps;
     return vk.createPool(vk.dev, &dp, nullptr, &g_pool) == VK_SUCCESS;
+}
+
+// The RCAS sharpening pipeline (src/up/shaders/rcas.comp): two storage images, 16 bytes of push constants. Made on
+// first use; a failure only turns sharpening off.
+bool createRcasPipeline() {
+    if (g_rcasPipe) return true;
+    VkDescriptorSetLayoutBinding b[2] = {};
+    b[0] = {0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    b[1] = {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo dl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dl.bindingCount = 2;
+    dl.pBindings = b;
+    if (!g_rcasDsl && vk.createDsl(vk.dev, &dl, nullptr, &g_rcasDsl) != VK_SUCCESS) return false;
+    VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, 16};
+    VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pl.setLayoutCount = 1;
+    pl.pSetLayouts = &g_rcasDsl;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &pr;
+    if (!g_rcasPl && vk.createPl(vk.dev, &pl, nullptr, &g_rcasPl) != VK_SUCCESS) return false;
+    VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    sm.codeSize = sizeof(kRcasSpv);
+    sm.pCode = kRcasSpv;
+    VkShaderModule mod;
+    if (vk.createShader(vk.dev, &sm, nullptr, &mod) != VK_SUCCESS) return false;
+    VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+    cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, mod, "main", nullptr};
+    cp.layout = g_rcasPl;
+    const VkResult r = vk.createCompute(vk.dev, VK_NULL_HANDLE, 1, &cp, nullptr, &g_rcasPipe);
+    vk.destroyShader(vk.dev, mod, nullptr);
+    return r == VK_SUCCESS;
 }
 
 // Called when the engine has re-created its HDR targets: the old canvas/depth are gone, so are any command buffers
@@ -212,6 +256,8 @@ void releaseResources() {
     if (g_res.depthView) vk.destroyView(vk.dev, g_res.depthView, nullptr);
     destroyOwn(g_res.motion);
     destroyOwn(g_res.output);
+    if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet);
+    destroyOwn(g_res.sharp);
     g_res = {};
 }
 
@@ -263,12 +309,46 @@ bool ensureOutput(uint32_t w, uint32_t h) {
     if (!g_res.ready) return false;
     if (g_res.ow == w && g_res.oh == h) return g_res.output.image != VK_NULL_HANDLE;  // a failed size is not retried
     destroyOwn(g_res.output);
+    if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet), g_res.sharpSet = VK_NULL_HANDLE;
+    destroyOwn(g_res.sharp);
+    g_res.sw = g_res.sh = 0;
+    g_res.sharpFailed = false;
     g_res.ow = w, g_res.oh = h;
     const bool ok = createOwn(g_res.output, w, h,
                               VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     VRLOG("upint: output image %ux%u %s", w, h, ok ? "ready" : "FAILED");
     if (!ok) destroyOwn(g_res.output);
     up::resetHistory();
+    return ok;
+}
+
+// The sharpening target at the output image's size, with its descriptor set (output -> sharp). A failure is logged
+// once per output size and leaves the image unsharpened.
+bool ensureSharp() {
+    if (g_res.sharp.image && g_res.sw == g_res.ow && g_res.sh == g_res.oh) return true;
+    if (g_res.sharpFailed || !g_res.output.view) return false;
+    bool ok = createRcasPipeline() && createOwn(g_res.sharp, g_res.ow, g_res.oh, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    if (ok) {
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = g_pool;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &g_rcasDsl;
+        ok = vk.allocSets(vk.dev, &ai, &g_res.sharpSet) == VK_SUCCESS;
+    }
+    if (ok) {
+        VkDescriptorImageInfo in{VK_NULL_HANDLE, g_res.output.view, VK_IMAGE_LAYOUT_GENERAL};
+        VkDescriptorImageInfo out{VK_NULL_HANDLE, g_res.sharp.view, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet w[2] = {};
+        w[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, g_res.sharpSet, 0, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &in};
+        w[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, g_res.sharpSet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &out};
+        vk.updateSets(vk.dev, 2, w, 0, nullptr);
+        g_res.sw = g_res.ow, g_res.sh = g_res.oh;
+    } else {
+        if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet), g_res.sharpSet = VK_NULL_HANDLE;
+        destroyOwn(g_res.sharp);
+        g_res.sharpFailed = true;
+    }
+    VRLOG("upint: sharpening image %ux%u %s", g_res.ow, g_res.oh, ok ? "ready" : "FAILED (no sharpening)");
     return ok;
 }
 
@@ -333,8 +413,25 @@ bool g_phaseBReady;  // option, symbols and opcode checks passed, hooks installe
 bool g_menuSize;
 bool g_flatScaled;
 float *g_maxMpix, *g_pixelRatio;  // ren_fMax3DRenderingMPix, ren_fRenderingPixelRatio (read only, logging)
-// Desktop menu mode: the backend the menu asked for (up::Kind as int, -1 none), applied at the next player-views entry.
+// Menu mode: the backend the menu asked for (up::Kind as int, -1 none), applied at the next frame boundary (desktop: the
+// player-views entry; VR: device slot 0x030, onVrFrameBegin).
 std::atomic<int> g_request{-1};
+// VR menu mode (docs/re/R29_upscaler_menu_vr_sharpening.md): the eye render size is a percentage of the eye target
+// size per axis, chosen in the game's "Max 3D rendering Mpix" row (relabelled in VR); the user's MPix cap never applies
+// to the eyes. Two-pass stereo while an upscaler runs or the percentage is below 100, single pass otherwise (unless
+// option single_pass forces one), switched at the frame boundary.
+bool g_vrMenu;
+std::atomic<int> g_vrPct{100};
+std::atomic<bool> g_vrDirty{true};
+int g_singlePassForced = -1;  // option single_pass, -1 not set
+
+// Render size of an eye target in VR: the menu percentage, else the upscale_quality ratio.
+void vrRenderSize(uint32_t ew, uint32_t eh, uint32_t& rw, uint32_t& rh) {
+    if (!g_vrMenu) return up::renderSize(ew, eh, rw, rh);
+    const int p = std::clamp(g_vrPct.load(std::memory_order_relaxed), 1, 100);
+    rw = std::max(1u, uint32_t(std::lround(double(ew) * p / 100.0)));
+    rh = std::max(1u, uint32_t(std::lround(double(eh) * p / 100.0)));
+}
 // Armed by the RenderView limiter call of an eye's view: the render size it returned and the eye size it was given.
 struct EyeSize {
     uint32_t rw = 0, rh = 0, ow = 0, oh = 0, frame = 0;
@@ -485,9 +582,10 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
                  VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
     imageBarrier(b[3], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
                  VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);
+    // (compute and transfer too: the other eye's RCAS and copy read the shared motion / output / sharp images)
     vk.barrier(cb,
                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 4, b);
 
     const core::Tangents& ct = g_proj[e].tan;
@@ -550,6 +648,26 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
         ok = up::evaluate(slot, f);
     }
 
+    // 3b. RCAS sharpening of the upscaled image (up::sharpness, 0 = off): output -> sharp, which is then copied.
+    VkImage result = g_res.output.image;
+    const float sharpness = up::sharpness();
+    if (ok && sharpness > 0.0f && ensureSharp()) {
+        imageBarrier(b[0], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                     VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+        imageBarrier(b[1], g_res.sharp.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
+                     VK_ACCESS_SHADER_WRITE_BIT);
+        vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
+                   0, nullptr, 2, b);
+        const float pc[4] = {sharpness, float(OW), float(OH), 0.0f};
+        vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_rcasPipe);
+        vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_rcasPl, 0, 1, &g_res.sharpSet, 0, nullptr);
+        vk.push(cb, g_rcasPl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, pc);
+        vk.dispatch(cb, (OW + 7) / 8, (OH + 7) / 8, 1);
+        result = g_res.sharp.image;
+        static float logged = -1.0f;
+        if (logged != sharpness) VRLOG("upint: RCAS sharpening %.0f%% (%s)", sharpness * 100.0f, up::name()), logged = sharpness;
+    }
+
     // 4. copy back into the canvas at (0,0) and restore the engine's layouts. Phase B without an upscaled image blits
     //    the render sub-rect to the output size first (bilinear; R25 s5 step 7), so post-processing reads a full image.
     VkPipelineStageFlags restoreSrc = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
@@ -577,7 +695,7 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
         if (logRate(rate))
             VRLOG("upint: %s phase B blit fallback %ux%u -> %ux%u (%s)", slotName(slot), W, H, OW, OH, posed ? "upscaler failed" : "no eye pose");
     } else if (ok) {
-        imageBarrier(b[0], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        imageBarrier(b[0], result, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                      VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT);
         imageBarrier(b[1], g_res.color, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
@@ -587,7 +705,8 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
         VkImageCopy rc{};
         rc.srcSubresource = rc.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         rc.extent = {OW, OH, 1};
-        vk.copy(cb, g_res.output.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_res.color, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &rc);
+        vk.copy(cb, blit ? g_res.output.image : result, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_res.color, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                &rc);
         imageBarrier(b[n++], g_res.color, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
                      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT);
@@ -811,9 +930,36 @@ void applyRequest() {
     VRLOG("upint: flat upscaler %s -> %s at a frame boundary", up::name(before), up::name());
 }
 
+// VR menu mode, at device slot 0x030 (the start of a VR frame, before any eye is projected or rendered): the menu's
+// backend switch and the stereo path. Single pass (about 15 % less game CPU, docs/PERF.md) only runs without an upscaler
+// at 100 %: the upscalers and the render-size override need the per-eye views of two-pass stereo.
+void applyVrRequest() {
+    const int k = g_request.exchange(-1);
+    const bool dirty = g_vrDirty.exchange(false);
+    if (k < 0 && !dirty) return;
+    if (k >= 0) {
+        const up::Kind before = up::active();
+        if (!up::select(up::Kind(k))) VRLOG("upint: VR upscaler %s requested but not available - stays %s", up::name(up::Kind(k)), up::name());
+        else if (up::active() != before) {
+            for (int e = 1; e <= 2; ++e) g_hist[e] = {}, g_proj[e].valid = false, g_lastEval[e] = {};
+            VRLOG("upint: VR upscaler %s -> %s at a frame boundary", up::name(before), up::name());
+        }
+    }
+    if (g_singlePassForced >= 0) return;
+    const bool single = up::active() == up::Kind::Off && g_vrPct.load() >= 100;
+    auto* cur = se4::build().at<int32_t>(se4::gen::vr_bSinglePrepareRendering);
+    if (cur && (*cur != 0) != single) {
+        se4::setIndex(se4::gen::vr_bSinglePrepareRendering, single ? 1 : 0);
+        VRLOG("upint: VR stereo %s (%s, %d%%)", single ? "single pass" : "two-pass", up::name(), g_vrPct.load());
+    }
+}
+
 // player_views(dp, pi+0xa8, views, size): the per-frame pass over the local views; views+0xc = their count.
 uintptr_t __cdecl hookedPlayerViews(uintptr_t dp, uintptr_t p2, uintptr_t views, uintptr_t size) {
-    if (!t_inViews) applyRequest();
+    if (!t_inViews) {
+        applyRequest();
+        foliage::update(flatEnabled());
+    }
     const int savedCount = t_viewCount;
     t_viewCount = views ? *reinterpret_cast<const int32_t*>(views + 0xc) : 0;
     ++t_inViews;
@@ -980,6 +1126,35 @@ void flatLimiter(int w, int h, int* ow, int* oh) {
     g_flatArmed = true;
 }
 
+// VR menu mode without phase B (no upscaler, or 100 %): the eyes ignore the user's MPix cap, which is meant for
+// monitors. The HDR allocation of any VR view gets its input (it holds any smaller canvas). RenderView of an eye target
+// gets the menu percentage: below 100 the engine renders its 3D canvas at that size and rescales it with the user's
+// Rescaling Filter, as with a pixel ratio. Single pass renders both eyes in one RenderView with the device eye at 0
+// (R2); it only runs at 100 %, so there the eye-size target keeps its size.
+void vrStockLimit(void* ret, int w, int h, int* ow, int* oh) {
+    const int eye = deviceEye();
+    if (eye < 0) return;  // no device
+    static LogRate rate;
+    if (ret == g_hdrRet) {
+        if ((*ow != w || *oh != h) && logRate(rate)) VRLOG("upint: VR hdr limiter: identity %dx%d (engine %dx%d)", w, h, *ow, *oh);
+        *ow = w, *oh = h;
+        return;
+    }
+    int ew, eh;
+    vrdev::eyeTargetSize(ew, eh);
+    if (w != ew || h != eh) return;
+    uint32_t rw = uint32_t(w), rh = uint32_t(h);
+    if (eye == 1 || eye == 2) vrRenderSize(uint32_t(w), uint32_t(h), rw, rh);
+    static LogRate first;
+    if (first.n < 2 && logRate(first))
+        VRLOG("upint: VR limiter: eye %d %dx%d engine %dx%d (MPix %.2f, pixel ratio %.3f) -> %ux%u", eye, w, h, *ow, *oh, g_maxMpix ? *g_maxMpix : -1.0f,
+              g_pixelRatio ? *g_pixelRatio : -1.0f, rw, rh);
+    if ((int(rw) != *ow || int(rh) != *oh) && logRate(rate))
+        VRLOG("upint: VR limiter: eye %d %dx%d -> %ux%u (%d%%, %s; engine %dx%d)", eye, w, h, rw, rh, eye == 1 || eye == 2 ? g_vrPct.load() : 100,
+              up::name(), *ow, *oh);
+    *ow = int(rw), *oh = int(rh);
+}
+
 float __cdecl hookedLimiter(int w, int h, int* ow, int* oh) {
     const float r = realLimiter(w, h, ow, oh);  // RenderView scales the shadow maps with it below 1: kept as is
     void* ret = __builtin_return_address(0);    // MinHook enters by a jmp: the engine caller's return address
@@ -995,7 +1170,10 @@ float __cdecl hookedLimiter(int w, int h, int* ow, int* oh) {
         *ow = w, *oh = h;
         return r;
     }
-    if (!phaseB()) return r;
+    if (!phaseB()) {
+        if (g_vrMenu) vrStockLimit(ret, w, h, ow, oh);
+        return r;
+    }
     if (ret == g_hdrRet) {
         // The HDR canvas never shrinks below its input (the eye size of slot 0x068), for every view: a smaller limit
         // would re-create it every frame (R25 s2.2).
@@ -1015,7 +1193,7 @@ float __cdecl hookedLimiter(int w, int h, int* ow, int* oh) {
         return r;
     }
     uint32_t rw, rh;
-    up::renderSize(uint32_t(w), uint32_t(h), rw, rh);  // replaces the user's MPix limit and pixel ratio for the eye
+    vrRenderSize(uint32_t(w), uint32_t(h), rw, rh);  // replaces the user's MPix limit and pixel ratio for the eye
     if (logRate(rate))
         VRLOG("upint: limiter: eye %d %dx%d -> %ux%u (ret %p, engine %dx%d, projection %ux%u)", eye, w, h, rw, rh, ret, *ow, *oh,
               g_proj[eye].rw, g_proj[eye].rh);
@@ -1310,13 +1488,15 @@ bool phaseB() {
     if (!g_evaluate) why = "upscaler disabled";
     else if (!g_evaluateOn) why = "upscale_evaluate=0";
     else if (up::active() == up::Kind::Off) why = up::menuMode() ? "upscaler off (Rescaling Filter menu)" : "no upscaler backend";
-    else if (g_menuSize ? !g_flatScaled : up::ratio() <= 1.0f) why = g_menuSize ? "engine render size = output" : "ratio 1";
+    else if (g_vrMenu ? g_vrPct.load() >= 100 : g_menuSize ? !g_flatScaled : up::ratio() <= 1.0f)
+        why = g_vrMenu ? "VR render resolution 100%" : g_menuSize ? "engine render size = output" : "ratio 1";
     else if (singlePass && *singlePass > 0) why = "single-pass stereo";
     // Logged once per change of state.
     static PVOID volatile logged;
     PVOID state = const_cast<char*>(why ? why : "on");
     if (InterlockedExchangePointer(&logged, state) != state) {
         if (why) VRLOG("upint: phase B off: %s", why);
+        else if (g_vrMenu) VRLOG("upint: phase B on: %s at %d%% of the eye size", up::name(), g_vrPct.load());
         else if (g_menuSize) VRLOG("upint: phase B on: %s at the engine's render size", up::name());
         else VRLOG("upint: phase B on: %s at ratio %.2f", up::name(), up::ratio());
     }
@@ -1457,7 +1637,7 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
             // The size the limiter will return for this eye's RenderView, which runs after the projection (R25 s4).
             int ew, eh;
             vrdev::eyeTargetSize(ew, eh);
-            up::renderSize(uint32_t(ew), uint32_t(eh), g_jitW, g_jitH);
+            vrRenderSize(uint32_t(ew), uint32_t(eh), g_jitW, g_jitH);
             g_jitOut = uint32_t(ew);
         }
         if (g_evaluate && g_jitterOn && up::active() != up::Kind::Off && g_jitW) up::jitter(g_frame, g_jitW, g_jitOut, g_jx, g_jy);
@@ -1474,6 +1654,17 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
 }
 
 bool flatWanted() { return !se4::g_vrEnabled && up::wanted(); }
+bool vrMenu() { return g_vrMenu; }
+bool vrSizeReady() { return g_vrMenu && g_phaseBReady; }
+void setVrPercent(int pct) {
+    pct = std::clamp(pct, 1, 100);
+    if (g_vrPct.exchange(pct) != pct) g_vrDirty = true;
+}
+int vrPercent() { return g_vrPct.load(); }
+void onVrFrameBegin() {
+    if (g_vrMenu) applyVrRequest();
+    foliage::update(g_evaluate && up::active() != up::Kind::Off);
+}
 bool flatReady() { return g_flatReady; }
 void requestKind(up::Kind k) { g_request = int(k); }
 
@@ -1508,8 +1699,11 @@ bool install() {
     // installs it: the user can lower "Max 3D rendering Mpix" at runtime, which makes the engine's render size smaller.
     const int quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
     const bool menu = up::menuMode();
-    g_menuSize = menu && !se4::options::has("upscale_quality");
-    if (menu) VRLOG("upint: desktop menu mode: render size from %s", g_menuSize ? "the engine's Max 3D rendering Mpix" : "upscale_quality (options.txt)");
+    g_vrMenu = menu && se4::g_vrEnabled;
+    g_menuSize = menu && !se4::g_vrEnabled && !se4::options::has("upscale_quality");
+    g_singlePassForced = se4::options::has("single_pass") ? (se4::options::get("single_pass", 0) != 0) : -1;
+    if (g_vrMenu) VRLOG("upint: VR menu mode: eye render size %d%% (Options > Graphics, the VR render resolution row)", g_vrPct.load());
+    else if (menu) VRLOG("upint: desktop menu mode: render size from %s", g_menuSize ? "the engine's Max 3D rendering Mpix" : "upscale_quality (options.txt)");
     g_maxMpix = b.at<float>(se4::gen::ren_fMax3DRenderingMPix);
     g_pixelRatio = b.at<float>(se4::gen::ren_fRenderingPixelRatio);
     if (!se4::options::get("upscale_phase_b", 1)) VRLOG("upint: phase B off: upscale_phase_b=0");

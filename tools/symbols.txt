@@ -227,3 +227,10 @@ manual:mc_sync              # R28: reference (cvar -> displayed option)
 var:ren_iRescalingFilter     # R28: read only; never written by the mod (saved 0..5)
 var:ren_fRenderingPixelRatio # R28: read only; render-size input (no menu widget)
 var:ren_fMax3DRenderingMPix  # R28: read only; the menu's resolution-scale control
+manual:slider_alloc_site    # R29: the slider's allocation type global (mov rdx,[rip+type] at +9) and its ctor call at +0x23
+manual:slider_ctor          # R29: CSliderWidget ctor (widget, menu), 0x1b8 bytes
+manual:widget_add_child     # R29: (widget, parent) appends to parent+0x28
+manual:widget_set_label     # R29: (widget, label, 1)
+manual:widget_set_tooltip   # R29: variadic (widget, menu, "%1", 0xabcd0009, text)
+var:sha_iAllowTreeSwaying    # R29: foliage sway level (read only; its reads are redirected to a mod copy)
+manual:wlink_snapshot     # R29: hooked: the mod rows (renamed links) take no snapshot

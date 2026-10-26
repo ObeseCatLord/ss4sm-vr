@@ -465,6 +465,38 @@
     Jitter phases, LOD bias and the DLSS quality mode follow the actual ratio.
   - Log lines: `menu: Rescaling Filter entries on`, `menu: rescaling options appended`, `menu: rescaling select`,
     `upint: flat upscaler X -> Y at a frame boundary`, `upint: flat limiter (menu ...)`. Lab checks: R28 s6.
+- **Upscaler menu, part 2 (R29, 2026-10-26):**
+  - **Sharpening.**
+    - DLSS has no sharpening of its own any more, and FSR 3.1's own RCAS is now always off. The mod runs AMD RCAS
+      (`src/up/shaders/rcas.comp`, with noise removal, on the HDR image through a reversible tonemap) after either
+      backend.
+    - Strength comes from the new "Upscaler Sharpening" slider in Options > Graphics: 0..100 %, steps of 5,
+      default 25. 0 skips the pass.
+    - The slider is a real CSliderWidget built like the engine's XML menu builder builds one. Its link is renamed, so
+      no cvar or Lua is involved.
+    - Saved as `sharpness=` in `upscaler_menu.txt`; option `upscale_sharpness` overrides it.
+  - **Foliage sway.**
+    - Swaying leaves and bushes have no motion vectors, and that is the DLSS foliage shimmer (lab: the per-pixel
+      deviation of a bush under DLAA drops to the level of the wall behind it without sway).
+    - `src/se4/foliage.cpp` redirects the 6 (SM: 7) reads of `sha_iAllowTreeSwaying` to a mod copy. That copy
+      mirrors the cvar, or holds `min(cvar, mode)` while an upscaler runs. The cvar is never written.
+    - Menu row "Foliage Sway (DLSS / FSR)": Off (default) or Game Setting, saved as `foliage_sway=`; option
+      `upscale_foliage_sway` overrides it.
+  - **VR menu mode** (default on in VR; off with `vr_upscaler_menu=0` or `single_pass=1`):
+    - The Rescaling Filter entries work in VR too.
+    - The "Max 3D rendering Mpix" row becomes "VR Render Resolution": 33/50/58/67/75/83/90/100 % of the eye
+      resolution per axis. The user's desktop MPix cap no longer reaches the eyes.
+    - Below 100 % with DLSS/FSR: phase B at that size. Without them, the engine's own resized canvas and the
+      Rescaling Filter.
+    - Single-pass stereo only without an upscaler at 100 %. The mod switches `vr_bSinglePrepareRendering` in memory
+      at frame start (restored before the engine saves cvars).
+    - The backend switch also happens at frame start.
+    - Saved as `vr_upscaler=` / `vr_render=`; the desktop keeps `upscaler=`.
+  - **New symbols:** `slider_alloc_site`, `slider_ctor`, `widget_add_child`, `widget_set_label`, `widget_set_tooltip`,
+    `sha_iAllowTreeSwaying`, all four exes. The multichoice and collection constructors are decoded from
+    `gfxopt_init` +0xd0c / +0xda4 (same bytes in all four).
+  - **Lab tool:** `tools/lab/flat_stability.sh`. Lab options: `dlss_preset`, `lab_foliage_sway`. Details and numbers:
+    R29.
 - **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
   redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by
   `hud_inset_scale`, centred on the eye's optical axis; world-projected points are untouched. Lab: health/armour/ammo
