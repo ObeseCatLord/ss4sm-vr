@@ -1,8 +1,9 @@
 # Headset test procedure (run when the headset is free)
 
 Prerequisites: Envision/Monado running with the Beyond and Knuckles (or SteamVR), mod installed with
-`tools/install.py install <game dir>`, VR opt-in enabled (`touch "<game>/Bin/x64/ss4smvr/enable_vr"`, remove
-the file to play flat again).
+`tools/install.py install <game dir>`. That also creates the VR opt-in `Bin/x64/ss4smvr/enable_vr`; remove the file
+to play flat again. A flat player joining VR players uses `--mode desktop`. `tools/install.py uninstall <game dir>`
+removes everything the mod added.
 
 Steam launch options (Serious Sam 4 / Siberian Mayhem):
   WINEDLLOVERRIDES="msimg32=n,b" PRESSURE_VESSEL_IMPORT_OPENXR_1_RUNTIMES=1 %command% +gfx_strAPI Vulkan
