@@ -30,9 +30,12 @@ Findings:
   2560x2560 (6.5 MP). Scaling the measured 4.7 ms by pixel count gives roughly 7–8 ms on the headset, inside
   11.1 ms. Measure it there (USER_VR_TEST step 9).
 - **Two-pass vs single pass.** Single pass no longer crashes; the cause was the released-target bug. It saves about
-  15 % of the game's CPU time at the same GPU time. **But the flat HUD (health, armour, weapon bar, objective title)
-  is missing in single pass.** So two-pass stays the default (`single_pass=0`) until the HUD's single-pass path is
-  fixed. That is an open item.
+  15 % of the game's CPU time at the same GPU time.
+  - Its flat HUD was missing at first: the HUD renders with the device's eye field at 0. That is fixed
+    (`vrdev::hudEye`).
+  - With `SUITE_OPTS=single_pass=1`, the core and vehicle stages pass in SS4 (17/17) and SM (17/17).
+  - **Single pass is the default** (`single_pass=0` for two-pass). Selecting an upscaler defaults to two-pass, because
+    the upscalers are integrated there.
 - **Fixed foveation** gives no measurable GPU saving in this scene at this size, where the 4090 is not shading-bound.
   Check it again at headset resolution and in a dense scene.
 - **Upscalers.**

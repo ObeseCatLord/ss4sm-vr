@@ -608,10 +608,11 @@ bool install() {
     // force_immersive=1 draws menus head-locked in the world view instead.
     if (se4::options::get("force_immersive", 0)) se4::setIndex(se4::gen::vr_bForceImmersiveMode, 1);
     // Stereo path: vr_iUsingSinglePassStereo is recomputed every frame from vr_bSinglePrepareRendering
-    // (0x140b6b5b0). Single pass renders into an engine-owned double-width target (vr_eye_render), which came
-    // back NULL in the first lab run and crashed Render; two-pass uses the device's per-eye targets.
-    // Option single_pass=1 selects the engine's single-pass path for testing.
-    se4::setIndex(se4::gen::vr_bSinglePrepareRendering, se4::options::get("single_pass", 0) ? 1 : 0);
+    // (0x140b6b5b0). Single pass (one CPU prepare for both eyes) is the default: about 15 % less game CPU time at the
+    // same GPU time, and both lab suites pass with it (docs/PERF.md). The upscalers are integrated with two-pass, so
+    // selecting one defaults to two-pass. Option single_pass=0|1 overrides.
+    const bool singlePass = se4::options::get("single_pass", se4::options::get("upscaler", 0) ? 0 : 1) != 0;
+    se4::setIndex(se4::gen::vr_bSinglePrepareRendering, singlePass ? 1 : 0);
     VRLOG("vrdev: COpenXRDevice installed at %p (global %p)", static_cast<void*>(&g_obj), static_cast<void*>(global));
     return true;
 }
