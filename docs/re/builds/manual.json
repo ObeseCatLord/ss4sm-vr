@@ -138,7 +138,8 @@
   "hud_text_centred": "0x1400e87f0",
   "hud_layout_map": "0x1400dd1a0",
   "gfx_safe_area": "0x140b99060",
-  "vr_loco_in_air": "0x14043aae0"
+  "vr_loco_in_air": "0x14043aae0",
+  "gfx_text": "0x140b953c0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -272,7 +273,8 @@
   "hud_text_centred": "0x1400eb140",
   "hud_layout_map": "0x1400dfaf0",
   "gfx_safe_area": "0x140b9ba10",
-  "vr_loco_in_air": "0x14043d210"
+  "vr_loco_in_air": "0x14043d210",
+  "gfx_text": "0x140b97d70"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -413,7 +415,8 @@
   "hud_text_centred": "0x1400e88c0",
   "hud_layout_map": "0x1400dd270",
   "gfx_safe_area": "0x140b99710",
-  "vr_loco_in_air": "0x14043ac60"
+  "vr_loco_in_air": "0x14043ac60",
+  "gfx_text": "0x140b95a30"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -547,6 +550,7 @@
   "hud_text_centred": "0x1400eb200",
   "hud_layout_map": "0x1400dfbb0",
   "gfx_safe_area": "0x140b9c0b0",
-  "vr_loco_in_air": "0x14043d380"
+  "vr_loco_in_air": "0x14043d380",
+  "gfx_text": "0x140b983d0"
  }
 }

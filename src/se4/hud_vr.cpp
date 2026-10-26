@@ -220,8 +220,8 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     at(320, 240, c), at(320, 250, c2);
     const float unit = std::fabs(c2[1] - c[1]) / 10.0f;  // canvas units per virtual pixel
     if (!(unit > 1e-3f && unit < 1e3f)) return;
-    float fade = *reinterpret_cast<float*>(wheel + 0xc0);
-    if (!(fade >= 0 && fade <= 1)) fade = 1;
+    // wheel+0xc0 is the wheel's opacity (a profile option, 0.33 in a fresh profile); the spots stay readable.
+    const float fade = 1.0f;
     void* tex = *reinterpret_cast<void**>(params + 0x1c8);              // hep_ptexGadgetListItemTexture
     const uint32_t hover = *reinterpret_cast<uint32_t*>(params + 0x58);  // hep_colHoveredElementBorderColor
     auto alpha = [&](uint32_t col) { return (uint32_t(float(col >> 24) * fade) << 24) | (col & 0xffffff); };
@@ -245,21 +245,26 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     g_sd.tpSize(tp, 1, rel);
     const float textSize = 0.0f;  // centred text (hud_text_centred) needs no baseline offset
     const float bw = 110.0f * unit, bh = 24.0f * unit;
+    float pos[SpotCount][2];
     for (int spot = 0; spot < SpotCount; ++spot) {
         const bool left = spot == SpotMenu || spot == SpotNetricsa;
         const bool upper = spot == SpotNetricsa || spot == SpotQuickSave;
-        float p[2];
         // Upper corners beside the wheel, inside the drawport (the gadget list fills the left middle): left Netricsa
         // above Menu, right Quick save above Quick load - the same sides and order as the hand gesture.
-        at(320.0f + (left ? -1.0f : 1.0f) * g_spotDx, upper ? 40.0f : 72.0f, p);
+        at(320.0f + (left ? -1.0f : 1.0f) * g_spotDx, upper ? 40.0f : 72.0f, pos[spot]);
+        const float* p = pos[spot];
         const float rect[4] = {p[0] - bw * 0.5f, p[1] - bh * 0.5f, p[0] + bw * 0.5f, p[1] + bh * 0.5f};
         // A dark, mostly opaque box with white text (readable over snow or sky); the hovered spot in the wheel's own
         // highlight colour with black text.
         if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? (hover | 0xff000000u) : 0xd0181818u));
+    }
+    // The canvas draws a queue's text before its quads, so the boxes are drawn now and the labels queued after them.
+    if (flushCanvas) flushCanvas(batch, *g_gfx);
+    for (int spot = 0; spot < SpotCount; ++spot) {
         *reinterpret_cast<uint32_t*>(tp + 0x10) = spot == hovered ? 0xff000000u : 0xffffffffu;
         alignas(16) uint8_t str[0x20] = {};
         g_sd.strCtor(str, spotName(spot));
-        const float xy[2] = {p[0], p[1] - textSize};
+        const float xy[2] = {pos[spot][0], pos[spot][1] - textSize};
         uint64_t packed;
         memcpy(&packed, xy, 8);
         g_sd.text(batch, *g_gfx, str, tp, packed, fade);
@@ -360,6 +365,17 @@ bool insetOn(void** vt) {
     return true;
 }
 
+// Diagnostic (hud_text_log=1): the strings the HUD flush draws while the wheel is on the hand panel.
+using GfxTextFn = void(__cdecl*)(void* gfx, const char* str, const float* xyz, uint32_t colour);
+GfxTextFn realGfxText;
+volatile bool g_logText;
+void __cdecl hookedGfxText(void* gfx, const char* str, const float* xyz, uint32_t colour) {
+    static int n;
+    if ((g_logText || n < 8) && n < 60 && str && !IsBadReadPtr(str, 8))
+        ++n, VRLOG("hud_vr: text '%.30s' at %.0f %.0f colour %08x%s", str, xyz ? xyz[0] : -1.f, xyz ? xyz[1] : -1.f, colour, g_logText ? " (wheel)" : "");
+    realGfxText(gfx, str, xyz, colour);
+}
+
 // One crosshair element draw: in the flat HUD natively (projected per eye by src/se4/crosshair.cpp), on the 3D path
 // at the target's depth or in 2D.
 void drawCrosshair(void** ctx, uint8_t* e, float dist) {
@@ -440,10 +456,12 @@ void hookedElement(void** ctx, uint8_t* e) {
     const int32_t savedBatching = batching ? *batching : 0;
     if (batching) *batching = 0;
     if (onHand) g_spotCtx = {ctx, e, dp};
+    g_logText = onHand && realGfxText;
     realElement(ctx, e);
     g_spotCtx = {};
     if (wheel) wheel_panel::beforeWheelDraw(e);  // again, in case the draw's own selection step set it
     flush(ctx);
+    g_logText = false;
     if (batching) *batching = savedBatching;
     load(params, native);
     memcpy(anchor, savedAnchor, sizeof savedAnchor);
@@ -484,6 +502,9 @@ bool install() {
     g_insetAxis = se4::options::get("hud_inset_axis", 1) != 0;
     g_objHolderRender = b.at<void>(se4::gen::object_holder_render);
     installInset();
+    if (se4::options::get("hud_text_log", 0))
+        if (void* t = b.at<void>(se4::gen::gfx_text))
+            if (MH_CreateHook(t, reinterpret_cast<void*>(hookedGfxText), reinterpret_cast<void**>(&realGfxText)) == MH_OK) MH_EnableHook(t);
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))
         for (int i = 0; i < 0x100 && !g_gfx; ++i)

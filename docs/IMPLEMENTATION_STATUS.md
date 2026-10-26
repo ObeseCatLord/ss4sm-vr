@@ -366,11 +366,15 @@
   → RT) and the pause menu bar "RESUME GAME (B) · CHEATS · SELECT (A)" on Index.
 - **Siberian Mayhem:** per-weapon crosshair, wheel spots, Netricsa controls, prompts and the artifact crush checked.
 - Open:
-  - wheel spot labels: the boxes draw in the upper corners beside the wheel (hovered one highlighted), the text
-    call (native size, centred variant, inside the wheel render) still shows nothing;
-  - vehicle grab steering in the lab: SS4 06_Countryside has 4 vehicles (Harvester first); the lab Lua can teleport
-    the player there, but MountRide(v, "Default") does not board and the use button did not either; Wait() in lab
-    chunks only resumes once;
+  - wheel spot labels: the boxes draw in the upper corners beside the wheel (hovered one highlighted). The labels
+    reach the engine's gfx text draw (0x140b953c0) at the right place in full white (`hud_text_log=1`), yet nothing
+    shows, not even a test label at the wheel centre; in the fresh lab profile the wheel's own labels are barely
+    visible too (its fade, wheel+0xc0, is a game-time fade-in slowed by the wheel's slow motion, 0.33 in captures).
+    In the user's earlier profile the wheel's labels did show on the panel. Unresolved;
+- **Vehicles (lab, 06_Countryside Harvester):** boarding no longer crashes (the native VR locomotion's unchecked
+  physics-body read answers "not airborne" while riding, so the VR anchor keeps following the seat); seated height on
+  boarding (`ride_eye_cm`, default 80); grab steering falls back to an 18 cm rim when the model has no grip
+  attachments; the wheel was grabbed and turned (0.5 rad), the stick drove it, the use button got out.
   - upscaler quality; multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
 - **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
   redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by

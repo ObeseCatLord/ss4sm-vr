@@ -842,5 +842,10 @@
    "len": 24
   },
   "_note": "(vrd) -> airborne for long: reads player+0x1d0 (en_pbo) without a null check; crashes while riding (R21 s3)"
+ },
+ "gfx_text": {
+  "src": "0x140b953c0",
+  "len": 48,
+  "_note": "gfx text draw (gfx, CString*, xyz*, colour): the HUD flush draws each queued text record with it (R18 s7.2); diagnostic hook only"
  }
 }
