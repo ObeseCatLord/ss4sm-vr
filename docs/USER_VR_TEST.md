@@ -38,6 +38,8 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    has none. Close one eye, then the other: each crosshair stays on what its gun points at.
 7l. Wheel spots: hold a wheel and move the hand far to the left (Menu; higher: Netricsa) or right (Quick load;
    higher: Quick save) past the wheel; the spot lights up; let go to run it. Your weapon should not change.
+   The spots' labels, the "GADGETS" title and the gadget names should be readable on the panel and sit at the
+   panel's depth (not floating in front of or behind it).
 7m. Menus and Netricsa: A selects, B goes back and closes Netricsa, the grips switch Netricsa tabs, the trigger
    clicks what you point at. Button prompts should name your controller's buttons (e.g. "L Grip" for the gadget).
 7n. Sirian Artifact (S.A.M. crate): the artefact comes up in your hand and waits; crush it with the trigger, a hard
@@ -69,5 +71,8 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;
    `vr_iRotationController` 2 = right hand). Check that turning and moving still work, and that shots
    leave the gun.
+8b. Upscaler A/B (Pompeii, look at foliage and fences while standing still and while turning): `upscaler=0`
+   (default, no AA), `upscaler=2` (DLSS/DLAA, NVIDIA) and `upscaler=1` (FSR 3.1). Note which looks best for
+   shimmer vs sharpness and the frame rate of each; the default follows your pick.
 9. Note frame rate (`mirror: N fps`) and any `vrdev: first call slot` lines that are new.
 Send the log back; it contains no personal data beyond file paths.

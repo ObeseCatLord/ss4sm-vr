@@ -46,8 +46,8 @@ wheel_to() {  # wheel_to <dx> <dy> : open the right wheel, move the hand by (dx,
 stage_core() {
   rm -f "$LUA"; EXTRA=(); start "$CORE" || return
   mark
-  check "installs: crosshair per weapon, spots, prompts, artifact, HUD inset" \
-    "$(grep -aq 'one crosshair per weapon' "$MODLOG" && grep -aq 'spots beside the wheel' "$MODLOG" && grep -aq 'prompts: button prompts' "$MODLOG" && grep -aq 'artifact: Sirian artifact crush active' "$MODLOG" && grep -aq 'flat HUD inset' "$MODLOG" && echo 1 || echo 0)"
+  check "installs: crosshair per weapon, spots, prompts, artifact, HUD inset, panel text" \
+    "$(grep -aq 'one crosshair per weapon' "$MODLOG" && grep -aq 'spots beside the wheel' "$MODLOG" && grep -aq 'prompts: button prompts' "$MODLOG" && grep -aq 'artifact: Sirian artifact crush active' "$MODLOG" && grep -aq 'flat HUD inset' "$MODLOG" && grep -aq 'hand panel text drawn per eye' "$MODLOG" && echo 1 || echo 0)"
   check "no FAILED hooks" "$(grep -aq 'FAILED' "$MODLOG" && echo 0 || echo 1)" "$(grep -a 'FAILED' "$MODLOG" | head -2 | tr -d '\r')"
   cap core-view
   # Netricsa spot, tab switch with the grip, close with B

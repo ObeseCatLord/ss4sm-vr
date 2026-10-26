@@ -247,7 +247,21 @@
     - Use NGX's debug overlay (ShowDlssIndicator, jitter/MV views) in the lab.
     - Make a deterministic static capture: freeze foliage/time and read the eye image back directly instead of the
       desktop mirror.
-  - Until then `upscaler` stays 0 by default. Lab switches are listed in src/up/integrate.cpp.
+  - Texture LOD bias (R23, 2026-10-25): −1 on the scene binds while upscaling (`upscale_lod_bias`).
+  - A/B, 2026-10-26 (`tools/lab/upscale_matrix.sh`, still headset view, Pompeii, 6 frames, left eye):
+
+    | config | frame diff | sharpness (Laplacian var.) |
+    |---|---|---|
+    | no AA | 1.29 | 4494 |
+    | DLSS (DLAA, preset K), no bias | 1.04 | 3419 |
+    | DLSS, bias −1 (default) | 1.06 | 3541 |
+    | FSR 3.1 | 1.73 | 3861 |
+
+    The bias gives DLSS about 4 % more detail at no stability cost. DLSS removes about 18 % of the frame-to-frame
+    shimmer (foliage moves in the wind, so the floor is not 0) but stays softer than no AA. FSR shows low-level noise
+    over static walls and ground, so its jitter is not fully resolved (sign flips were tested earlier).
+  - `upscaler` stays 0 by default: the sharpness/stability trade-off is a headset decision (USER_VR_TEST), and FSR's
+    static noise is open. Lab switches are listed in src/up/integrate.cpp.
 - Lab, 2026-10-24, SS4 Pompeii, hands and scope working:
   - **PiP scope:** the sniper's scope view is a circular, magnified image with a reticle at the eyepiece, in the
     weapon's hand. The engine renders it as eye 3.
@@ -357,7 +371,7 @@
   ABXY/D-pad/View mapped, grip second stage = crush.
 - **Wheel spots (R18):** moving the wheel hand past the wheel to the side points at Menu / Netricsa (left) or
   Quick load / Quick save (right); releasing there runs the game's own Fusion VR wheel button functions. Lab: all
-  four work (quick load shows the native confirmation; saves go to the lab's UserData). Labels: pending check.
+  four work (quick load shows the native confirmation; saves go to the lab's UserData). Labels: drawn per eye on the 2D path (hand-panel text, below).
 - **Menu layout:** while a menu or Netricsa is open, A confirms, B goes back/closes, grips (Index trackpads, Frame
   bumpers) switch tabs, the trigger clicks through the pointer. Lab: Netricsa tab switch and close.
 - **Button prompts (R19):** the virtual pad's control markup returns the VR control (Xbox glyph where it matches,
@@ -366,16 +380,15 @@
   → RT) and the pause menu bar "RESUME GAME (B) · CHEATS · SELECT (A)" on Index.
 - **Siberian Mayhem:** per-weapon crosshair, wheel spots, Netricsa controls, prompts and the artifact crush checked.
 - Open:
-  - wheel spot labels: the boxes draw in the upper corners beside the wheel (hovered one highlighted). The labels
-    reach the engine's gfx text draw (0x140b953c0) at the right place in full white (`hud_text_log=1`), yet nothing
-    shows, not even a test label at the wheel centre; in the fresh lab profile the wheel's own labels are barely
-    visible too (its fade, wheel+0xc0, is a game-time fade-in slowed by the wheel's slow motion, 0.33 in captures).
-    In the user's earlier profile the wheel's labels did show on the panel. Unresolved;
+  - upscaler quality (see the upscaler item); multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
+- **Hand-panel text (2026-10-26, R18 s7.4):** the engine's 3D HUD path draws no text, so the wheel on the hand showed
+  neither the spot labels nor its own title, gadget names or ammo counts. While the wheel renders on the hand, its
+  text calls are projected per eye onto the 2D path at the panel's depth (`hud_vr.cpp panelText`, option
+  `wheel_panel_text`). Lab (SS4 Pompeii): spot labels on their boxes, "GADGETS" and the gadget names on the panel.
 - **Vehicles (lab, 06_Countryside Harvester):** boarding no longer crashes (the native VR locomotion's unchecked
   physics-body read answers "not airborne" while riding, so the VR anchor keeps following the seat); seated height on
   boarding (`ride_eye_cm`, default 80); grab steering falls back to an 18 cm rim when the model has no grip
   attachments; the wheel was grabbed and turned (0.5 rad), the stick drove it, the use button got out.
-  - upscaler quality; multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
 - **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
   redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by
   `hud_inset_scale`, centred on the eye's optical axis; world-projected points are untouched. Lab: health/armour/ammo
