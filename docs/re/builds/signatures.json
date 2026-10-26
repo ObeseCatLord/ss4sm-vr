@@ -561,5 +561,156 @@
   "index": 16,
   "limit": 1024,
   "_note": "void(state, float delay, cb, const char* name): CEntityState::Return timer (R17 s1.6)"
+ },
+ "vr_netricsa_act": {
+  "src": "0x1404514e0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140451610",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel Netricsa button action (btn, hand) (R18 s2.1)"
+ },
+ "vr_quicksave_act": {
+  "src": "0x1404517c0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1404518f0",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel QuickSave/Load button action (btn, hand); btn+0x40 1 save / 0 load (vrwheel+0x58 deferred) (R18 s2.1)"
+ },
+ "vr_menu_avail": {
+  "src": "0x140453f90",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1404540f0",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel Menu button availability (btn) (R18 s2.1)"
+ },
+ "vr_netricsa_avail": {
+  "src": "0x140453fe0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140454140",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel Netricsa button availability (btn) (R18 s2.1)"
+ },
+ "vr_qs_avail": {
+  "src": "0x1404540c0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140454220",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel QuickSave/Load availability (btn): saving allowed (not MP) and player alive (R18 s2.1)"
+ },
+ "vr_wheel_tick": {
+  "src": "0x140454370",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1404544d0",
+   "len": 48
+  },
+  "_note": "Fusion VR wheel tick (vrwheel): deferred quick load (R18 s2.1)"
+ },
+ "player_key": {
+  "call_of": "vr_wheel_tick",
+  "index": 3,
+  "_note": "(player, int* key) controller key of a player (R18 s2.4)"
+ },
+ "entity_pi": {
+  "call_of": "vr_wheel_tick",
+  "index": 4,
+  "_note": "entity -> project instance (R18)"
+ },
+ "quick_load": {
+  "call_of": "vr_wheel_tick",
+  "index": 5,
+  "_note": "(menuMgr = pi+0xb8, int* key, int) quick load / confirm dialog (R18 s2.5)"
+ },
+ "entity_to_handle": {
+  "call_of": "gwa_step",
+  "index": 5,
+  "limit": 1024,
+  "_note": "entity -> handle (R8 A7.3)"
+ },
+ "hud_text": {
+  "src": "0x1400e8290",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1400e8360",
+   "len": 48
+  },
+  "_note": "HUD text (batch, gfx, CString*, TextParams*, uint64 xy, float alpha) (R18 s3.2)"
+ },
+ "hud_box9": {
+  "src": "0x1400e4580",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1400e4650",
+   "len": 48
+  },
+  "_note": "HUD 9-slice box (batch, gfx, CTexture*, float rect[4], ARGB) (R18 s3.2)"
+ },
+ "textparams_init": {
+  "src": "0x140b53a70",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140b53f70",
+   "len": 48
+  },
+  "_note": "TextParams init (tp[0x60], font+0x30) (R18 s3.2)"
+ },
+ "textparams_size": {
+  "src": "0x140b550c0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140b555c0",
+   "len": 48
+  },
+  "_note": "TextParams size (tp, 1, float) (R18 s3.2)"
+ },
+ "textparams_free": {
+  "src": "0x140b53e30",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140b54330",
+   "len": 48
+  },
+  "_note": "TextParams free (tp) (R18 s3.2)"
+ },
+ "cstring_dtor": {
+  "src": "0x1410bfce0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1410c0490",
+   "len": 48
+  },
+  "_note": "CString dtor (R18 s3.2)"
+ },
+ "menu_open_hand": {
+  "src": "0x140056c80",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140056ce0",
+   "len": 48
+  },
+  "_note": "(pi, hand, const char* menu \"\" = default in-game menu, float fade 0.5, 0, 0): what the Fusion VR Menu button runs after committing the hand pick (R18 s2.1)"
  }
 }

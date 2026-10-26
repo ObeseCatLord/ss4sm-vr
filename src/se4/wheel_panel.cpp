@@ -4,6 +4,8 @@
 #include "se4/gamepad.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
+#include "se4/player_vr.hpp"
+#include "core/vr_controls.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
@@ -65,7 +67,82 @@ void latch() {
           h == 0 ? "left hand" : h == 1 ? "right hand" : "both hands", p.x, p.y, p.z, head.x, head.y, head.z);
 }
 
+// ---- Spots beside the wheel (R18): Menu / Netricsa on the left, Quick load / Quick save on the right ----
+// Actions go through the Fusion VR wheel's own button functions, still in SS4/SM, given a stand-in VR wheel whose
+// +0x00 is the player's handle and whose hand pick lists (+0x18, count +0x20) are empty, so their "commit the hand's
+// pick" step does nothing. Quick load is the VR wheel tick's own sequence (key, then the quick load native).
+using AvailFn = int(__cdecl*)(uint8_t* button);
+using ActFn = void(__cdecl*)(uint8_t* button, int hand);
+using HandleFn = int32_t(__cdecl*)(uint8_t* entity);
+using EntityFn = uint8_t*(__cdecl*)(uint8_t* entity);
+using KeyFn = void(__cdecl*)(uint8_t* player, int32_t* key);
+using LoadFn = void(__cdecl*)(void* menuMgr, int32_t* key, int arg);
+using MenuFn = void(__cdecl*)(uint8_t* pi, int hand, const char* menu, float fade, void* params, void* owner);
+struct Actions {
+    AvailFn menuAvail, netricsaAvail, saveAvail;
+    ActFn netricsa, save;
+    HandleFn toHandle;
+    EntityFn pi;
+    KeyFn key;
+    LoadFn load;
+    MenuFn menu;
+} g_act;
+int g_pending = -1;
+ULONGLONG g_pendingAt;
+
+void runSpot(uint8_t* player, int spot, int hand) {
+    alignas(16) static uint8_t vrwheel[0x100];
+    alignas(16) uint8_t button[0x48] = {};
+    memset(vrwheel, 0, sizeof vrwheel);
+    *reinterpret_cast<int32_t*>(vrwheel) = g_act.toHandle(player);
+    *reinterpret_cast<uint8_t**>(button + 8) = vrwheel;
+    const int nativeHand = hand == 1 ? 0 : 1;  // engine hand 0 = right
+    using core::controls::Spot;
+    bool done = false;
+    switch (spot) {
+    case core::controls::SpotMenu:
+        if ((done = g_act.menuAvail(button) != 0)) g_act.menu(g_act.pi(player), nativeHand, "", 0.5f, nullptr, nullptr);
+        break;
+    case core::controls::SpotNetricsa:
+        if ((done = g_act.netricsaAvail(button) != 0)) g_act.netricsa(button, nativeHand);
+        break;
+    case core::controls::SpotQuickSave:
+        *reinterpret_cast<int32_t*>(button + 0x40) = 1;
+        if ((done = g_act.saveAvail(button) != 0)) g_act.save(button, nativeHand);
+        break;
+    case core::controls::SpotQuickLoad:
+        if ((done = g_act.saveAvail(button) != 0)) {
+            int32_t key[4] = {};
+            g_act.key(player, key);
+            g_act.load(*reinterpret_cast<void**>(g_act.pi(player) + 0xb8), key, 0);
+        }
+        break;
+    }
+    VRLOG("wheel_panel: %s spot %s", core::controls::spotName(spot), done ? "run" : "not available now (multiplayer, dead or busy)");
+}
+
 }  // namespace
+
+void onTick(uint8_t* player) {
+    if (!g_act.toHandle) return;
+    if (const int a = gamepad::takeSpotAction(); a >= 0) g_pending = a, g_pendingAt = GetTickCount64();
+    // After the wheel has closed (its menu screen is gone), so the action does not race the wheel's own close.
+    if (g_pending < 0 || g_wasOpen || GetTickCount64() - g_pendingAt < 100) return;
+    const int a = g_pending;
+    g_pending = -1;
+    runSpot(player, a & 0xf, a >> 4);
+}
+
+void beforeWheelDraw(uint8_t* wheel) {
+    // Pointing at a spot: no weapon highlighted, so the wheel's close commits the current weapons (R18 s3.4).
+    if (wheel && gamepad::wheelSpot() >= 0) {
+        *reinterpret_cast<void**>(wheel + 0x78) = nullptr;
+        *reinterpret_cast<void**>(wheel + 0x80) = nullptr;
+        *reinterpret_cast<int32_t*>(wheel + 0xbc) = 0;
+    }
+}
+
+bool spotsAvailable() { return g_act.toHandle != nullptr; }
 
 bool wheelOpen(void* pi) {
     if (!g_enabled || !pi || !g_dummyCommand) return false;
@@ -92,6 +169,25 @@ bool install() {
         VRLOG("wheel_panel: %s - the wheel stays on the cinema screen", g_enabled ? "build lacks wheel symbols" : "disabled by option");
         g_enabled = false;
         return false;
+    }
+    {
+        const auto& b = se4::build();
+        Actions a{};
+        a.menuAvail = reinterpret_cast<AvailFn>(b.at<void>(se4::gen::vr_menu_avail));
+        a.netricsaAvail = reinterpret_cast<AvailFn>(b.at<void>(se4::gen::vr_netricsa_avail));
+        a.saveAvail = reinterpret_cast<AvailFn>(b.at<void>(se4::gen::vr_qs_avail));
+        a.netricsa = reinterpret_cast<ActFn>(b.at<void>(se4::gen::vr_netricsa_act));
+        a.save = reinterpret_cast<ActFn>(b.at<void>(se4::gen::vr_quicksave_act));
+        a.toHandle = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::entity_to_handle));
+        a.pi = reinterpret_cast<EntityFn>(b.at<void>(se4::gen::entity_pi));
+        a.key = reinterpret_cast<KeyFn>(b.at<void>(se4::gen::player_key));
+        a.load = reinterpret_cast<LoadFn>(b.at<void>(se4::gen::quick_load));
+        a.menu = reinterpret_cast<MenuFn>(b.at<void>(se4::gen::menu_open_hand));
+        if (se4::options::get("wheel_spots", 1) && a.menuAvail && a.netricsaAvail && a.saveAvail && a.netricsa && a.save && a.toHandle && a.pi &&
+            a.key && a.load && a.menu)
+            g_act = a, VRLOG("wheel_panel: spots beside the wheel: Menu, Netricsa, Quick load, Quick save");
+        else
+            VRLOG("wheel_panel: no wheel spots (option or build lacks the VR wheel button functions)");
     }
     const bool blur = se4::options::get("wheel_blur", 0) != 0;
     if (void* pp = se4::build().at<void>(se4::gen::wheel_pp); pp && !blur &&

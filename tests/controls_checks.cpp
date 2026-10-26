@@ -184,5 +184,33 @@ int main() {
         assert(crushSqueeze(Kind::Frame, 0.5f, SqueezeClick) && !crushSqueeze(Kind::Frame, 1.0f, 0));
         assert(!crushSqueeze(Kind::Touch, 1.0f, SqueezeClick));
     }
+    // Wheel spots: a wheel hand moved past the wheel to the side points at a spot; releasing there runs it
+    {
+        Mapper m;
+        Frame f = idle(Kind::Index);
+        f.ms = 5000, f.hand[0].buttons = TrackpadPress;  // left wheel
+        Pad p = m.update(f);
+        assert(p.spot == SpotNone && p.spotAction == SpotNone);
+        f.hand[0].pos.x -= 0.15f;  // far left: Menu, and the left stick stays centred
+        p = m.update(f);
+        assert(p.spot == SpotMenu && p.lx == 0 && p.ly == 0);
+        f.hand[0].pos.y += 0.08f;  // and up: Netricsa
+        assert(m.update(f).spot == SpotNetricsa);
+        f.hand[0].buttons = 0;  // released on it
+        p = m.update(f);
+        assert(p.spotAction == SpotNetricsa && p.spotHand == 0);
+        assert(m.update(f).spotAction == SpotNone);  // once
+        // right wheel, right and up: Quick save; back inside the wheel before release: no action
+        f.ms = 9000, f.hand[1].buttons = TrackpadPress;
+        m.update(f);
+        f.ms = 9300;  // held past the tap time: the right wheel opens (and anchors) here
+        m.update(f);
+        f.ms = 9400, f.hand[1].pos.x += 0.15f, f.hand[1].pos.y += 0.08f;
+        assert(m.update(f).spot == SpotQuickSave);
+        f.hand[1].pos.x -= 0.10f, f.hand[1].pos.y -= 0.08f;
+        assert(m.update(f).spot == SpotNone);
+        f.hand[1].buttons = 0;
+        assert(m.update(f).spotAction == SpotNone);
+    }
     return 0;
 }

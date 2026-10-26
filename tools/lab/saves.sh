@@ -21,6 +21,7 @@ case "$1" in
     done
     date -Is > "$SNAP/.complete"; echo "saves: snapshot taken";;
   restore)
+    echo "saves: automatic restore disabled (it desynchronised Steam's cloud cache, 2026-10-25) - nothing changed"; exit 1
     [ -f "$SNAP/.complete" ] || { echo "saves: no snapshot"; exit 0; }
     for s in "$SNAP"/*/*/remote; do
       app=$(basename "$(dirname "$s")"); id=$(basename "$(dirname "$(dirname "$s")")")

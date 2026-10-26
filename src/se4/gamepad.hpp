@@ -6,6 +6,10 @@ namespace gamepad {
 void publishFromXr();  // after xr::input().sync(), on the frame thread
 bool active();
 void logStats();
+// The wheel spot (core::controls::Spot) pointed at while a wheel is held, else -1. Any thread.
+int wheelSpot();
+// Simulation thread: the spot the wheel was released on, once: spot | hand << 4 (hand 0 left, 1 right), else -1.
+int takeSpotAction();
 // A weapon wheel is held (either hand).
 bool wheelHeld();
 // The hand whose wheel is held: 0 left, 1 right, -1 both (or none).

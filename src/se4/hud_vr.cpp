@@ -8,6 +8,8 @@
 #include "se4/player_vr.hpp"
 #include "se4/crosshair.hpp"
 #include "se4/wheel_panel.hpp"
+#include "se4/gamepad.hpp"
+#include "core/vr_controls.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <cmath>
@@ -174,6 +176,66 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp, float dist) {
     return true;
 }
 
+// The wheel spots (src/se4/wheel_panel.cpp), drawn into the wheel's own canvas with the wheel's helpers (R18 s3):
+// a gadget-list box and a centred label each, left and right of the wheel, in drawport pixels.
+using TextFn = void(__cdecl*)(void* batch, void* gfx, void* str, void* tp, uint64_t xy, float alpha);
+using BoxFn = void(__cdecl*)(void* batch, void* gfx, void* tex, const float* rect, uint32_t argb);
+using TpInitFn = void(__cdecl*)(void* tp, void* font);
+using TpSizeFn = void(__cdecl*)(void* tp, int unit, float size);
+using TpFreeFn = void(__cdecl*)(void* tp);
+using StrCtorFn = void*(__cdecl*)(void* str, const char* text);
+using StrDtorFn = void(__cdecl*)(void* str);
+struct SpotDraw {
+    TextFn text;
+    BoxFn box;
+    TpInitFn tpInit;
+    TpSizeFn tpSize;
+    TpFreeFn tpFree;
+    StrCtorFn strCtor;
+    StrDtorFn strDtor;
+} g_sd;
+float g_spotDx = 0.62f;  // spot centre from the wheel centre, in drawport heights (option wheel_spot_dx, percent)
+void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
+    if (!g_sd.text || !wheel_panel::spotsAvailable() || !ctx[10] || !g_gfx || !*g_gfx) return;
+    void* batch = *reinterpret_cast<void**>(static_cast<uint8_t*>(ctx[10]) + 0xb0);
+    uint8_t* params = *reinterpret_cast<uint8_t**>(wheel + kParams);
+    if (!batch || !params) return;
+    const int32_t* box = reinterpret_cast<const int32_t*>(dp + kDpBox);
+    const float w = float(box[2] - box[0]), h = float(box[3] - box[1]);
+    const float cx = box[0] + w * 0.5f, cy = box[1] + h * 0.5f;
+    float fade = *reinterpret_cast<float*>(wheel + 0xc0);
+    if (!(fade >= 0 && fade <= 1)) fade = 1;
+    void* tex = *reinterpret_cast<void**>(params + 0x1c8);         // hep_ptexGadgetListItemTexture
+    const uint32_t idle = *reinterpret_cast<uint32_t*>(params + 0x1d0);  // hep_colGadgetListItemBackgroundColorInactive
+    const uint32_t hover = *reinterpret_cast<uint32_t*>(params + 0x58);  // hep_colHoveredElementBorderColor
+    auto alpha = [&](uint32_t c) { return (uint32_t(float(c >> 24) * fade) << 24) | (c & 0xffffff); };
+    using namespace core::controls;
+    const int hovered = gamepad::wheelSpot();
+    void* fontParams = reinterpret_cast<void*(__cdecl*)(uint8_t*)>((*reinterpret_cast<void***>(wheel))[0xa8 / 8])(wheel);
+    alignas(16) uint8_t tp[0x60] = {};
+    if (!fontParams) return;
+    g_sd.tpInit(tp, static_cast<uint8_t*>(fontParams) + 0x30);
+    *reinterpret_cast<uint32_t*>(tp + 0x14) |= 0x200;  // centred, as the wheel's own labels
+    const float textSize = 0.032f * h;
+    g_sd.tpSize(tp, 1, textSize);
+    const float bw = 0.30f * h, bh = 0.075f * h;
+    for (int spot = 0; spot < SpotCount; ++spot) {
+        const float x = cx + (spot == SpotMenu || spot == SpotNetricsa ? -1.0f : 1.0f) * g_spotDx * h;
+        const float y = cy - (spot == SpotNetricsa || spot == SpotQuickSave ? 0.17f * h : 0.0f);
+        const float rect[4] = {x - bw * 0.5f, y - bh * 0.5f, x + bw * 0.5f, y + bh * 0.5f};
+        if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? hover : idle));
+        *reinterpret_cast<uint32_t*>(tp + 0x10) = spot == hovered ? 0xffffffffu : 0xffd0d0d0u;
+        alignas(16) uint8_t str[0x20] = {};
+        g_sd.strCtor(str, spotName(spot));
+        const float xy[2] = {x, y - textSize * 0.5f};
+        uint64_t packed;
+        memcpy(&packed, xy, 8);
+        g_sd.text(batch, *g_gfx, str, tp, packed, fade);
+        g_sd.strDtor(str);
+    }
+    g_sd.tpFree(tp);
+}
+
 // One crosshair element draw: in the flat HUD natively (projected per eye by src/se4/crosshair.cpp), on the 3D path
 // at the target's depth or in 2D.
 void drawCrosshair(void** ctx, uint8_t* e, float dist) {
@@ -245,12 +307,15 @@ void hookedElement(void** ctx, uint8_t* e) {
         if (core::finite(a)) anchor[0] = a.q.x, anchor[1] = a.q.y, anchor[2] = a.q.z, anchor[3] = a.q.w, anchor[4] = a.p.x, anchor[5] = a.p.y, anchor[6] = a.p.z;
     }
     load(params, mine);
+    if (wheel) wheel_panel::beforeWheelDraw(e);
     // Batched quads keep the object matrix of their queue entry and are drawn at the end of the HUD render; draw
     // this element's quads now, with its own panel matrix (hud_vr_batching=1 keeps the native batching).
     auto* batching = g_noBatch ? se4::build().at<int32_t>(se4::gen::hud_bAllowBatching) : nullptr;
     const int32_t savedBatching = batching ? *batching : 0;
     if (batching) *batching = 0;
     realElement(ctx, e);
+    if (wheel) wheel_panel::beforeWheelDraw(e);  // again, in case the draw's own selection step set it
+    if (onHand) drawSpots(ctx, e, dp);
     flush(ctx);
     if (batching) *batching = savedBatching;
     load(params, native);
@@ -280,6 +345,12 @@ bool install() {
     g_wheelRender = b.at<void>(se4::gen::wheel_render);
     g_crosshairRender = b.at<void>(se4::gen::crosshair_render);
     void* element = b.at<void>(se4::gen::hud_element_render);
+    g_sd = {reinterpret_cast<TextFn>(b.at<void>(se4::gen::hud_text)), reinterpret_cast<BoxFn>(b.at<void>(se4::gen::hud_box9)),
+            reinterpret_cast<TpInitFn>(b.at<void>(se4::gen::textparams_init)), reinterpret_cast<TpSizeFn>(b.at<void>(se4::gen::textparams_size)),
+            reinterpret_cast<TpFreeFn>(b.at<void>(se4::gen::textparams_free)), reinterpret_cast<StrCtorFn>(b.at<void>(se4::gen::cstring_ctor)),
+            reinterpret_cast<StrDtorFn>(b.at<void>(se4::gen::cstring_dtor))};
+    if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
+    g_spotDx = se4::options::get("wheel_spot_dx", 62) / 100.0f;
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))
         for (int i = 0; i < 0x100 && !g_gfx; ++i)

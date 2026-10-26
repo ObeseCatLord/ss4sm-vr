@@ -125,3 +125,20 @@ manual:timer_cancel    # R17: cancel the state end timer during the hold
 manual:is_authority    # R17
 manual:aq_anim_length  # R17
 manual:state_schedule  # R17: re-arm the state end timer on release
+manual:vr_netricsa_act   # R18: Fusion VR wheel Netricsa button action (wheel spot)
+manual:vr_quicksave_act  # R18: Fusion VR wheel QuickSave button action (wheel spot)
+manual:vr_menu_avail     # R18
+manual:vr_netricsa_avail # R18
+manual:vr_qs_avail       # R18: saving allowed and alive
+manual:vr_wheel_tick     # R18
+manual:player_key        # R18
+manual:entity_pi         # R18
+manual:quick_load        # R18: wheel spot quick load
+manual:menu_open_hand    # R18: wheel spot menu
+manual:entity_to_handle  # R8 A7.3 / R18 fake VR wheel
+manual:hud_text          # R18: wheel spot labels
+manual:hud_box9          # R18
+manual:textparams_init   # R18
+manual:textparams_size   # R18
+manual:textparams_free   # R18
+manual:cstring_dtor      # R18

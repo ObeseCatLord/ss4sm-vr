@@ -13,6 +13,10 @@
 // stick is pushed further. While the wheel is held, the right hand's two face buttons (Index/Touch A, B)
 // become D-pad up/down, which cycle the wheel's gadget ring (syscmdUp/Down; the gamepad mapping of those
 // system commands is assumed to be the D-pad, runtime check pending) instead of jumping/crouching.
+// Wheel spots (as Fusion's VR wheel buttons, beside the wheel): moving a wheel hand more than kSpotX to the side, past
+// the wheel, points at a spot: left Menu (Netricsa above it), right Quick load (Quick save above it). That hand's
+// stick is centred meanwhile, so releasing the wheel there keeps the weapon and runs the spot's action
+// (src/se4/wheel_panel.cpp) instead of selecting.
 // The gadget (left grip) does not go through the pad: src/se4/gadgets.cpp issues the player's quick-use HUD command
 // directly, because pad Y's meaning depends on the saved gamepad layout.
 // Per-profile layout (semantic action -> button):
@@ -65,8 +69,18 @@ struct Frame {
     Quat head{0, 0, 0, 1};  // HMD orientation, play space
 };
 
+enum Spot : int8_t { SpotNone = -1, SpotMenu, SpotNetricsa, SpotQuickLoad, SpotQuickSave, SpotCount };
+inline const char* spotName(int s) {
+    return s == SpotMenu ? "Menu" : s == SpotNetricsa ? "Netricsa" : s == SpotQuickLoad ? "Quick Load" : s == SpotQuickSave ? "Quick Save" : "";
+}
+constexpr float kSpotX = 0.12f;   // sideways hand travel (m) past which the hand points at a spot
+constexpr float kSpotUp = 0.05f;  // above this (m) the upper spot of that side
+
 struct Pad {
     uint16_t buttons = 0;
+    int8_t spot = SpotNone;        // the spot pointed at while a wheel is held
+    int8_t spotAction = SpotNone;  // the spot the wheel was released on (one update)
+    int8_t spotHand = 1;           // the hand that chose it (0 left, 1 right)
     bool kick = false;  // the use/melee (kick) button: src/se4/gadgets.cpp runs the engine's VR use path (not a pad button)
     float lt = 0, rt = 0;
     float lx = 0, ly = 0, rx = 0, ry = 0;
@@ -95,6 +109,7 @@ struct Mapper {
     bool wheelSel[2]{true, true};  // which hands' selections the open wheel takes (per-hand wheels)
     bool rightPad = false;
     uint64_t rightPadAt = 0, dualPulseUntil = 0;
+    int8_t spot = SpotNone, spotHand = 1;
 
     Pad update(const Frame& f) {
         Pad p;
@@ -187,8 +202,11 @@ struct Mapper {
                 frame = yaw(yawAngle(f.head));
             }
             float sel[2][2];
+            int8_t spots[2] = {SpotNone, SpotNone};
             for (int h = 0; h < 2; ++h) {
                 Vec3 d = rotate(inverse(frame), f.hand[h].pos - origin[h]);
+                if (f.hand[h].active && (h ? selR : selL) && std::fabs(d.x) > kSpotX)
+                    spots[h] = d.x < 0 ? (d.y > kSpotUp ? SpotNetricsa : SpotMenu) : (d.y > kSpotUp ? SpotQuickSave : SpotQuickLoad);
                 float x = d.x, y = d.y, len = std::sqrt(x * x + y * y);
                 if (!f.hand[h].active || len < kWheelDeadZone) x = y = 0;
                 else {
@@ -203,9 +221,16 @@ struct Mapper {
             };
             pick(p.lx, p.ly, sel[0]);
             pick(p.rx, p.ry, sel[1]);
-            if (!selL) p.lx = p.ly = 0;  // a one-hand wheel leaves the other hand's weapon as it is
-            if (!selR) p.rx = p.ry = 0;
+            if (!selL || spots[0] != SpotNone) p.lx = p.ly = 0;  // a one-hand wheel leaves the other hand's weapon as it is;
+            if (!selR || spots[1] != SpotNone) p.rx = p.ry = 0;  // a hand on a spot keeps its weapon
+            spot = spots[1] != SpotNone ? spots[1] : spots[0];
+            spotHand = spots[1] != SpotNone ? 1 : 0;
+            p.spot = spot;
+        } else if (wheelHeld && spot != SpotNone) {
+            p.spotAction = spot;  // released on a spot
+            spot = SpotNone;
         }
+        p.spotHand = spotHand;
         wheelSel[0] = selL, wheelSel[1] = selR;
         wheelHeld = wheel;
         p.buttons = b;

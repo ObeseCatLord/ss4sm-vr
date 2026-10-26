@@ -8,6 +8,7 @@
 #include "se4/player_vr.hpp"
 #include "se4/hands.hpp"
 #include "se4/gamepad.hpp"
+#include "se4/wheel_panel.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
@@ -316,6 +317,7 @@ void onTick(uint8_t* player) {
     if (now == lastTick) return;  // once per tick, from whichever local weapon steps first
     lastTick = now;
     if (!holderUp()) InterlockedExchange(&g_triggerTaken[0], 0), InterlockedExchange(&g_triggerTaken[1], 0);
+    wheel_panel::onTick(player);  // wheel spot actions (Menu, Netricsa, Quick save/load)
     // The left squeeze takes the selected gadget into the hand (HUD command 9, the GadgetSelection path that brings
     // up the GadgetHolder without quick use), or puts it away again. Through the player's own HUD command (player
     // vt+0x11b0, a network call); the pad's Y is not used, its meaning depends on the saved gamepad layout.

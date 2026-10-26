@@ -124,6 +124,10 @@ bool kick() { return g_kick != 0; }
 
 bool wheelHeld() { return g_mapper.wheelHeld; }
 
+volatile LONG g_spot = -1, g_spotAction = -1;
+int wheelSpot() { return int(g_spot); }
+int takeSpotAction() { return int(InterlockedExchange(&g_spotAction, -1)); }
+
 int wheelHand() {
     if (!g_mapper.wheelHeld) return -1;
     return g_mapper.wheelSel[0] && g_mapper.wheelSel[1] ? -1 : g_mapper.wheelSel[1] ? 1 : 0;
@@ -153,6 +157,11 @@ void publishFromXr() {
     if (v.valid) f.head = {v.head.orientation.x, v.head.orientation.y, v.head.orientation.z, v.head.orientation.w};
     const Pad m = g_mapper.update(f);
     InterlockedExchange(&g_kick, m.kick ? 1 : 0);
+    InterlockedExchange(&g_spot, m.spot);
+    if (m.spotAction >= 0) {
+        InterlockedExchange(&g_spotAction, m.spotAction | m.spotHand << 4);
+        VRLOG("gamepad: wheel released on the %s spot (%s hand)", core::controls::spotName(m.spotAction), m.spotHand ? "right" : "left");
+    }
     XINPUT_GAMEPAD p{};
     // Grab steering: the hands' wheel angle is the native analog steer unless the stick is pushed (R7 s6b).
     float grabLx;

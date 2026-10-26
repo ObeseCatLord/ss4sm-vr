@@ -2,8 +2,9 @@
 # End of a lab session: stop the lab game and the lab Monado (only processes the lab started).
 HERE="$(cd "$(dirname "$0")" && pwd)"
 "$HERE/killgame.sh"
-sleep 2
-"$HERE/saves.sh" restore  # put the user's saves and profile back as they were before the lab run
+# No automatic restore of the user's Steam cloud folder: rewriting files behind the running Steam client left its
+# cache out of step, and the next launch read PlayerProfile.dat short ("EOF reached") and replaced it with a default
+# (2026-10-25). saves.sh only snapshots now; see docs/re/LAB_NOTES.md.
 PRIV=$HOME/ss2-vr-private/monado-exact-prefix/bin/monado-service
 for p in $(pgrep -x monado-service); do
   [ "$(readlink /proc/$p/exe 2>/dev/null)" = "$PRIV" ] && { kill "$p"; echo "stopped lab monado $p"; }
