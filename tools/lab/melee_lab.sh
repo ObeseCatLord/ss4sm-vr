@@ -4,7 +4,7 @@
 # usage: melee_lab.sh ss4|sm <out-prefix>
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"; ID="$ROOT/lab/monado/input_driver"
 DIR="Serious Sam 4"; [ "$1" = sm ] && DIR="Siberian Mayhem"
-L="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/$DIR/Bin/x64/ss4smvr/ss4smvr.log"
+. "$HERE/paths.sh" "$1"; L="$MODLOG"
 OUT=$2
 H="head=0,1.6,0,0,0,0"; LH="lpos=-0.2,1.3,-0.3"; RX=0.25; RY=1.3; RZ=-0.35
 start=$(wc -l < "$L")

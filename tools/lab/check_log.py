@@ -8,7 +8,7 @@ evidence never appeared (the stage did not run or the run ended first). Exit sta
 """
 import pathlib, re, sys
 
-DEFAULT = pathlib.Path.home() / 'FasterGames/SteamLibrary/steamapps/common/Serious Sam 4/Bin/x64/ss4smvr/ss4smvr.log'
+DEFAULT = pathlib.Path(__file__).resolve().parents[2] / 'lab/game/ss4/Bin/x64/ss4smvr/ss4smvr.log'  # the lab copy (make_lab_tree.sh)
 
 # (stage, required pattern, failure patterns)
 STAGES = [

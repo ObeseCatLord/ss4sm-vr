@@ -2,7 +2,7 @@
 # Lab: image stability/sharpness of the upscaler options on a still camera in Pompeii (SS4).
 # usage: upscale_matrix.sh <out-dir> "<options line>" ...   e.g. "upscaler=0" "upscaler=2 upscale_jitter_x=-1"
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"
-G="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/Serious Sam 4"
+. "$HERE/paths.sh" ss4; G="$LAB_GAME"
 OUT=$1; shift; mkdir -p "$OUT"
 for cfg in "$@"; do
   kill -0 "$(cat "$ROOT/lab/monado/monado.pid" 2>/dev/null)" 2>/dev/null || { echo "lab Monado is not running - stopping"; exit 3; }

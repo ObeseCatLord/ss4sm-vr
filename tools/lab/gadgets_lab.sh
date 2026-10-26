@@ -6,7 +6,7 @@
 # usage: gadgets_lab.sh ss4|sm <out-prefix> [count]
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"; ID="$ROOT/lab/monado/input_driver"
 DIR="Serious Sam 4"; [ "$1" = sm ] && DIR="Siberian Mayhem"
-L="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/$DIR/Bin/x64/ss4smvr/ss4smvr.log"
+. "$HERE/paths.sh" "$1"; L="$MODLOG"
 OUT=$2; N=${3:-6}
 H="head=0,1.6,0,0,0,0"; LH="lpos=-0.2,1.3,-0.3"; R0="rpos=0.25,1.25,-0.15"
 for i in $(seq 1 "$N"); do

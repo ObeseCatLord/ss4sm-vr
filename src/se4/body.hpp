@@ -3,4 +3,6 @@
 // an engine motion handler on the player model (docs/re/R9_body_ik.md). Option body_ik (default 0).
 namespace body {
 bool install();
+// Simulation thread, every CPlayerVRData step (src/se4/player_vr.cpp).
+void onVrdTick(void** vrd);
 }

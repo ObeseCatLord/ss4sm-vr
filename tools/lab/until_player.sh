@@ -3,7 +3,7 @@
 # usage: until_player.sh ss4|sm [timeout-seconds]
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"
 DIR="Serious Sam 4"; [ "$1" = sm ] && DIR="Siberian Mayhem"
-L="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/$DIR/Bin/x64/ss4smvr/ss4smvr.log"
+. "$HERE/paths.sh" "$1"; L="$MODLOG"
 END=$((SECONDS + ${2:-300}))
 while [ $SECONDS -lt $END ]; do
   grep -q "(local 1)" "$L" && { echo "player ready after ${SECONDS}s"; exit 0; }

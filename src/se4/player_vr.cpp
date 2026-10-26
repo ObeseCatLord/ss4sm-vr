@@ -2,6 +2,8 @@
 // tables; offsets inside functions are found by matching the instruction bytes in the running build and
 // are refused unless the match is exact and unique.
 #include "se4/player_vr.hpp"
+#include "se4/body.hpp"
+#include "se4/gadgets.hpp"
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
 #include "se4/log.hpp"
@@ -278,6 +280,15 @@ bool patchSlot208(uint8_t* fn, void** global) {
     VRLOG("player_vr: vrd_init slot 0x208 calls at %p, %p go through null-checking thunk %p", sites[0], sites[1], thunk);
     return true;
 }
+// Every CPlayerVRData step (simulation thread), armed or not: body IK, and the local player's gadget/wheel-spot
+// tick (src/se4/gadgets.cpp), which otherwise only ran from weapon steps.
+using VrdTickFn = void(__cdecl*)(void** vrd);
+VrdTickFn realVrdTick;
+void __cdecl hookedVrdTick(void** vrd) {
+    realVrdTick(vrd);
+    body::onVrdTick(vrd);
+    if (vrd && vrd == g_localVrd) gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
+}
 }  // namespace
 
 unsigned vrdOffset() { return g_vrdOff; }
@@ -323,6 +334,8 @@ bool install(bool localVr) {
     if (auto* cm = b.at<uint8_t>(se4::gen::vr_ctrl_model_pose))
         ok &= hook(cm, reinterpret_cast<void*>(hookedCtrlModel), reinterpret_cast<void**>(&realCtrlModel), "controller model");
     if (!localVr) return ok;
+    if (auto* tick = b.at<uint8_t>(se4::gen::vrd_tick))
+        ok &= hook(tick, reinterpret_cast<void*>(hookedVrdTick), reinterpret_cast<void**>(&realVrdTick), "vrd tick");
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
     g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;
     if (auto* ca = b.at<uint8_t>(se4::gen::client_action))

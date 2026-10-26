@@ -194,7 +194,8 @@ struct SpotDraw {
     StrCtorFn strCtor;
     StrDtorFn strDtor;
 } g_sd;
-float g_spotDx = 0.62f;  // spot centre from the wheel centre, in drawport heights (option wheel_spot_dx, percent)
+float g_spotDx = 0.40f;  // spot centre from the wheel centre, in drawport widths (option wheel_spot_dx, percent); text outside the
+                         // drawport is culled, so the spots stay inside it
 void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     if (!g_sd.text || !wheel_panel::spotsAvailable() || !ctx[10] || !g_gfx || !*g_gfx) return;
     void* batch = *reinterpret_cast<void**>(static_cast<uint8_t*>(ctx[10]) + 0xb0);
@@ -216,11 +217,12 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     if (!fontParams) return;
     g_sd.tpInit(tp, static_cast<uint8_t*>(fontParams) + 0x30);
     *reinterpret_cast<uint32_t*>(tp + 0x14) |= 0x200;  // centred, as the wheel's own labels
-    const float textSize = 0.032f * h;
+    *reinterpret_cast<float*>(tp + 0x38) = -1.0f;      // as the wheel sets it after init (0 left the text empty)
+    const float textSize = 0.022f * h;
     g_sd.tpSize(tp, 1, textSize);
-    const float bw = 0.30f * h, bh = 0.075f * h;
+    const float bw = 0.18f * w, bh = 0.05f * h;
     for (int spot = 0; spot < SpotCount; ++spot) {
-        const float x = cx + (spot == SpotMenu || spot == SpotNetricsa ? -1.0f : 1.0f) * g_spotDx * h;
+        const float x = cx + (spot == SpotMenu || spot == SpotNetricsa ? -1.0f : 1.0f) * g_spotDx * w;
         const float y = cy - (spot == SpotNetricsa || spot == SpotQuickSave ? 0.17f * h : 0.0f);
         const float rect[4] = {x - bw * 0.5f, y - bh * 0.5f, x + bw * 0.5f, y + bh * 0.5f};
         if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? hover : idle));
@@ -350,7 +352,7 @@ bool install() {
             reinterpret_cast<TpFreeFn>(b.at<void>(se4::gen::textparams_free)), reinterpret_cast<StrCtorFn>(b.at<void>(se4::gen::cstring_ctor)),
             reinterpret_cast<StrDtorFn>(b.at<void>(se4::gen::cstring_dtor))};
     if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
-    g_spotDx = se4::options::get("wheel_spot_dx", 62) / 100.0f;
+    g_spotDx = se4::options::get("wheel_spot_dx", 40) / 100.0f;
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))
         for (int i = 0; i < 0x100 && !g_gfx; ++i)

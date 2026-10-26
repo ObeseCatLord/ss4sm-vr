@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 G=ss4; [ "$1" = sm ] && G=sm
 case "$G" in ss4) DIR="Serious Sam 4"; LOGF=Sam4.log; TITLE="Serious Sam 4";; sm) DIR="Siberian Mayhem"; LOGF=SamSM.log; TITLE="Serious Sam";; esac
 LEVEL=$2; OUT=$3; shift 3
-L="/home/obesecatlord/FasterGames/SteamLibrary/steamapps/common/$DIR/Log/$LOGF"
+. "$HERE/paths.sh" "$G"; L="$LAB_GAME/Log/$LOGF"
 # A fresh lab Monado per run: its remote driver dies with "stack smashing detected" after ~1000 input-driver
 # connections (2026-10-24), and every button press is two connections.
 "$HERE/killgame.sh" >/dev/null 2>&1

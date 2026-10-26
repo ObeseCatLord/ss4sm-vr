@@ -88,6 +88,7 @@ struct Actions {
     MenuFn menu;
 } g_act;
 int g_pending = -1;
+bool g_wheelSeen;  // the in-game wheel opened since the last spot action (wheel inputs in menus are not spots)
 ULONGLONG g_pendingAt;
 
 void runSpot(uint8_t* player, int spot, int hand) {
@@ -125,7 +126,10 @@ void runSpot(uint8_t* player, int spot, int hand) {
 
 void onTick(uint8_t* player) {
     if (!g_act.toHandle) return;
-    if (const int a = gamepad::takeSpotAction(); a >= 0) g_pending = a, g_pendingAt = GetTickCount64();
+    if (const int a = gamepad::takeSpotAction(); a >= 0) {
+        if (g_wheelSeen) g_pending = a, g_pendingAt = GetTickCount64(), VRLOG("wheel_panel: %s spot queued", core::controls::spotName(a & 0xf));
+        g_wheelSeen = false;
+    }
     // After the wheel has closed (its menu screen is gone), so the action does not race the wheel's own close.
     if (g_pending < 0 || g_wasOpen || GetTickCount64() - g_pendingAt < 100) return;
     const int a = g_pending;
@@ -149,7 +153,7 @@ bool wheelOpen(void* pi) {
     auto* mgr = *reinterpret_cast<uint8_t**>(static_cast<uint8_t*>(pi) + 0xb8);
     void* top = mgr ? *reinterpret_cast<void**>(mgr + 0x28) : nullptr;
     const bool open = top && (*reinterpret_cast<void***>(top))[0x138 / 8] == g_dummyCommand;
-    if (open && !g_wasOpen) latch();
+    if (open && !g_wasOpen) latch(), g_wheelSeen = true;
     if (!open && g_wasOpen) InterlockedExchange(&g_panel.valid, 0);
     g_wasOpen = open;
     return open;

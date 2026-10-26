@@ -17,13 +17,11 @@
 namespace body {
 namespace {
 using RegisterFn = void(__cdecl*)(void* renderable, void* handler, int flags);
-using VrdTickFn = void(__cdecl*)(void** vrd);
 using RenderableFn = uint8_t*(__cdecl*)(void* entity);
 
 RegisterFn mhRegister;
 void* g_identFn;
 bool g_identReady;
-VrdTickFn realVrdTick;
 void* g_baseVtbl[10];
 void* g_vtbl[10];
 void* g_ident[2][6];  // per side: Shoulder, Arm, ForeArm, Hand, Weapon (+ spare)
@@ -222,11 +220,12 @@ void ensure(uint8_t* player) {
     ReleaseSRWLockExclusive(&g_lock);
 }
 
-void hookedVrdTick(void** vrd) {
-    realVrdTick(vrd);
-    if (vrd) ensure(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
-}
+bool g_enabled;
 }  // namespace
+
+void onVrdTick(void** vrd) {
+    if (g_enabled && vrd) ensure(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
+}
 
 bool install() {
     if (!se4::options::get("body_ik", 0)) return false;
@@ -247,11 +246,7 @@ bool install() {
     g_vtbl[0] = reinterpret_cast<void*>(dtor);
     g_vtbl[4] = reinterpret_cast<void*>(apply);
     g_identFn = identFn;
-    if (MH_CreateHook(tick, reinterpret_cast<void*>(hookedVrdTick), reinterpret_cast<void**>(&realVrdTick)) != MH_OK ||
-        MH_EnableHook(tick) != MH_OK) {
-        VRLOG("body: vrd tick hook FAILED");
-        return false;
-    }
+    g_enabled = true;  // ticked from the vrd step hook in src/se4/player_vr.cpp
     VRLOG("body: IK enabled (CMotionHandler vtable %p)", static_cast<void*>(base));
     return true;
 }
