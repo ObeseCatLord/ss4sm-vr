@@ -478,7 +478,7 @@
   - **Foliage sway.**
     - Swaying leaves and bushes have no motion vectors, and that is the DLSS foliage shimmer (lab: the per-pixel
       deviation of a bush under DLAA drops to the level of the wall behind it without sway).
-    - `src/se4/foliage.cpp` redirects the 6 (SM: 7) reads of `sha_iAllowTreeSwaying` to a mod copy. That copy
+    - `src/se4/foliage.cpp` redirects the 6 reads of `sha_iAllowTreeSwaying` to a mod copy. That copy
       mirrors the cvar, or holds `min(cvar, mode)` while an upscaler runs. The cvar is never written.
     - Menu row "Foliage Sway (DLSS / FSR)": Off (default) or Game Setting, saved as `foliage_sway=`; option
       `upscale_foliage_sway` overrides it.

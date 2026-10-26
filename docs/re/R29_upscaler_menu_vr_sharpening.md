@@ -115,7 +115,8 @@ the saved value or option `upscale_sharpness`.
   - But the vegetation vertex shader's previous position is `mul(vObjVtxPos, mMVPPrevLeft)` with the **current**
     frame's swayed position, so even that path has no sway motion.
   - No cvar enabling it was found.
-- **The cvar's six reads** (seven in SM, which adds a `cmp [rip+cvar], r12d`):
+- **The cvar's six reads** (all four exes; `cvar_readers.py` also lists a seventh in SM, a `cmp [rip+X], r12d` whose
+  target is the variable 4 bytes before the cvar, so not a read of it):
   - Tree bend per instance (`0x140232240`, from `sp_fTreeSwaySpeed` × time and `sp_fTreeSwayStrength`).
   - The branch / edge strengths and speed copied into the instance constants (`0x140231f20`: shader params +0x3a8
     `sp_fBranchSwayStrength`, +0x3c0 `sp_fEdgeSwayStrength`, +0x390 `sp_fBranchSwaySpeed`; the CShaderArgValFLOAT
@@ -125,8 +126,7 @@ the saved value or option `upscale_sharpness`.
   - Semantics: 0 none, 1 only where the caller's flag is 0, 2 all.
 - **The mod's control (`src/se4/foliage.cpp`):**
   - At startup it scans `.text` for rip-relative `mov r32` / `cmp r/m32, r32` / `cmp r/m32, imm8` reads whose
-    displacement lands on the cvar: 6 in Sam4 and Sam4_Unrestricted, 7 in SamSM and SamSM_Unrestricted (statically
-    checked with `cvar_readers.py`).
+    displacement lands on the cvar: 6 in each exe (runtime: "6 of 6" in Sam4 and SamSM).
   - It points them at a mod int allocated near the image.
   - Every frame (flat: player-views entry; VR: slot 0x030) that int is the cvar's value, or `min(cvar, mode)` while
     an upscaler runs. The cvar is never written.
@@ -192,4 +192,8 @@ Pitfalls found on the way:
     engine's own resized canvas and rescale; the image is correct.
 - **Single pass.** RenderView runs with device eye 0 at the eye size: an eye-size target there keeps its size (100 %
   only). In the lab the engine's MPix cvar reads 0 in VR, so the override changed nothing there.
-- **VR suite** (`tools/lab/suite.sh ss4`, VR menu mode on by default): 21 passed, 0 failed.
+- **VR suites** (VR menu mode on by default): SS4 21 passed, SM 21 passed, 0 failed.
+
+### 6.3 SM (lab copy, flat)
+The same rows in SM's Options > Graphics. The slider saves `sharpness=60`; there are no "Cannot get values" lines;
+foliage "6 of 6 reads redirected".

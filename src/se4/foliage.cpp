@@ -47,7 +47,7 @@ bool install() {
         if (n == kMax) return VRLOG("foliage: more than %d reads of sha_iAllowTreeSwaying - sway stays the game's", kMax), false;
         disp[n] = p + 2, ends[n] = len - 2, ++n;
     }
-    if (n < 6) return VRLOG("foliage: %d reads of sha_iAllowTreeSwaying (expected 6 or 7) - sway stays the game's", n), false;
+    if (n < 6) return VRLOG("foliage: %d reads of sha_iAllowTreeSwaying (expected 6) - sway stays the game's", n), false;
     g_value = reinterpret_cast<int32_t*>(se4::patch::allocNear(disp[0], sizeof(int32_t)));
     if (!g_value) return VRLOG("foliage: no memory near the image"), false;
     *g_value = *g_cvar;
