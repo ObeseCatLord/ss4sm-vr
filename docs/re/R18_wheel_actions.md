@@ -450,3 +450,89 @@ The Unrestricted builds were not ported.
       path).
    7. Quick load asks for confirmation when `prj_bMustConfirmQuickLoad` is set.
    8. In MP, Quick save and Quick load are hidden.
+
+## 7. Drawing text from the mod (spot labels)
+
+Lab symptom (SamSM 628492, also Sam4 616154): inside the thunk on the wheel render's own `textparams_free` call
+(`hud_vr.cpp wheelTextDone`, SM site 0x14012a7db), `hud_box9` with `params+0x1c8` shows on the panel, but `hud_text`
+with a magenta colour draws nothing. Static only. Decompiles were made from a scratch copy of `lab/ghidra_r19`; SM was
+checked by disassembly.
+
+### 7.1 Answer
+**The text size is in the wrong unit.** It is about 100× too large. Every other argument matches the native callers.
+- `textparams_size(tp, 1, s)` stores `s` at `tp+0x20`. That value is a **multiplier of the font's cell height**
+  (`*(int*)(font+0x68)`, font = `tp+8`), not a pixel size.
+- The text path multiplies it again by the HUD unit when it queues the text (§7.2).
+- Native wheel and gadget-slot labels pass `stretch × hep_f…TextSize / hud_fCustomHudScale × hud_fWeaponWheelScale`.
+  In shipped HudParams that is 1.151 × 0.27 ≈ **0.31** for gadget names and 1.151 × 0.399 ≈ **0.46** for the
+  "GADGETS" title.
+- `drawSpots` passes `13 × unit` (30–70 in the lab), and `unit` already contains the HUD unit.
+- Each glyph cell is therefore 30–70 font heights × the HUD unit, i.e. thousands of drawport pixels. The pen starts at
+  the spot, and even the cell's top padding/bearing (scaled the same way) is larger than the drawport. Only transparent
+  texels, or nothing, land in the image, so the magenta search finds nothing.
+- The box works because `hud_box9` takes a pixel rectangle.
+
+### 7.2 What the text path does (Sam4 / SM, read from code)
+| step | Sam4 | SamSM | notes |
+|---|---|---|---|
+| `hud_text` | 0x1400e8290 | 0x1400e8360 | Only checks `canvas != 0`. Calls `0x1400d9990(*canvas, gfx)` (SM 0x1400d9a70) = HUD unit, the same function as `0x1400da500(wheel)`. Then calls the body with it as a 7th argument. |
+| body (left/top aligned) | 0x1400e8340 | 0x1400e8410 | Finds or creates the canvas entry for (layer `canvas+0x10`, drawport `gfx+0x1c78`); the matrix is captured only at creation. Appends a 0xa8 text record: `+0` xy (copied verbatim), `+8` CString, `+0x10` TextParams copy (0x140b53e70), `tp.size(+0x20) *= HUD unit`, `+0x70` colour = `(A(tp+0x10) × alpha) << 24 \| RGB(tp+0x10)`. **Always queued**: `hud_bAllowBatching` is not read. |
+| centred variant | 0x1400e87f0 | 0x1400e88c0 | Same 6 arguments `(canvas, gfx, CString*, tp, xy, alpha)`, used by the weapon/gadget slots (0x14012aa88, 0x140128cb6). Scales the size by the HUD unit, measures the string (0x140b938c0 / SM 0x140b93f30), stores `xy − size/2`. **xy is the text centre.** |
+| flush | 0x1400ea890 | 0x1400ea940 | Per text record: `0x140b56d60(&rec.tp)` (current TextParams), then gfx text 0x140b953c0 `(gfx, rec.str, {x, y, 0}, rec.colour)` with the entry's stored matrix (3D) or pixel ortho (`dp+0x30`). |
+| gfx text early-outs | 0x140b953c0 | – | Needs a drawport (`gfx+0x1c78`), a non-empty string, a current TextParams and its font (`tp+8`). Nothing else: no markup, translation or text-batch start is needed. |
+
+TextParams fields (init copies `font+0x30..+0x5f`; 0x140f46840 builds the glyph metrics):
+- `+0x08` font. Must be non-null; the weapon slot tests it before drawing.
+- `+0x10` colour. The top byte is alpha, so alpha 0 is invisible. The low 24 bits use the same order as the `hud_box9`
+  colour, and magenta/grey are unaffected by an R/B swap.
+- `+0x14` flags:
+  - bit0 bold widening;
+  - bit1 slant;
+  - bit8 fixed advance;
+  - **0x200 = caps**: lower-case is drawn as upper-case scaled by `+0x2c` (char class bit 8 / case table at 0x1410c4510 /
+    0x1410c4550). It is **not** centring.
+- `+0x18` spacing.
+- `+0x1c` line spacing.
+- `+0x20` size (× `font+0x68` px).
+- `+0x24` horizontal stretch.
+- `+0x30` / `+0x38` / `+0x3c,+0x40` shadow colour / shadow strength (`> 0` enables it; −1 = off, as the wheel sets it) /
+  shadow offset.
+
+`textparams_size` modes (0x140b550c0 / SM 0x140b555c0, identical):
+- 1: `+0x20 = s`;
+- 2: `s × drawport height / font+0x68`;
+- 3: `s × (*dp)+0x24 / font+0x68`;
+- 8: `s / font+0x68`, i.e. a cell height of `s` HUD pixels before the HUD unit.
+
+Other points:
+- xy is in the same canvas coordinates as the `hud_box9` rectangle; the wheel computes both from vt+0x98 / 0x1401261e0.
+  For the body, x is the pen start and y is the **top** of the line (a newline adds the line height), not the baseline.
+- `alpha` scales the colour's alpha byte. `wheel+0xc0` (fade) is correct.
+- The CString is a plain `char*` (0x1410bfac0 → 0x1410c1800 copies the bytes), so `"Menu"` is fine. The translate call
+  is only needed for `ETRS…=` keys.
+
+All 12 `hud_text` callers in each build (0x1400c87e2 … 0x140129e0c; SM 0x1400c8992 … 0x14012a7ac) and the 8 centred
+callers pass the same canvas `*(*(elem+8)+0xb0)`, the gfx global, a stack CString, the TextParams after init/flags/−1,
+packed xy and `fade`. They differ from the mod **only in the size value**.
+
+### 7.3 Fix (both builds, `hud_vr.cpp drawSpots`)
+1. Size, as the gadget-name label (0x140128550):
+   ```
+   float s = *(float*)(params+0x17c) /*hep_fGadgetListStretch*/ * *(float*)(params+0x1a8) /*hep_fGadgetNameTextSize*/
+             / hud_fCustomHudScale * hud_fWeaponWheelScale;   // Sam4 0x142247550 / 0x142247604, SM 0x142228440 / 0x1422284f4
+   g_sd.tpSize(tp, 1, s);                                      // ≈ 0.31; do NOT multiply by `unit`
+   ```
+   Use `+0x19c` (title size, ≈0.46) for larger labels. Equivalent alternative: `tpSize(tp, 8, 13.0f)` for a 13 HUD-pixel
+   cell, still without `unit`.
+2. Centre the label with the centred variant, **Sam4 0x1400e87f0 / SM 0x1400e88c0** (same signature as `hud_text`):
+   pass `xy = {p[0], p[1]}`, the spot centre, and drop the `- textSize*0.5`. Add it to manual.json as `hud_text_centered`
+   for Sam4 and SamSM (the Unrestricted builds are not ported).
+   - If you keep `hud_text`, x is the left edge and y the top.
+   - Keep `|= 0x200` (all caps, as the wheel), the −1.0 at `+0x38`, the colour and `fade` unchanged.
+3. The rest of the setup is already correct, so leave it as it is:
+   - drawing inside the wheel render (same canvas entry and matrix as the wheel's own labels);
+   - the per-element `flush(ctx)` after `realElement`;
+   - `hud_bAllowBatching = 0`, which does not affect text.
+
+Runtime check: once, log `*(int*)(*(uint8_t**)(tp+8)+0x68)` (cell px) and `*(float*)(tp+0x20)`. Expect roughly 0.3–0.5,
+and a few tens of drawport pixels for cell × size × HUD unit.

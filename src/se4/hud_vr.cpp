@@ -178,7 +178,7 @@ bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp, float dist) {
 
 // The wheel spots (src/se4/wheel_panel.cpp), drawn into the wheel's own canvas with the wheel's helpers (R18 s3):
 // a gadget-list box and a centred label each, left and right of the wheel, in drawport pixels.
-using TextFn = void(__cdecl*)(void* batch, void* gfx, void* str, void* tp, uint64_t xy, float alpha);
+using TextFn = void(__cdecl*)(void* batch, void* gfx, void* str, void* tp, uint64_t xy, float alpha);  // hud_text_centred
 using BoxFn = void(__cdecl*)(void* batch, void* gfx, void* tex, const float* rect, uint32_t argb);
 using TpInitFn = void(__cdecl*)(void* tp, void* font);
 using TpSizeFn = void(__cdecl*)(void* tp, int unit, float size);
@@ -200,7 +200,7 @@ struct SpotCtx {
     uint8_t* wheel = nullptr;
     uint8_t* dp = nullptr;
 } g_spotCtx;
-float g_spotDx = 330.0f;  // spot centre from the wheel centre, in the wheel's 640x480 layout (option wheel_spot_dx)
+float g_spotDx = 220.0f;  // spot centre from the wheel centre, in the wheel's 640x480 layout (option wheel_spot_dx)
 void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     (void)ctx, (void)dp;
     if (!g_sd.text || !wheel_panel::spotsAvailable() || !g_gfx || !*g_gfx) return;
@@ -223,7 +223,6 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     float fade = *reinterpret_cast<float*>(wheel + 0xc0);
     if (!(fade >= 0 && fade <= 1)) fade = 1;
     void* tex = *reinterpret_cast<void**>(params + 0x1c8);              // hep_ptexGadgetListItemTexture
-    const uint32_t idle = *reinterpret_cast<uint32_t*>(params + 0x1d0);  // hep_colGadgetListItemBackgroundColorInactive
     const uint32_t hover = *reinterpret_cast<uint32_t*>(params + 0x58);  // hep_colHoveredElementBorderColor
     auto alpha = [&](uint32_t col) { return (uint32_t(float(col >> 24) * fade) << 24) | (col & 0xffffff); };
     using namespace core::controls;
@@ -232,22 +231,35 @@ void drawSpots(void** ctx, uint8_t* wheel, uint8_t* dp) {
     if (!fontParams) return;
     alignas(16) uint8_t tp[0x100] = {};  // TextParams (the wheel keeps up to 0xc0 bytes for it on its stack)
     g_sd.tpInit(tp, static_cast<uint8_t*>(fontParams) + 0x30);
-    *reinterpret_cast<uint32_t*>(tp + 0x14) |= 0x200;  // centred, as the wheel's own labels
+    *reinterpret_cast<uint32_t*>(tp + 0x14) |= 0x200;  // all caps, as the wheel's own labels
     *reinterpret_cast<float*>(tp + 0x38) = -1.0f;      // as the wheel sets it after init
-    const float textSize = 13.0f * unit;
-    g_sd.tpSize(tp, 1, textSize);
+    // The size is a multiple of the font's cell height, scaled by the HUD unit later (R18 s7): as the gadget names,
+    // params +0x17c x +0x1a8 / hud_fCustomHudScale x hud_fWeaponWheelScale.
+    const auto& b = se4::build();
+    const float* custom = b.at<float>(se4::gen::hud_fCustomHudScale);
+    const float* wheelScale = b.at<float>(se4::gen::hud_fWeaponWheelScale);
+    float rel = *reinterpret_cast<float*>(params + 0x17c) * *reinterpret_cast<float*>(params + 0x1a8);
+    if (custom && *custom > 0.01f) rel /= *custom;
+    if (wheelScale) rel *= *wheelScale;
+    if (!(rel > 0.05f && rel < 5.0f)) rel = 0.35f;
+    g_sd.tpSize(tp, 1, rel);
+    const float textSize = 0.0f;  // centred text (hud_text_centred) needs no baseline offset
     const float bw = 110.0f * unit, bh = 24.0f * unit;
     for (int spot = 0; spot < SpotCount; ++spot) {
         const bool left = spot == SpotMenu || spot == SpotNetricsa;
         const bool upper = spot == SpotNetricsa || spot == SpotQuickSave;
         float p[2];
-        at(320.0f + (left ? -1.0f : 1.0f) * g_spotDx, upper ? 205.0f : 240.0f, p);
+        // Upper corners beside the wheel, inside the drawport (the gadget list fills the left middle): left Netricsa
+        // above Menu, right Quick save above Quick load - the same sides and order as the hand gesture.
+        at(320.0f + (left ? -1.0f : 1.0f) * g_spotDx, upper ? 40.0f : 72.0f, p);
         const float rect[4] = {p[0] - bw * 0.5f, p[1] - bh * 0.5f, p[0] + bw * 0.5f, p[1] + bh * 0.5f};
-        if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? hover : idle));
-        *reinterpret_cast<uint32_t*>(tp + 0x10) = spot == hovered ? 0xffffffffu : 0xffd0d0d0u;
+        // A dark, mostly opaque box with white text (readable over snow or sky); the hovered spot in the wheel's own
+        // highlight colour with black text.
+        if (tex) g_sd.box(batch, *g_gfx, tex, rect, alpha(spot == hovered ? (hover | 0xff000000u) : 0xd0181818u));
+        *reinterpret_cast<uint32_t*>(tp + 0x10) = spot == hovered ? 0xff000000u : 0xffffffffu;
         alignas(16) uint8_t str[0x20] = {};
         g_sd.strCtor(str, spotName(spot));
-        const float xy[2] = {p[0], p[1] - textSize * 0.5f};
+        const float xy[2] = {p[0], p[1] - textSize};
         uint64_t packed;
         memcpy(&packed, xy, 8);
         g_sd.text(batch, *g_gfx, str, tp, packed, fade);
@@ -385,12 +397,12 @@ bool install() {
     g_wheelRender = b.at<void>(se4::gen::wheel_render);
     g_crosshairRender = b.at<void>(se4::gen::crosshair_render);
     void* element = b.at<void>(se4::gen::hud_element_render);
-    g_sd = {reinterpret_cast<TextFn>(b.at<void>(se4::gen::hud_text)), reinterpret_cast<BoxFn>(b.at<void>(se4::gen::hud_box9)),
+    g_sd = {reinterpret_cast<TextFn>(b.at<void>(se4::gen::hud_text_centred)), reinterpret_cast<BoxFn>(b.at<void>(se4::gen::hud_box9)),
             reinterpret_cast<TpInitFn>(b.at<void>(se4::gen::textparams_init)), reinterpret_cast<TpSizeFn>(b.at<void>(se4::gen::textparams_size)),
             reinterpret_cast<TpFreeFn>(b.at<void>(se4::gen::textparams_free)), reinterpret_cast<StrCtorFn>(b.at<void>(se4::gen::cstring_ctor)),
             reinterpret_cast<StrDtorFn>(b.at<void>(se4::gen::cstring_dtor))};
     if (!g_sd.box || !g_sd.tpInit || !g_sd.tpSize || !g_sd.tpFree || !g_sd.strCtor || !g_sd.strDtor) g_sd.text = nullptr;
-    g_spotDx = float(se4::options::get("wheel_spot_dx", 330));
+    g_spotDx = float(se4::options::get("wheel_spot_dx", 220));
     if (g_sd.text) spotsInWheelRender();
     flushCanvas = reinterpret_cast<FlushFn>(b.at<void>(se4::gen::hud_canvas_flush));
     if (auto* code = static_cast<uint8_t*>(element))

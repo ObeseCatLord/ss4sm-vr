@@ -134,7 +134,8 @@
   "aux_shortcut": "0x1409052d0",
   "input_mode_get": "0x1401532e0",
   "abh_find": "0x140905c10",
-  "cstring_assign": "0x1410bfe20"
+  "cstring_assign": "0x1410bfe20",
+  "hud_text_centred": "0x1400e87f0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -264,7 +265,8 @@
   "aux_shortcut": "0x140907a00",
   "input_mode_get": "0x140155c90",
   "abh_find": "0x140908340",
-  "cstring_assign": "0x1410c29b0"
+  "cstring_assign": "0x1410c29b0",
+  "hud_text_centred": "0x1400eb140"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -401,7 +403,8 @@
   "aux_shortcut": "0x140905840",
   "input_mode_get": "0x140153f80",
   "abh_find": "0x1409061e0",
-  "cstring_assign": "0x1410c05d0"
+  "cstring_assign": "0x1410c05d0",
+  "hud_text_centred": "0x1400e88c0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -531,6 +534,7 @@
   "aux_shortcut": "0x140907f60",
   "input_mode_get": "0x140156920",
   "abh_find": "0x140908900",
-  "cstring_assign": "0x1410c3150"
+  "cstring_assign": "0x1410c3150",
+  "hud_text_centred": "0x1400eb200"
  }
 }

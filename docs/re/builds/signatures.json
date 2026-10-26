@@ -802,5 +802,15 @@
   "call_of": "aux_shortcut",
   "index": 5,
   "_note": "(CString*, const char*) (R19 s8.5)"
+ },
+ "hud_text_centred": {
+  "src": "0x1400e87f0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1400e88c0",
+   "len": 48
+  },
+  "_note": "HUD text centred on xy, same arguments as hud_text (R18 s7)"
  }
 }

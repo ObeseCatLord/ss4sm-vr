@@ -155,3 +155,6 @@ manual:input_mode_get     # R19 s8
 manual:aux_shortcut       # R19 s8.5
 manual:abh_find           # R19 s8.5
 manual:cstring_assign     # R19 s8.5
+var:hud_fCustomHudScale
+var:hud_fWeaponWheelScale
+manual:hud_text_centred  # R18 s7: spot labels
