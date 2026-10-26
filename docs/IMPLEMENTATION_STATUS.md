@@ -365,4 +365,11 @@
   pad router; menu button bars run in gamepad mode while the VR pointer moves the mouse. Lab: HUD prompts (plcmdFire
   → RT) and the pause menu bar "RESUME GAME (B) · CHEATS · SELECT (A)" on Index.
 - **Siberian Mayhem:** per-weapon crosshair, wheel spots, Netricsa controls, prompts and the artifact crush checked.
-- Open: the wheel spot labels (boxes draw, text does not yet); MP tests later (gbe_fork / SmartSteamEmu).
+- Open:
+  - wheel spot labels: the boxes draw in the upper corners beside the wheel (hovered one highlighted), the text
+    call (native size, centred variant, inside the wheel render) still shows nothing;
+  - vehicle grab steering in the lab: SS4 06_Countryside has 4 vehicles (Harvester first); the lab Lua can teleport
+    the player there, but MountRide(v, "Default") does not board and the use button did not either; Wait() in lab
+    chunks only resumes once;
+  - HUD near the lens edges; upscaler quality; multiplayer (later: gbe_fork / SmartSteamEmu, remote server).
+- Priority (user, 2026-10-25): finish and test everything in SS4 first, then bring SM to parity.
