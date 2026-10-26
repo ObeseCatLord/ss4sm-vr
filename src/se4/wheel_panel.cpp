@@ -4,6 +4,7 @@
 #include "se4/gamepad.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
+#include "se4/vr_device.hpp"
 #include "se4/player_vr.hpp"
 #include "core/vr_controls.hpp"
 #include "xr/input.hpp"
@@ -61,7 +62,7 @@ void latch() {
     d = d * (1.0f / dl);
     const float yawA = std::atan2(-d.x, -d.z), pitchA = std::asin(std::fmax(-1.0f, std::fmin(1.0f, d.y)));
     const core::Quat q = core::multiply(core::yaw(yawA), core::Quat{std::sin(pitchA / 2), 0, 0, std::cos(pitchA / 2)});
-    g_panel.pose = {q, p * (1.0f / worldScale())};
+    g_panel.pose = {q, (p + core::Vec3{0, vrdev::seatOffset(), 0}) * (1.0f / worldScale())};  // device space, as the head
     InterlockedExchange(&g_panel.valid, 1);
     VRLOG("wheel_panel: wheel opened by the %s - panel at %.2f %.2f %.2f m (head %.2f %.2f %.2f)",
           h == 0 ? "left hand" : h == 1 ? "right hand" : "both hands", p.x, p.y, p.z, head.x, head.y, head.z);

@@ -7,6 +7,9 @@ namespace vrdev {
 // initialised XR runtime. Returns false and leaves the global untouched otherwise.
 bool install();
 bool installed();
+// Riding: the head and controllers given to the engine are shifted vertically by this many metres (play space).
+void setSeatOffset(float metres);
+float seatOffset();
 // A menu screen (in-game menu, Netricsa, dialogs) is on top: the controllers use the menu layout.
 bool menuActive();
 // Once per frame after xr::input().sync(): refresh the engine button table (slot 0x0d0).

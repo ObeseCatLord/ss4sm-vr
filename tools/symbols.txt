@@ -160,3 +160,4 @@ var:hud_fWeaponWheelScale
 manual:hud_text_centred  # R18 s7: spot labels
 manual:hud_layout_map   # R22: HUD inset
 manual:gfx_safe_area    # R22
+manual:vr_loco_in_air    # R21: null-checked while riding

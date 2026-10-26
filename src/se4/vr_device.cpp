@@ -18,6 +18,7 @@
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
+#include <atomic>
 #include <MinHook.h>
 #include <algorithm>
 #include <cstdint>
@@ -65,10 +66,12 @@ void* makeString(void* ret, const char* text) {
 core::Pose toPose(const XrPosef& p) {
     return {{p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w}, {p.position.x, p.position.y, p.position.z}};
 }
+// Seated height while riding (src/se4/vehicles.cpp): head and controllers move down (or up) by this many metres.
+std::atomic<float> g_seatOffset{0.0f};
 void writePlacement(float* out, core::Pose p) {
     float s = worldScale();
     out[0] = p.q.x, out[1] = p.q.y, out[2] = p.q.z, out[3] = p.q.w;
-    out[4] = p.p.x / s, out[5] = p.p.y / s, out[6] = p.p.z / s;
+    out[4] = p.p.x / s, out[5] = (p.p.y + g_seatOffset.load()) / s, out[6] = p.p.z / s;
 }
 void identityPlacement(float* out) {
     memset(out, 0, 7 * sizeof(float));
@@ -629,6 +632,8 @@ bool eyeInHead(int eye, float out[7]) {
     return true;
 }
 bool installed() { return g_installed; }
+void setSeatOffset(float metres) { g_seatOffset = metres; }
+float seatOffset() { return g_seatOffset.load(); }
 bool menuActive() { return g_menuActive != 0; }
 
 void headPlacement(float out[7]) { sHead(&g_obj, out); }

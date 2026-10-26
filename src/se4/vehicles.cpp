@@ -10,6 +10,8 @@
 #include "se4/options.hpp"
 #include "se4/player_vr.hpp"
 #include "xr/input.hpp"
+#include "xr/runtime.hpp"
+#include "se4/vr_device.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <atomic>
@@ -18,6 +20,7 @@
 
 namespace vehicles {
 namespace {
+constexpr float kFallbackRim = 0.18f;  // metres: steering-wheel rim when the model has no grip attachments
 using HandleFn = void*(__cdecl*)(int32_t handle);
 using BoneWorldFn = float*(__cdecl*)(float* outP7, void* entity, void* ident);
 using AttachWorldFn = uintptr_t(__cdecl*)(void* entity, float* outP7, void* ident);
@@ -76,6 +79,7 @@ void hookedAnimate(uint8_t* behavior, void* p2) {
 }
 
 void release() {
+    if (g_driving) vrdev::setSeatOffset(0.0f);
     g_driving = false;
     g_holding = false;
     g_grab = {};
@@ -139,6 +143,15 @@ void step(uint8_t* player, void* vrd) {
     if (vehicle != g_vehicle) {
         release();
         g_vehicle = vehicle;
+        // Seated height: on boarding the head is brought to ride_eye_cm above the seat (the player placement, where
+        // the play-space floor sits while riding), whether the rider stands or sits; undone on leaving.
+        const auto& v = xr::runtime().views();
+        static const float eye = se4::options::get("ride_eye_cm", 80) / 100.0f;
+        if (v.valid && se4::options::get("ride_seat_height", 1)) {
+            vrdev::setSeatOffset(eye - v.head.position.y);
+            VRLOG("vehicles: seated height %+.2f m (head %.2f m above the floor -> %.2f above the seat)", eye - v.head.position.y,
+                  v.head.position.y, eye);
+        }
         VRLOG("vehicles: driving %p (steering bone %s)", static_cast<void*>(vehicle), bone && bone != g_emptyIdent ? "found" : "none");
     }
     g_driving = true;
@@ -161,7 +174,26 @@ void step(uint8_t* player, void* vrd) {
         rim += len * 0.5f;
         if (h == 1 && len > 1e-4f) zero = r * (1.0f / len);
     }
-    if (rim < 0.03f || rim > 1.0f) return;  // grips missing or implausible: thumbstick only
+    static const bool diag = se4::options::get("vehicles_log", 0) != 0;
+    static ULONGLONG lastDiag;
+    const bool logNow = diag && GetTickCount64() - lastDiag > 2000;
+    if (logNow) {
+        lastDiag = GetTickCount64();
+        VRLOG("vehicles: bone %.2f %.2f %.2f axis %.2f %.2f %.2f rim %.3f grips L %.2f %.2f %.2f R %.2f %.2f %.2f", bonePose.p.x, bonePose.p.y,
+              bonePose.p.z, axis.x, axis.y, axis.z, rim, gp[0][4], gp[0][5], gp[0][6], gp[1][4], gp[1][5], gp[1][6]);
+    }
+    if (rim < 0.03f || rim > 1.0f) {
+        // No hand-grip attachments on this model (e.g. the Harvester: both resolve to the vehicle origin): a usual
+        // steering-wheel rim around the bone, angle 0 towards the driver's head (only angle changes steer).
+        float head7[7] = {};
+        player_vr::headWorld(vrd, head7);
+        core::Vec3 toHead = core::Vec3{head7[4], head7[5], head7[6]} - bonePose.p;
+        toHead = toHead - axis * core::dot(toHead, axis);
+        const float len = std::sqrt(core::dot(toHead, toHead));
+        if (!(len > 1e-3f)) return;
+        zero = toHead * (1.0f / len);
+        rim = kFallbackRim;
+    }
     core::SteerAxis sa{bonePose.p, axis, zero};
 
     core::Vec3 hands[2];
@@ -173,6 +205,9 @@ void step(uint8_t* player, void* vrd) {
         const auto& x = xr::input().hand(h);
         grip[h] = x.active && x.squeeze > core::controls::gripThreshold(core::controls::Kind(int(x.kind)));
     }
+    if (logNow)
+        VRLOG("vehicles: hands L %.2f %.2f %.2f R %.2f %.2f %.2f grip %d %d, wheel %.2f rad steer %.2f", hands[0].x, hands[0].y, hands[0].z,
+              hands[1].x, hands[1].y, hands[1].z, int(grip[0]), int(grip[1]), g_angle.load(), g_steer.load());
     // Not holding: follow the visible native wheel so a grab starts from where the wheel is.
     void* steering = at<void*>(vehicle, b.off(se4::gen::CVehicleEntity_en_pvsSteering));
     if (steering && !g_grab.holding()) {

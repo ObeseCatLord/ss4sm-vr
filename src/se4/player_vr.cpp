@@ -336,41 +336,22 @@ void labLua(uint8_t* player) {
 using VrdTickFn = void(__cdecl*)(void** vrd);
 VrdTickFn realVrdTick;
 // Riding crash (docs/re/R21_lab_vehicles.md s3): boarding a vehicle drops the player's physics body (player+0x1d0,
-// en_pbo) and the native VR locomotion handlers read it without a check (0x14043aae0 from handler 0's step, lab crash
-// at 0x14043aaf5). While a VR player rides (or has no body), its game-movement bit (vrd+0x2bc bit 0x10, the one
-// CPlayerVRData::EnableGamePlayerMovement sets) is cleared so the tick skips those handlers; it is restored after the
-// player is out and has a body again. For every vrd (remote VR players tick on this machine too).
-void guardRiding(void** vrd) {
-    static struct {
-        void** vrd;
-        bool cleared;
-    } st[16];
-    auto* player = static_cast<uint8_t*>(vrd[0]);
-    if (!player) return;
-    static auto handle = reinterpret_cast<uint8_t*(__cdecl*)(int32_t)>(se4::build().at<void>(se4::gen::handle_entity));
-    const size_t rideOff = se4::build().off(se4::gen::CPuppetEntity_en_henRide);
-    if (!handle || !rideOff) return;
-    const bool body = *reinterpret_cast<void**>(player + 0x1d0) != nullptr;
-    const bool riding = handle(*reinterpret_cast<int32_t*>(player + rideOff)) != nullptr || !body;
-    int slot = -1, free = -1;
-    for (int i = 0; i < 16; ++i) {
-        if (st[i].vrd == vrd) slot = i;
-        if (!st[i].vrd && free < 0) free = i;
+// en_pbo) and the native VR locomotion reads it without a check (0x14043aae0, "airborne for long", lab crash at
+// 0x14043aaf5). That reader answers "not airborne" without a body. The movement bits stay set, so the VR anchor keeps
+// following the seated player (the post-step's follow needs vrd+0x2bc & 0x18).
+using InAirFn = int(__cdecl*)(void** vrd);
+InAirFn realInAir;
+int __cdecl hookedInAir(void** vrd) {
+    auto* player = vrd ? static_cast<uint8_t*>(vrd[0]) : nullptr;
+    if (!player || !*reinterpret_cast<void**>(player + 0x1d0)) {
+        static int n;
+        if (n++ == 0) VRLOG("player_vr: VR locomotion read a missing physics body (riding) - answered 'not airborne'");
+        return 0;
     }
-    auto& bits = *reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(vrd) + 0x2bc);
-    if (riding && slot < 0 && free >= 0 && (bits & 0x10)) {
-        bits &= ~0x10u;
-        st[free] = {vrd, true};
-        VRLOG("player_vr: VR locomotion paused while riding (vrd %p)", static_cast<void*>(vrd));
-    } else if (!riding && slot >= 0 && body) {
-        bits |= 0x10u;
-        st[slot] = {nullptr, false};
-        VRLOG("player_vr: VR locomotion restored after riding (vrd %p)", static_cast<void*>(vrd));
-    }
+    return realInAir(vrd);
 }
 
 void __cdecl hookedVrdTick(void** vrd) {
-    if (vrd) guardRiding(vrd);
     realVrdTick(vrd);
     body::onVrdTick(vrd);
     if (vrd && vrd == g_localVrd) {
@@ -384,6 +365,11 @@ unsigned vrdOffset() { return g_vrdOff; }
 void controllerWorld(void* vrd, int role, float out[7]) {
     if (realCtrlWorld && vrd) realCtrlWorld(vrd, out, role);
     else memset(out, 0, 7 * sizeof(float));
+}
+void headWorld(void* vrd, float out[7]) {
+    memset(out, 0, 7 * sizeof(float));
+    static auto fn = reinterpret_cast<void*(__cdecl*)(void*, float*)>(se4::build().at<void>(se4::gen::vrd_head_world));
+    if (fn && vrd) fn(vrd, out);
 }
 bool nativeVrAction() { return g_nativeAction; }
 void useHand(int hand) {
@@ -426,6 +412,8 @@ bool install(bool localVr) {
     // player's gadget/spot tick.
     if (auto* tick = b.at<uint8_t>(se4::gen::vrd_tick))
         ok &= hook(tick, reinterpret_cast<void*>(hookedVrdTick), reinterpret_cast<void**>(&realVrdTick), "vrd tick");
+    if (auto* inAir = b.at<uint8_t>(se4::gen::vr_loco_in_air))
+        ok &= hook(inAir, reinterpret_cast<void*>(hookedInAir), reinterpret_cast<void**>(&realInAir), "VR locomotion airborne test");
     if (!localVr) return ok;
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
     g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;

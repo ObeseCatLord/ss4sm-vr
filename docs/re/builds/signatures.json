@@ -832,5 +832,15 @@
    "len": 48
   },
   "_note": "float* (float out[2]): the engine safe area (clamped 0.85..1) (R22 s0)"
+ },
+ "vr_loco_in_air": {
+  "src": "0x14043aae0",
+  "len": 24,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x14043ac60",
+   "len": 24
+  },
+  "_note": "(vrd) -> airborne for long: reads player+0x1d0 (en_pbo) without a null check; crashes while riding (R21 s3)"
  }
 }
