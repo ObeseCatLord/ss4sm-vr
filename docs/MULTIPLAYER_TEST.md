@@ -54,9 +54,10 @@ Goal: check that VR works against a remote server, not only on localhost.
    Never use the user's Steam install or saves.
 
 ## 3. Open
-- Native VR turning for VR clients in multiplayer (R26). Native mode is required there so the server gets the
-  hands, but the right stick does not turn yet. Physical turning works.
+- Native VR turning (R26) works in the lab, in single player and in native mode. It is needed in multiplayer, where
+  the client always sends `ClientActionVR`. The anchor yaw is folded into the head that the server receives.
+  Checking the server-side heading after a turn is still open.
 - Remote bodies do not use the relayed grip and trigger data yet. Their arms follow the engine's replicated controller
   placements.
-- Melee against enemies in multiplayer is untested: lab Lua runs only in a VR player's own world, and the server has
-  none.
+- Melee in multiplayer: `MELEE=1 tools/lab/mp_lab.sh …` spawns enemies on the server (`lab_lua_server`, run from the
+  remote VR player's tick). The VR client then swings the knife, and the hits must count in the server's log.

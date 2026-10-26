@@ -70,11 +70,16 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
     eyepiece position (`scope_eye_up_cm`, `scope_eye_back_cm`) and size (`scope_size_cm`) that feel right.
 7h. Menus: point at a menu item with the right controller. It highlights, and the trigger clicks it. The left
     trigger moves the pointer to the left hand.
-8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line):
-   `native_vr_action=1` sends head and hands with each player action (needed for multiplayer). Turning
-   then uses the engine's VR rotation (`vr_iRotationMethod` 1 = smooth, 2 = snap;
-   `vr_iRotationController` 2 = right hand). Check that turning and moving still work, and that shots
-   leave the gun.
+8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line): `native_vr_action=1` is the
+   engine's own VR mode. It is always on as a multiplayer client.
+   - Each player action sends the head and both hands.
+   - The look follows the head.
+   - The right stick turns through the engine's VR rotation: smooth at `turn_speed` (deg/s, default 150), or snap
+     with `snap_turn=1`. The mod sets these itself; no game setting is written.
+   - Check that turning feels right (no judder; the hands stay on the controllers), that moving still works, and that
+     shots leave the gun.
+   - `turn_vignette=1` turns on the engine's comfort vignette during turns. It is unchecked: look for a dark ring
+     and no image corruption.
 8b. Upscaler A/B (Pompeii, look at foliage and fences while standing still and while turning): `upscaler=0`
    (default, no AA), `upscaler=2` (DLSS/DLAA, NVIDIA) and `upscaler=1` (FSR 3.1). Note which looks best for
    shimmer vs sharpness and the frame rate of each; the default follows your pick.
