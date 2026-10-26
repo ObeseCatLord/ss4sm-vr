@@ -34,6 +34,14 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    - Serious Rage: to the mouth; Extra Life: to the chest.
    Log: `gadgets: <use> -> use`, `gadgets: holder use`, `gadgets: launch`. `gadget_motion=0` makes the trigger set
    off any gadget.
+7k. Two guns (dual wield): each gun has its own crosshair where it points, with its own spread; a knife in one hand
+   has none. Close one eye, then the other: each crosshair stays on what its gun points at.
+7l. Wheel spots: hold a wheel and move the hand far to the left (Menu; higher: Netricsa) or right (Quick load;
+   higher: Quick save) past the wheel; the spot lights up; let go to run it. Your weapon should not change.
+7m. Menus and Netricsa: A selects, B goes back and closes Netricsa, the grips switch Netricsa tabs, the trigger
+   clicks what you point at. Button prompts should name your controller's buttons (e.g. "L Grip" for the gadget).
+7n. Sirian Artifact (S.A.M. crate): the artefact comes up in your hand and waits; crush it with the trigger, a hard
+   squeeze (Index) or the grip's second stage (Steam Frame); the skills screen then opens as usual.
 7b. Crosshair and HUD: the game's crosshair should sit where the right-hand gun points, at the depth of what it
    hits (close one eye, then the other: it stays on the target), and its spread ring should match the native
    spread. Health, armour, ammo and the objective show around the view; check they are readable and not too far

@@ -331,3 +331,30 @@
       ring (it is not manually selectable).
     - Lab give-all now also sets the cheats menu's give-all flags (gadgets, upgrades, skills): found in
       CMSCheats2::GiveAllGadgets_OnChange's code.
+
+## 2026-10-24/25: crosshairs per weapon, artifact, Frame, wheel spots, menus, prompts, isolated lab
+- **Isolated lab (user request 2026-10-25):** `tools/lab/make_lab_tree.sh` builds `lab/game/<ss4|sm>[-n]`, a
+  symlink mirror of the install with the gbe_fork Steam emulator (offline, LAN multiplayer), its own saves and
+  profile (`UserData/`), logs, UserCfg.lua and Wine prefix (`lab/prefix/<name>`). Lab runs no longer touch Steam,
+  the user's cloud saves/profile, the game folder or its compatdata prefix (verified after a run). Earlier lab runs
+  had written QuickSaves/profile into Steam userdata and UserCfg.lua into the game roots (2026-10-23); a restore
+  attempt desynchronised Steam's cache and the SS4 profile was reset (copies kept in `lab/`, see LAB_NOTES).
+- **One crosshair per weapon (R8 A7):** the crosshair element runs once per hand holding a gun, each pass reading
+  that weapon, its barrel target (left barrel cast after the native aim writer), hit entity and own spread. Melee
+  weapons draw none. Lab: dual pistols show two crosshairs following their hands; a minigun's gap is wider than a
+  pistol's; knife right + pistol left shows only the left one. Stereo: at 3 m the crosshair's disparity equals the
+  ground's (-6 px), so it sits at the target depth in world space.
+- **Melee:** knife swings killed Processed in Survival (blade and arc hits). The kick on an enemy is still unverified.
+- **Scope crash fixed:** the PiP scope used a freed weapon after a weapon switch; it now checks the player still holds it.
+- **Sirian Artifact of Might (R17):** the native artefact "Use" animation is held in the hand (anim queue speed ~0
+  at 1.5 s, end timer cancelled and re-armed on release) until crushed (trigger, Index squeeze force, Frame grip
+  second stage); timeout 120 s. Not yet run in the lab (needs a crate or a Lua call, R20 pending).
+- **Steam Frame controllers:** XR_VALVE_frame_controller_interaction profile; bumpers hold the per-hand wheels,
+  ABXY/D-pad/View mapped, grip second stage = crush.
+- **Wheel spots (R18):** moving the wheel hand past the wheel to the side points at Menu / Netricsa (left) or
+  Quick load / Quick save (right); releasing there runs the game's own Fusion VR wheel button functions. Lab: all
+  four work (quick load shows the native confirmation; saves go to the lab's UserData). Labels: pending check.
+- **Menu layout:** while a menu or Netricsa is open, A confirms, B goes back/closes, grips (Index trackpads, Frame
+  bumpers) switch tabs, the trigger clicks through the pointer. Lab: Netricsa tab switch and close.
+- **Button prompts (R19):** the virtual pad's control markup returns the VR control (Xbox glyph where it matches,
+  text otherwise) per profile and layout (`core/prompts.hpp`).

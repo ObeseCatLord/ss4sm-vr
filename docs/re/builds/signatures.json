@@ -712,5 +712,15 @@
    "len": 48
   },
   "_note": "(pi, hand, const char* menu \"\" = default in-game menu, float fade 0.5, 0, 0): what the Fusion VR Menu button runs after committing the hand pick (R18 s2.1)"
+ },
+ "xpad_control_markup": {
+  "src": "0x1412f57d0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1412f61a0",
+   "len": 48
+  },
+  "_note": "XInput pad device vt+0x38: CString* (self, CString* out, int control) -> the icon set glyph markup; self+0x20 = XInput user (R19 s2.1)"
  }
 }

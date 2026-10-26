@@ -19,6 +19,7 @@
 #include "se4/wheel_panel.hpp"
 #include "se4/hud_vr.hpp"
 #include "se4/artifact.hpp"
+#include "se4/prompts.hpp"
 #include "up/integrate.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
@@ -116,6 +117,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         if (!(skip & 0x2000)) wheel_panel::install();
         if (!(skip & 0x4000)) hud_vr::install();
         if (!(skip & 0x8000)) artifact::install();
+        if (!(skip & 0x10000)) prompts::install();
     }
 }
 

@@ -142,3 +142,4 @@ manual:textparams_init   # R18
 manual:textparams_size   # R18
 manual:textparams_free   # R18
 manual:cstring_dtor      # R18
+manual:xpad_control_markup # R19: VR button prompts (virtual pad glyphs)

@@ -121,7 +121,8 @@
   "entity_pi": "0x14024c710",
   "quick_load": "0x1401ccd90",
   "entity_to_handle": "0x141113230",
-  "menu_open_hand": "0x140056c80"
+  "menu_open_hand": "0x140056c80",
+  "xpad_control_markup": "0x1412f57d0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -239,7 +240,8 @@
   "textparams_size": "0x140b577f0",
   "cstring_dtor": "0x1410c2870",
   "entity_to_handle": "0x141115b80",
-  "menu_open_hand": "0x1400595d0"
+  "menu_open_hand": "0x1400595d0",
+  "xpad_control_markup": "0x1412f81c0"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -363,7 +365,8 @@
   "entity_pi": "0x14024c330",
   "quick_load": "0x1401cc8b0",
   "entity_to_handle": "0x141113b00",
-  "menu_open_hand": "0x140056ce0"
+  "menu_open_hand": "0x140056ce0",
+  "xpad_control_markup": "0x1412f61a0"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -481,6 +484,7 @@
   "textparams_size": "0x140b57ce0",
   "cstring_dtor": "0x1410c3010",
   "entity_to_handle": "0x141116440",
-  "menu_open_hand": "0x140059620"
+  "menu_open_hand": "0x140059620",
+  "xpad_control_markup": "0x1412f8b30"
  }
 }
