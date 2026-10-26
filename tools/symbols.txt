@@ -183,3 +183,13 @@ manual:gfx_copy          # R25
 manual:exec_copy_call    # R25: execute_view's gfx_copy rescale call
 manual:exec_rescale_site # R25: decodes the 3D canvas drawport global
 manual:exec_eye_dp_load  # R25: decodes the saved eye drawport global
+manual:vr_rotation          # R26: native VR turn handler (anchor yaw); reference / diagnostics
+manual:vr_rot_method_read   # R26: disp32 retarget -> mod rotation method (1 smooth, 2 snap)
+manual:vr_rot_role          # R26: disp32 retarget -> mod rotation controller (2 = right hand)
+manual:vr_rot_stick_r_load  # R26: rewritten to load the mod's turn axis
+manual:vr_rot_stick_l_load  # R26: role-1 stick load (not patched by the recipe)
+manual:vr_anchor_turn       # R26: diagnostic (yaw deltas)
+manual:vrd_button_poll      # R26: per-hand table refresh; not called per tick for human players
+var:vr_fRotationSensitivity         # R26: read-only, smooth turn speed mapping
+var:vr_fContinuousMovementDeadzone  # R26: read-only, smooth turn speed mapping
+manual:vr_comfort_mode_read # R26: disp32 retarget -> mod comfort-mask mode (turn vignette)

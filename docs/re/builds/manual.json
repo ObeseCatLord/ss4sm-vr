@@ -161,7 +161,15 @@
   "exec_copy_call": "0x140bc0fb3",
   "exec_rescale_site": "0x140bc10fa",
   "exec_eye_dp_load": "0x140bc0eba",
-  "end_view": "0x140bc0970"
+  "end_view": "0x140bc0970",
+  "vr_rotation": "0x14044e880",
+  "vr_rot_method_read": "0x14044e918",
+  "vr_rot_role": "0x14043ed10",
+  "vr_rot_stick_r_load": "0x14044e99c",
+  "vr_rot_stick_l_load": "0x14044e9e7",
+  "vr_anchor_turn": "0x1404425e0",
+  "vrd_button_poll": "0x14043ac30",
+  "vr_comfort_mode_read": "0x1401dac25"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -316,7 +324,15 @@
   "exec_copy_call": "0x140bc3b93",
   "exec_rescale_site": "0x140bc3cda",
   "exec_eye_dp_load": "0x140bc3a9a",
-  "end_view": "0x140bc3550"
+  "end_view": "0x140bc3550",
+  "vr_rotation": "0x140450fb0",
+  "vr_rot_method_read": "0x140451048",
+  "vr_rot_role": "0x140441440",
+  "vr_rot_stick_r_load": "0x1404510cc",
+  "vr_rot_stick_l_load": "0x140451117",
+  "vr_anchor_turn": "0x140444d10",
+  "vrd_button_poll": "0x14043d360",
+  "vr_comfort_mode_read": "0x1401dd2e5"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -480,7 +496,15 @@
   "exec_copy_call": "0x140bc16a3",
   "exec_rescale_site": "0x140bc17ea",
   "exec_eye_dp_load": "0x140bc15aa",
-  "end_view": "0x140bc1060"
+  "end_view": "0x140bc1060",
+  "vr_rotation": "0x14044e9c0",
+  "vr_rot_method_read": "0x14044ea58",
+  "vr_rot_role": "0x14043ee60",
+  "vr_rot_stick_r_load": "0x14044eadc",
+  "vr_rot_stick_l_load": "0x14044eb27",
+  "vr_anchor_turn": "0x1404426c0",
+  "vrd_button_poll": "0x14043adb0",
+  "vr_comfort_mode_read": "0x1401da7f5"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -635,6 +659,14 @@
   "exec_copy_call": "0x140bc4273",
   "exec_rescale_site": "0x140bc43ba",
   "exec_eye_dp_load": "0x140bc417a",
-  "end_view": "0x140bc3c30"
+  "end_view": "0x140bc3c30",
+  "vr_rotation": "0x1404510e0",
+  "vr_rot_method_read": "0x140451178",
+  "vr_rot_role": "0x140441580",
+  "vr_rot_stick_r_load": "0x1404511fc",
+  "vr_rot_stick_l_load": "0x140451247",
+  "vr_anchor_turn": "0x140444de0",
+  "vrd_button_poll": "0x14043d4d0",
+  "vr_comfort_mode_read": "0x1401dcea5"
  }
 }

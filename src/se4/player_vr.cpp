@@ -3,6 +3,8 @@
 // are refused unless the match is exact and unique.
 #include "se4/player_vr.hpp"
 #include "se4/net.hpp"
+#include "se4/turn.hpp"
+#include "core/math.hpp"
 #include "se4/body.hpp"
 #include "se4/gadgets.hpp"
 #include "se4/build.hpp"
@@ -115,6 +117,8 @@ using CaFn = void(__cdecl*)(uint8_t*, uintptr_t, uintptr_t, uintptr_t, uintptr_t
                             uintptr_t, uintptr_t, uintptr_t);
 CaFn realCa;
 bool g_nativeAction, g_nativeTurn;
+using EulerFn = float*(__cdecl*)(float* outQuat, const float* hpb);
+EulerFn g_eulerQuat;
 void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn, uintptr_t relMove, uintptr_t clientPos,
               uintptr_t clientH, uintptr_t henFloor, uintptr_t henMover, uintptr_t reset1, uintptr_t reset2) {
     void* vrd = player ? *reinterpret_cast<void**>(player + g_vrdOff) : nullptr;
@@ -125,6 +129,14 @@ void hookedCa(uint8_t* player, uintptr_t fire, uintptr_t look, uintptr_t lockOn,
     }
     float head[7], right[7], left[7], front[3];
     vrdev::headPlacement(head);
+    // The head is sent in device space, and the server rebuilds the look from its own anchor, which never turns: fold
+    // the local anchor yaw (vrd+0x674, native turning) into the head so the server faces the way the player does (R26 s2).
+    if (const float t = turn::yaw(vrd); t != 0.0f && g_eulerQuat) {
+        float hpb[3] = {t, 0, 0}, y[4];
+        g_eulerQuat(y, hpb);
+        const core::Quat q = core::multiply({y[0], y[1], y[2], y[3]}, {head[0], head[1], head[2], head[3]});
+        head[0] = q.x, head[1] = q.y, head[2] = q.z, head[3] = q.w;
+    }
     realCtrlWorld(vrd, right, 0);
     realCtrlWorld(vrd, left, 1);
     memcpy(front, static_cast<uint8_t*>(vrd) + 0x628, sizeof front);
@@ -336,6 +348,7 @@ void labLua(uint8_t* player) {
 // tick (src/se4/gadgets.cpp), which otherwise only ran from weapon steps.
 using VrdTickFn = void(__cdecl*)(void** vrd);
 VrdTickFn realVrdTick;
+bool g_labLuaServer;  // option lab_lua_server: lab.lua also runs on a server, from a remote VR player's tick
 // Riding crash (docs/re/R21_lab_vehicles.md s3): boarding a vehicle drops the player's physics body (player+0x1d0,
 // en_pbo) and the native VR locomotion reads it without a check (0x14043aae0, "airborne for long", lab crash at
 // 0x14043aaf5). That reader answers "not airborne" without a body. The movement bits stay set, so the VR anchor keeps
@@ -359,6 +372,8 @@ void __cdecl hookedVrdTick(void** vrd) {
     if (vrd && vrd == g_localVrd) {
         gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
         labLua(static_cast<uint8_t*>(vrd[0]));
+    } else if (vrd && vrd[0] && g_labLuaServer && !net::clientSession()) {
+        labLua(static_cast<uint8_t*>(vrd[0]));  // lab: a server's world (it has no local VR player), e.g. enemies for MP melee
     }
 }
 }  // namespace
@@ -416,7 +431,9 @@ bool install(bool localVr) {
         ok &= hook(tick, reinterpret_cast<void*>(hookedVrdTick), reinterpret_cast<void**>(&realVrdTick), "vrd tick");
     if (auto* inAir = b.at<uint8_t>(se4::gen::vr_loco_in_air))
         ok &= hook(inAir, reinterpret_cast<void*>(hookedInAir), reinterpret_cast<void**>(&realInAir), "VR locomotion airborne test");
+    g_labLuaServer = se4::options::get("lab_lua_server", 0) != 0;
     if (!localVr) return ok;
+    g_eulerQuat = reinterpret_cast<EulerFn>(b.at<void>(se4::gen::euler_quat));
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
     g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;
     if (auto* ca = b.at<uint8_t>(se4::gen::client_action))

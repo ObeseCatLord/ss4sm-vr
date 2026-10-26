@@ -987,5 +987,50 @@
   "src": "0x140bc0970",
   "len": 32,
   "_note": "end of a rendered view: if 0x1422d5198 pops the drawport stack (0x140b585f0(gfx,1)) and clears it; called after execute_view by the view functions (R25 s3)"
+ },
+ "vr_rotation": {
+  "src": "0x14044e880",
+  "len": 64,
+  "_note": "native VR turn handler (rotation handler object: +8 player, +0x10 vrd, +0x50 next snap time); only caller the locomotion handler step 0x14044d530 (slot +0x10 of vtable 0x141849c78); applies yaw through vr_anchor_turn (R26 s1)"
+ },
+ "vr_rot_method_read": {
+  "src": "0x14044e918",
+  "len": 24,
+  "_note": "mov edx,[rip+vr_iRotationMethod] (8B 15 disp32, 6 bytes, disp at +2) inside vr_rotation: its only gameplay reader; retarget the disp to a mod int (1 smooth, 2 snap) (R26 s3)"
+ },
+ "vr_rot_role": {
+  "src": "0x14043ed10",
+  "len": 24,
+  "_note": "int (vrd, role) -> role turns; first instruction mov eax,[rip+vr_iRotationController] (8B 05 disp32, disp at +2); callers vr_rotation and the teleport handler step 0x14044d6c0 only (R26 s3)"
+ },
+ "vr_rot_stick_r_load": {
+  "src": "0x14044e99c",
+  "len": 24,
+  "_note": "mov rax,[rbx+0x10]; movss xmm8,[rax+0x14] (48 8B 43 10 F3 44 0F 10 40 14, 10 bytes) in vr_rotation: role 0 stick x; becomes movss xmm8,[rip+axis] + nop (R26 s3)"
+ },
+ "vr_rot_stick_l_load": {
+  "src": "0x14044e9e7",
+  "len": 24,
+  "_note": "mov rax,[rbx+0x10]; movss xmm6,[rax+0xe4] (48 8B 43 10 F3 0F 10 B0 E4 00 00 00, 12 bytes) in vr_rotation: role 1 stick x; not patched by the R26 recipe (R26 s3)"
+ },
+ "vr_anchor_turn": {
+  "src": "0x1404425e0",
+  "len": 24,
+  "_note": "void (vrd, float yaw rad in xmm1): vrd+0x674 += yaw, rebuild the anchor about the head (0x140441e80), vrd+0x65c = 0; only caller vr_rotation (R26 s1)"
+ },
+ "vrd_button_poll": {
+  "src": "0x14043ac30",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x14043adb0",
+   "len": 64
+  },
+  "_note": "(vrd) refreshes the per-hand table vrd+8+role*0xd0 from device slots 0xb8/0xd0, fires VRCommandPressed, runs VR move 0x140442f80; called only by vrd_init and the CPlayerBotEntity VR input path 0x14048aca0, never per tick for a human player (R26 s1.2)"
+ },
+ "vr_comfort_mode_read": {
+  "src": "0x1401dac25",
+  "len": 24,
+  "_note": "mov eax,[rip+vr_bEnableComfortLocomotion] (8B 05 disp32, disp at +2) in the VR view's comfort-mask pass 0x1401dabf0 (called from 0x1401dcbe0): 0 off, 1 on anchor turns (viewer+0x120 set by 0x140441e80/0x140441e40), 2 always; retarget to a mod int to control the turn vignette (R26 s3.4)"
  }
 }

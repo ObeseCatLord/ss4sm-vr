@@ -2,6 +2,7 @@
 // so `this` is the first parameter (RCX) and MSVC's hidden struct-return pointer is the second (RDX).
 // Floats travel in the XMM register of their argument position. See docs/re/R1_vtable.md.
 #include "se4/vr_device.hpp"
+#include "se4/turn.hpp"
 #include "se4/gamepad.hpp"
 #include "se4/wheel_panel.hpp"
 #include "up/integrate.hpp"
@@ -345,6 +346,7 @@ const char* nameForKind(xr::ControllerKind k, bool perHand) {
     case xr::ControllerKind::Touch:
     case xr::ControllerKind::Frame: return "Rift";  // Frame: thumbsticks, Touch-like halves
     case xr::ControllerKind::WMR: return "WindowsMR";
+    case xr::ControllerKind::Unknown: return perHand ? "Rift" : "Vive";  // assume a thumbstick: "Vive" hands cannot turn (R26)
     default: return "Vive";
     }
 }
@@ -669,15 +671,17 @@ void updateFromInput() {
     for (int role = 0; role < 2; ++role) {
         const auto& h = xr::input().hand(role == 0 ? 1 : 0);
         const uint32_t b = h.buttons;
-        const float sx = player_vr::nativeTurn() ? h.stick.x : 0.f, sy = 0.f;
+        // Stick x/y stay 0: the engine reads them only at spawn (R26); native turning gets the stick through turn::feed.
+        const float sx = 0.f, sy = 0.f;
         const float back = (b & xr::BtnMenu) || (role == 1 && (b & xr::BtnSecondary)) ? 1.f : 0.f;
         float v[kButtons] = {h.trigger, h.squeeze, sx, sy, (b & xr::BtnPrimary) ? 1.f : 0.f, (b & xr::BtnSecondary) ? 1.f : 0.f,
                              (b & xr::BtnStickClick) ? 1.f : 0.f, back, 0.f, 0.f};
         if (!all)
-            for (int i = 1; i < 7; ++i) v[i] = (i == 2 && sx != 0.f) ? sx : 0.f;  // native_turn still needs stick x
+            for (int i = 1; i < 7; ++i) v[i] = 0.f;
         for (int i = 0; i < kButtons; ++i) setButtonLocked(role, i, v[i]);
     }
     ReleaseSRWLockExclusive(&g_btnLock);
+    turn::feed(xr::input().hand(1).stick.x, player_vr::nativeTurn() && !gamepad::wheelHeld() && !g_menuActive);
 }
 
 bool hookViewport() {

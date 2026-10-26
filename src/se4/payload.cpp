@@ -21,6 +21,7 @@
 #include "se4/artifact.hpp"
 #include "se4/prompts.hpp"
 #include "se4/net.hpp"
+#include "se4/turn.hpp"
 #include "up/integrate.hpp"
 #include "se4/options.hpp"
 #include "vk/vk_layer.hpp"
@@ -108,6 +109,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         upint::install();
     }
     if (!(skip & 0x10) && player_vr::install(true)) {
+        if (!(skip & 0x40000)) turn::install();
         if (!(skip & 0x20)) crosshair::install();
         if (!(skip & 0x40)) vehicles::install();
         if (!(skip & 0x80)) body::install();
