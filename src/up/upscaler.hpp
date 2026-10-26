@@ -12,13 +12,25 @@
 //   upscale_quality = 0 native AA (DLAA / FSR native) | 1 quality | 2 balanced | 3 performance   (default 0)
 //   upscale_sharpness = 0..100 (default 15)
 //   upscale_phase_b = 1 render at output / ratio for quality 1..3 (default) | 0 render at output size (src/up/integrate.cpp)
+//   desktop_upscaler = 1 desktop menu mode (VR off): DLSS and FSR 3.1 are both initialised and chosen at runtime from the
+//                    game's Options > Graphics > Rescaling Filter list (src/se4/gfx_menu.cpp); the render size is the
+//                    engine's own "Max 3D rendering Mpix" result unless upscale_quality is set (default 0)
 #include <vulkan/vulkan.h>
 #include <cstdint>
 
 namespace up {
 enum class Kind { Off, FSR, DLSS };
 
-// Extensions DLSS needs on the game's instance/device (added by the Vulkan layer at creation).
+// Desktop upscaler menu mode (docs/re/R28_rescaling_filter_menu.md): VR off and option desktop_upscaler.
+bool menuMode();
+// An upscaler may run in this session: option upscaler set, or desktop menu mode.
+bool wanted();
+// The startup choice in desktop menu mode, in the encoding of option upscaler (-1 auto, 0 off, 1 FSR, 2 DLSS); set
+// before init (src/se4/gfx_menu.cpp). Without it, option upscaler.
+void setMenuStart(int opt);
+
+// Extensions DLSS needs on the game's instance/device (added by the Vulkan layer at creation; in desktop menu mode
+// always, when the driver's NGX core loads).
 void instanceExtensions(const char** names, uint32_t& count, uint32_t max);
 void deviceExtensions(VkInstance inst, VkPhysicalDevice pd, const char** names, uint32_t& count, uint32_t max);
 
@@ -27,6 +39,13 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
           VkQueue queue, uint32_t family, const wchar_t* modDirectory);
 Kind active();
 const char* name();
+const char* name(Kind k);
+// A backend that init brought up (desktop menu mode tries both; otherwise only the selected one). Off is always.
+bool available(Kind k);
+// Switch the active backend at runtime (desktop menu mode, src/up/integrate.cpp at a frame boundary): Off or an
+// available backend. Every history is reset; the other backend keeps its contexts for a later switch back. False (no
+// change) when `k` is not available.
+bool select(Kind k);
 
 // Output / render ratio of the configured quality mode (1 for native AA and while no backend is active).
 float ratio();

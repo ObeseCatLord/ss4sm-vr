@@ -7,7 +7,9 @@
 
 Installs Bin/x64/msimg32.dll (proxy) and Bin/x64/ss4smvr/{ss4smvr.dll, libopenxr_loader.dll}, plus the mode's file:
 --mode vr (default) creates the VR opt-in Bin/x64/ss4smvr/enable_vr; --mode desktop writes ss4smvr/options.txt with
-mp_guards=1 for a flat player who joins VR players (without either the mod stays inert: flat play is unchanged).
+mp_guards=1 for a flat player who joins VR players and desktop_upscaler=1, which adds "DLSS" / "FSR 3.1" to the game's
+Options > Graphics > Rescaling Filter list (the choice is saved by the mod in ss4smvr/upscaler_menu.txt, a runtime file
+that uninstall leaves like the log). Without either mode file the mod stays inert: flat play is unchanged.
 Refuses to run
 unless every game executable present in Bin/x64 matches a supported fingerprint, and refuses to overwrite
 any file it did not install itself (receipt hash check). Uninstall removes only files whose current hash
@@ -69,7 +71,7 @@ def load_receipt(game):
 
 MODE_FILES = {  # generated per mode: destination -> content
     'vr': {'Bin/x64/ss4smvr/enable_vr': b''},
-    'desktop': {'Bin/x64/ss4smvr/options.txt': b'mp_guards=1\n'},
+    'desktop': {'Bin/x64/ss4smvr/options.txt': b'mp_guards=1\ndesktop_upscaler=1\n'},
 }
 
 

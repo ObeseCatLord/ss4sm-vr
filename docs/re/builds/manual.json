@@ -185,7 +185,17 @@
   "ppcmd_pp_call": "0x140ed33b1",
   "fmv_pp_call": "0x140151f66",
   "gfx_proj_derive": "0x140b603d0",
-  "proj_revz_read": "0x140b604a1"
+  "proj_revz_read": "0x140b604a1",
+  "gfxopt_init": "0x140872c60",
+  "gfxopt_step": "0x1408760d0",
+  "wlink_bind": "0x140158a50",
+  "wlink_get": "0x14015eaf0",
+  "wlink_set": "0x14015ed30",
+  "wlink_reset": "0x14015eba0",
+  "optcoll_add": "0x14015e3c0",
+  "optcoll_find": "0x14015e5d0",
+  "mc_setsel": "0x140918bf0",
+  "mc_sync": "0x1409199e0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -364,7 +374,17 @@
   "ppcmd_pp_call": "0x140ed5f41",
   "fmv_pp_call": "0x140154916",
   "gfx_proj_derive": "0x140b62b00",
-  "proj_revz_read": "0x140b62bd1"
+  "proj_revz_read": "0x140b62bd1",
+  "gfxopt_init": "0x140875390",
+  "gfxopt_step": "0x140878800",
+  "wlink_bind": "0x14015b400",
+  "wlink_get": "0x1401614a0",
+  "wlink_set": "0x1401616e0",
+  "wlink_reset": "0x140161550",
+  "optcoll_add": "0x140160d70",
+  "optcoll_find": "0x140160f80",
+  "mc_setsel": "0x14091b320",
+  "mc_sync": "0x14091c110"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -552,7 +572,17 @@
   "ppcmd_pp_call": "0x140ed4481",
   "fmv_pp_call": "0x140152c26",
   "gfx_proj_derive": "0x140b60940",
-  "proj_revz_read": "0x140b60a11"
+  "proj_revz_read": "0x140b60a11",
+  "gfxopt_init": "0x140872bd0",
+  "gfxopt_step": "0x140876040",
+  "wlink_bind": "0x1401596e0",
+  "wlink_get": "0x14015f7a0",
+  "wlink_set": "0x14015f9e0",
+  "wlink_reset": "0x14015f850",
+  "optcoll_add": "0x14015f060",
+  "optcoll_find": "0x14015f270",
+  "mc_setsel": "0x1409192f0",
+  "mc_sync": "0x14091a170"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -731,6 +761,16 @@
   "ppcmd_pp_call": "0x140ed7001",
   "fmv_pp_call": "0x1401555c6",
   "gfx_proj_derive": "0x140b63060",
-  "proj_revz_read": "0x140b63131"
+  "proj_revz_read": "0x140b63131",
+  "gfxopt_init": "0x1408752f0",
+  "gfxopt_step": "0x140878760",
+  "wlink_bind": "0x14015c080",
+  "wlink_get": "0x140162140",
+  "wlink_set": "0x140162380",
+  "wlink_reset": "0x1401621f0",
+  "optcoll_add": "0x140161a00",
+  "optcoll_find": "0x140161c10",
+  "mc_setsel": "0x14091ba10",
+  "mc_sync": "0x14091c890"
  }
 }

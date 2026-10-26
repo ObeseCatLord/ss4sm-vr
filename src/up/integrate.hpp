@@ -17,6 +17,7 @@
 //     writes the eye drawport, and the engine's rescale of its 3D canvas into the eye drawport is skipped.
 //   - Any mismatch takes the stock path: the engine rescales the render-size image spatially.
 #include "core/stereo.hpp"
+#include "up/upscaler.hpp"
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <vector>
@@ -29,8 +30,15 @@ bool install();
 // (phase B), reads the camera (gfx+0xc70 doubles, P at gfx+0xc2c) and jitters gfx+0xc2c, which end_view restores;
 // its PP (ppcmd_pp_call + 5, dst = view + 0x288) evaluates the HDR box. Off with MSAA; every flat branch requires no
 // VR device.
+// Wanted with option upscaler set or in desktop menu mode (option desktop_upscaler, up::menuMode()).
 bool flatWanted();
-// Phase B is on now (two-pass stereo, an upscaler running at a ratio > 1, symbols and opcodes verified).
+// The flat main view's hooks and globals are installed and verified (installFlat).
+bool flatReady();
+// Desktop menu mode (src/se4/gfx_menu.cpp): switch the upscaler backend (or off) at the next frame boundary, the entry
+// of the player-views pass, so one frame never mixes backends. Any thread.
+void requestKind(up::Kind k);
+// Phase B is on now (two-pass stereo, an upscaler running at a ratio > 1, symbols and opcodes verified). In desktop
+// menu mode the ratio is the engine's own: on while this frame's flat limiter result is below the output size.
 bool phaseB();
 // Vulkan layer callbacks.
 void onDevice(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetDeviceProcAddr gdpa);

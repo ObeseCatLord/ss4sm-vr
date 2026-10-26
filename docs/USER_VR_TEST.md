@@ -83,5 +83,11 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
 8b. Upscaler A/B (Pompeii, look at foliage and fences while standing still and while turning): `upscaler=0`
    (default, no AA), `upscaler=2` (DLSS/DLAA, NVIDIA) and `upscaler=1` (FSR 3.1). Note which looks best for
    shimmer vs sharpness and the frame rate of each; the default follows your pick.
+8c. Desktop upscaler menu (flat, no headset; `install.py install <game dir> --mode desktop`, which writes
+   `desktop_upscaler=1`): Options > Graphics > Rescaling Filter > "DLSS" or "FSR 3.1" (DLSS only on NVIDIA). It
+   switches at once and is remembered in `ss4smvr/upscaler_menu.txt`; any stock filter or Default turns it off.
+   Quality = "Max 3D rendering Mpix" in the same menu: Unlimited (or a cap above your resolution) is native AA
+   (DLAA / FSR native), a lower cap renders fewer pixels and upscales. MSAA must be off. Check the image while moving
+   and the frame rate at two Mpix settings; log lines `menu: rescaling select` and `upint: flat limiter (menu`.
 9. Note frame rate (`mirror: N fps`) and any `vrdev: first call slot` lines that are new.
 Send the log back; it contains no personal data beyond file paths.

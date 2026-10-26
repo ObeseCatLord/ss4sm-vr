@@ -1,6 +1,7 @@
 #include "up/integrate.hpp"
 #include "core/flat_view.hpp"
 #include "core/reproject.hpp"
+#include "core/upscale.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
@@ -13,6 +14,7 @@
 #include <MinHook.h>
 #include <cstdlib>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -325,6 +327,14 @@ bool logRate(LogRate& r) {
 
 // ---- Phase B: the eye scene at out/ratio (docs/re/R25_upscale_render_size.md) ----
 bool g_phaseBReady;  // option, symbols and opcode checks passed, hooks installed (installPhaseB)
+// Desktop menu mode (docs/re/R28_rescaling_filter_menu.md s4) without upscale_quality in options.txt: the flat render
+// size is the engine's own MPix-limiter result, and phase B is on while it is below the output (g_flatScaled, set by
+// this frame's flat limiter call).
+bool g_menuSize;
+bool g_flatScaled;
+float *g_maxMpix, *g_pixelRatio;  // ren_fMax3DRenderingMPix, ren_fRenderingPixelRatio (read only, logging)
+// Desktop menu mode: the backend the menu asked for (up::Kind as int, -1 none), applied at the next player-views entry.
+std::atomic<int> g_request{-1};
 // Armed by the RenderView limiter call of an eye's view: the render size it returned and the eye size it was given.
 struct EyeSize {
     uint32_t rw = 0, rh = 0, ow = 0, oh = 0, frame = 0;
@@ -642,7 +652,7 @@ bool flatEnabled() {
     const int aa = g_aaSamples ? *g_aaSamples : 1;
     const char* why = nullptr;
     if (!g_evaluate) why = "upscaler disabled";
-    else if (up::active() == up::Kind::Off) why = "no upscaler backend";
+    else if (up::active() == up::Kind::Off) why = up::menuMode() ? "upscaler off (Rescaling Filter menu)" : "no upscaler backend";
     else if (aa > 1) why = "MSAA";
     // Logged once per change of state.
     static PVOID volatile logged;
@@ -783,8 +793,27 @@ PassFn realPlayerViews, realRenderView, realEndView;
 
 const char* rvKind(const void* ret) { return ret == g_pvRet ? "player" : ret == g_camRet ? "camera" : "other"; }
 
+// A backend switch from the menu, between two frames: no view of this frame has been limited, jittered or post-processed
+// yet, so nothing of the old backend's frame is left half done. The flat history starts over.
+void applyRequest() {
+    const int k = g_request.exchange(-1);
+    if (k < 0) return;
+    const up::Kind before = up::active();
+    if (!up::select(up::Kind(k))) {
+        VRLOG("upint: flat upscaler %s requested but not available - stays %s", up::name(up::Kind(k)), up::name());
+        return;
+    }
+    if (up::active() == before) return;
+    g_hist[0] = {};
+    g_proj[0].valid = false;
+    g_lastEval[0] = {};
+    g_flatArmed = false;
+    VRLOG("upint: flat upscaler %s -> %s at a frame boundary", up::name(before), up::name());
+}
+
 // player_views(dp, pi+0xa8, views, size): the per-frame pass over the local views; views+0xc = their count.
 uintptr_t __cdecl hookedPlayerViews(uintptr_t dp, uintptr_t p2, uintptr_t views, uintptr_t size) {
+    if (!t_inViews) applyRequest();
     const int savedCount = t_viewCount;
     t_viewCount = views ? *reinterpret_cast<const int32_t*>(views + 0xc) : 0;
     ++t_inViews;
@@ -885,7 +914,21 @@ void flatLimiter(int w, int h, int* ow, int* oh) {
     }
     const int engineW = *ow, engineH = *oh;
     uint32_t tw = uint32_t(w), th = uint32_t(h);
-    if (phaseB()) up::renderSize(uint32_t(w), uint32_t(h), tw, th);  // phase B: out / ratio
+    if (g_menuSize) {
+        // Desktop menu mode (R28 s4): the engine's own size for this output ("Max 3D rendering Mpix" x pixel ratio, with
+        // its clamps and 0.95 dead-band), at least a third of the output per axis. Below the output: phase B (the
+        // engine's rescale is skipped, the upscaler fills the output); equal: phase A (native AA).
+        core::menuRenderSize(uint32_t(w), uint32_t(h), engineW, engineH, tw, th);
+        g_flatScaled = tw < uint32_t(w) || th < uint32_t(h);
+        if (!phaseB()) tw = uint32_t(w), th = uint32_t(h);  // phase B unavailable: native AA at the output size
+        static int lastW = -1, lastH = -1, lastKind = -1;
+        static LogRate mrate;
+        if (int(tw) != lastW || int(th) != lastH || int(up::active()) != lastKind || logRate(mrate)) {
+            lastW = int(tw), lastH = int(th), lastKind = int(up::active());
+            VRLOG("upint: flat limiter (menu %s): out %dx%d -> engine %dx%d (MPix %.2f ratio %.3f) -> render %ux%u (phase %s)", up::name(), w, h, engineW,
+                  engineH, g_maxMpix ? *g_maxMpix : -1.0f, g_pixelRatio ? *g_pixelRatio : -1.0f, tw, th, tw < uint32_t(w) || th < uint32_t(h) ? "B" : "A");
+        }
+    } else if (phaseB()) up::renderSize(uint32_t(w), uint32_t(h), tw, th);  // phase B: out / ratio
     *ow = int(tw), *oh = int(th);  // phase A: the identity (the user's pixel ratio and MPix limit are bypassed)
     int bw, bh, rbw, rbh;
     boxSize(cur, bw, bh);
@@ -1266,14 +1309,15 @@ bool phaseB() {
     const char* why = nullptr;
     if (!g_evaluate) why = "upscaler disabled";
     else if (!g_evaluateOn) why = "upscale_evaluate=0";
-    else if (up::active() == up::Kind::Off) why = "no upscaler backend";
-    else if (up::ratio() <= 1.0f) why = "ratio 1";
+    else if (up::active() == up::Kind::Off) why = up::menuMode() ? "upscaler off (Rescaling Filter menu)" : "no upscaler backend";
+    else if (g_menuSize ? !g_flatScaled : up::ratio() <= 1.0f) why = g_menuSize ? "engine render size = output" : "ratio 1";
     else if (singlePass && *singlePass > 0) why = "single-pass stereo";
     // Logged once per change of state.
     static PVOID volatile logged;
     PVOID state = const_cast<char*>(why ? why : "on");
     if (InterlockedExchangePointer(&logged, state) != state) {
         if (why) VRLOG("upint: phase B off: %s", why);
+        else if (g_menuSize) VRLOG("upint: phase B on: %s at the engine's render size", up::name());
         else VRLOG("upint: phase B on: %s at ratio %.2f", up::name(), up::ratio());
     }
     return !why;
@@ -1318,7 +1362,8 @@ void patchImage(VkImageCreateInfo& ci) {
     if (!g_evaluate || !g_hdrThread || g_hdrThread != GetCurrentThreadId()) return;
     if (isDepth(ci.format)) ci.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     // Phase B's fallback blits from the canvas.
-    else if (ci.format == VK_FORMAT_R16G16B16A16_SFLOAT && ci.samples == VK_SAMPLE_COUNT_1_BIT && phaseB())
+    // Desktop menu mode can enter phase B at any time without the canvas being re-created (it stays at the backbuffer size).
+    else if (ci.format == VK_FORMAT_R16G16B16A16_SFLOAT && ci.samples == VK_SAMPLE_COUNT_1_BIT && (phaseB() || (up::menuMode() && g_phaseBReady)))
         ci.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 }
 
@@ -1428,10 +1473,12 @@ core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int6
     return core::angles(core::jittered(p.tan, g_jx * g_jitterScale, g_jy * g_jitterScale, g_jitW, g_jitH));
 }
 
-bool flatWanted() { return !se4::g_vrEnabled && se4::options::get("upscaler", 0) != 0; }
+bool flatWanted() { return !se4::g_vrEnabled && up::wanted(); }
+bool flatReady() { return g_flatReady; }
+void requestKind(up::Kind k) { g_request = int(k); }
 
 bool install() {
-    g_evaluate = se4::options::get("upscaler", 0) != 0;
+    g_evaluate = up::wanted();
     if (!g_evaluate) return false;
     g_jitterOn = se4::options::get("upscale_jitter", 1) != 0;
     g_evaluateOn = se4::options::get("upscale_evaluate", 1) != 0;
@@ -1457,10 +1504,16 @@ bool install() {
         return false;
     }
     VRLOG("upint: upscaler hooks on the HDR canvas and post-processing dispatch");
-    // Phase B (render at out/ratio) for the quality modes 1..3 unless upscale_phase_b=0.
+    // Phase B (render at out/ratio) for the quality modes 1..3 unless upscale_phase_b=0. Desktop menu mode always
+    // installs it: the user can lower "Max 3D rendering Mpix" at runtime, which makes the engine's render size smaller.
     const int quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
+    const bool menu = up::menuMode();
+    g_menuSize = menu && !se4::options::has("upscale_quality");
+    if (menu) VRLOG("upint: desktop menu mode: render size from %s", g_menuSize ? "the engine's Max 3D rendering Mpix" : "upscale_quality (options.txt)");
+    g_maxMpix = b.at<float>(se4::gen::ren_fMax3DRenderingMPix);
+    g_pixelRatio = b.at<float>(se4::gen::ren_fRenderingPixelRatio);
     if (!se4::options::get("upscale_phase_b", 1)) VRLOG("upint: phase B off: upscale_phase_b=0");
-    else if (!quality) VRLOG("upint: phase B off: upscale_quality 0 (native AA at the eye size)");
+    else if (!quality && !menu) VRLOG("upint: phase B off: upscale_quality 0 (native AA at the eye size)");
     else installPhaseB();
     // Desktop play: the flat main view as slot 0 (docs/re/R27_flat_upscaler.md). Never in VR mode.
     if (flatWanted()) installFlat();

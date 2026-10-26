@@ -50,4 +50,10 @@ int get(const char* key, int fallback) {
         if (!strcmp(g_entries[i].key, key)) return g_entries[i].value;
     return fallback;
 }
+
+bool has(const char* key) {
+    for (int i = 0; i < g_count; ++i)
+        if (!strcmp(g_entries[i].key, key)) return true;
+    return false;
+}
 }  // namespace se4::options

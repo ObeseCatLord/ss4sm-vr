@@ -1112,5 +1112,55 @@
   "src": "0x140b604a1",
   "len": 24,
   "_note": "cmp [rip+reversed depth flag], 0 inside gfx_proj_derive: decode the depth-convention global (Sam4 0x14224cdc8, .data value 1 = reversed Z) (R27 s2)"
+ },
+ "gfxopt_init": {
+  "src": "0x140872c60",
+  "len": 48,
+  "_note": "CMSGraphicsOptions vt+0x120 (screen init): builds the GPU options widgets; ms_pmwRescalingFilter (+0x1f0) is a CMultichoiceWidget bound to ren_iRescalingFilter with 6 options (values \"0\"..\"5\"); post-hook point to append mod options (R28 s1)"
+ },
+ "gfxopt_step": {
+  "src": "0x1408760d0",
+  "len": 48,
+  "_note": "CMSGraphicsOptions vt+0x178 (per-step update of the top menu): shows ms_pmwRescalingFilter and hides ms_pcwForceCAS only when the chosen resolution's MPix > ren_fMax3DRenderingMPix, else the reverse (widget+0x10 bit 0x20 = hidden) (R28 s1.5)"
+ },
+ "wlink_bind": {
+  "src": "0x140158a50",
+  "len": 64,
+  "_note": "CWidgetCvarLink* (widget, const char* cvar): allocates a 0x20-byte cvar link {+0 CString name, +8 CString snapshot, +0x10 CWidgetCvarOptionCollection*, +0x18 value transform fn}, appends it to widget+0x50 (count +0x58) (R28 s1.2)"
+ },
+ "wlink_get": {
+  "src": "0x14015eaf0",
+  "len": 40,
+  "_note": "CString* (link, CString* out): current cvar value as text (cvar_get_str of link name); read by the multichoice sync, checkbox, slider and CMSGraphicsOptions change list; hook to report the mod's filter (R28 s2)"
+ },
+ "wlink_set": {
+  "src": "0x14015ed30",
+  "len": 48,
+  "_note": "void (link, const CString* value): runs Lua '<name>=<value>' via lua_exec_string; the only write path of every widget selection and of the screen's revert-all (thunk 0x14015ecc0); hook to swallow mod sentinel values (R28 s2)"
+ },
+ "wlink_reset": {
+  "src": "0x14015eba0",
+  "len": 48,
+  "_note": "void (link): writes the cvar's default value (second output of cvar_get_str) via Lua; used by the Default/ResetToDefaults path 0x140135880 (R28 s1.4)"
+ },
+ "optcoll_add": {
+  "src": "0x14015e3c0",
+  "len": 48,
+  "_note": "void (CWidgetCvarOptionCollection*, const CString* label, const CString* value): appends a 0x30-byte option {+0 label, +8 0, +0x10 value, +0x20 alias array}; label is ETRS/DTRS/TTRS 'Key=Text' (translated) or plain text (R28 s1.2)"
+ },
+ "optcoll_find": {
+  "src": "0x14015e5d0",
+  "len": 48,
+  "_note": "int (collection, const CString* cvarValue): option index whose value equals the cvar text (exact, unquoted, alias, or numeric within 1%), else -1 (R28 s1.3)"
+ },
+ "mc_setsel": {
+  "src": "0x140918bf0",
+  "len": 48,
+  "_note": "void (CMultichoiceWidget*, int index, int noWrite): +0x178 = index; unless noWrite, writes the selected option's value to each bound link with wlink_set, then fires the 'OnChange' script event (R28 s1.3)"
+ },
+ "mc_sync": {
+  "src": "0x1409199e0",
+  "len": 32,
+  "_note": "int (CMultichoiceWidget*, CString* outLabel, void** outPtr): index of the option matching each link's wlink_get text (with its cached display label), else the manual index or 'Custom'; run by the widget update vt+0x20 and the popup (R28 s1.3)"
  }
 }

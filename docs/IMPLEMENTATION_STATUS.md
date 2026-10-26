@@ -449,6 +449,22 @@
   - Its HUD was missing because the HUD renders with the device's eye field at 0. The HUD now finds its eye from the
     drawport that slot 0x028 returned (`vrdev::hudEye`).
   - Upscaler phase B (lower internal render size) is open: R25.
+- **Desktop upscaler menu (R28, 2026-10-26; built and host-tested, not yet lab-verified):**
+  - Opt-in `desktop_upscaler=1` (VR off; `install.py --mode desktop` writes it with `mp_guards=1`). Without it flat
+    play is unchanged (no hooks).
+  - The game's own Options > Graphics > Rescaling Filter list gets "DLSS" (NVIDIA with NGX only) and "FSR 3.1"
+    after the six stock filters (`src/se4/gfx_menu.cpp`). Choosing one switches the flat upscaler at the next frame
+    boundary, no restart; a stock filter or Default turns it off. `ren_iRescalingFilter` is never written: the mod
+    swallows its own values in `wlink_set` and reports them in `wlink_get`. The row stays visible under the MPix cap.
+  - Both backends are initialised at startup in this mode (`up::select` switches; the other backend keeps its
+    contexts). The choice is saved in `ss4smvr/upscaler_menu.txt` (`upscaler=off|dlss|fsr`). `upscaler` in
+    options.txt, when set, overrides that file at startup; the menu still switches at runtime.
+  - Quality = the game's "Max 3D rendering Mpix": the flat limiter uses the engine's own result (at least a third of
+    the output per axis). Equal to the output gives DLAA / FSR native AA (phase A); smaller gives phase B (upscaled
+    to the output, the engine's rescale skipped). `upscale_quality` in options.txt keeps the mod ratio instead.
+    Jitter phases, LOD bias and the DLSS quality mode follow the actual ratio.
+  - Log lines: `menu: Rescaling Filter entries on`, `menu: rescaling options appended`, `menu: rescaling select`,
+    `upint: flat upscaler X -> Y at a frame boundary`, `upint: flat limiter (menu ...)`. Lab checks: R28 s6.
 - **HUD inset (R22):** while a flat-HUD element renders in an eye pass, the HUD layout map's safe-area calls are
   redirected so screen-anchored elements lay out inside `hud_inset` % (default 70) of each eye, sizes scaled by
   `hud_inset_scale`, centred on the eye's optical axis; world-projected points are untouched. Lab: health/armour/ammo

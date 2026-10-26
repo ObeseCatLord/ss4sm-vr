@@ -1,5 +1,6 @@
 #include "up/upscaler.hpp"
 #include "core/upscale.hpp"
+#include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "up/ngx_shim.hpp"
@@ -8,6 +9,7 @@
 #include <ffx_api/ffx_upscale.h>
 #include <ffx_api/vk/ffx_api_vk.h>
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -15,8 +17,10 @@
 
 namespace up {
 namespace {
-Kind g_kind = Kind::Off;
+// The active backend. Desktop menu mode switches it at runtime (select, on the render thread at a frame boundary).
+std::atomic<Kind> g_kind{Kind::Off};
 int g_quality = 0;       // 0 native AA, 1 quality, 2 balanced, 3 performance
+int g_menuStart = -2;    // desktop menu mode: the startup choice (option upscaler encoding); -2 = not set
 float g_sharpness = 0.15f;
 // Lab switch upscale_fsr_depth: the depth range given to FSR for the reverse-Z depth. 0 swapped (near = far plane),
 // 1 as is, 2 infinite (FFX_UPSCALE_ENABLE_DEPTH_INFINITE, near = FLT_MAX, far = the near plane, as AMD's sample does).
@@ -39,12 +43,15 @@ struct Dlss {
     int flags[kSlots] = {};
 } g_dlss;
 
-NVSDK_NGX_PerfQuality_Value dlssQuality() {
-    switch (g_quality) {
+// The configured quality mode; in desktop menu mode the one matching the actual ratio (the engine's MPix limit chooses
+// the render size there).
+NVSDK_NGX_PerfQuality_Value dlssQuality(uint32_t inW, uint32_t outW) {
+    switch (menuMode() ? core::upscaleQualityOfRatio(inW, outW) : g_quality) {
     case 0: return NVSDK_NGX_PerfQuality_Value_DLAA;
     case 1: return NVSDK_NGX_PerfQuality_Value_MaxQuality;
     case 2: return NVSDK_NGX_PerfQuality_Value_Balanced;
-    default: return NVSDK_NGX_PerfQuality_Value_MaxPerf;
+    case 3: return NVSDK_NGX_PerfQuality_Value_MaxPerf;
+    default: return NVSDK_NGX_PerfQuality_Value_UltraPerformance;
     }
 }
 
@@ -106,14 +113,16 @@ bool dlssEvaluate(int slot, const Frame& f) {
         if (g_dlss.feature[e]) NVSDK_NGX_VULKAN_ReleaseFeature(g_dlss.feature[e]), g_dlss.feature[e] = nullptr;
         // Transformer model (preset K) for every mode: best temporal stability, which matters most in VR.
         for (const char* p : {NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality,
-                              NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance})
+                              NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance,
+                              NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance})
             NVSDK_NGX_Parameter_SetUI(g_dlss.params, p, NVSDK_NGX_DLSS_Hint_Render_Preset_K);
         NVSDK_NGX_DLSS_Create_Params cp{};
         cp.Feature.InWidth = inW;
         cp.Feature.InHeight = inH;
         cp.Feature.InTargetWidth = f.output.width;
         cp.Feature.InTargetHeight = f.output.height;
-        cp.Feature.InPerfQualityValue = dlssQuality();
+        const NVSDK_NGX_PerfQuality_Value quality = dlssQuality(inW, f.output.width);
+        cp.Feature.InPerfQualityValue = quality;
         cp.InFeatureCreateFlags = flags;
         NVSDK_NGX_Result r = NGX_VULKAN_CREATE_DLSS_EXT1(g_dev, f.cmd, 1, 1, &g_dlss.feature[e], g_dlss.params, &cp);
         if (NVSDK_NGX_FAILED(r)) {
@@ -124,7 +133,7 @@ bool dlssEvaluate(int slot, const Frame& f) {
         g_dlss.rw[e] = inW, g_dlss.rh[e] = inH, g_dlss.ow[e] = f.output.width, g_dlss.oh[e] = f.output.height;
         g_dlss.flags[e] = flags;
         g_reset[e] = true;
-        VRLOG("dlss: %s %ux%u -> %ux%u (quality %d, preset K)", slotName(slot), inW, inH, f.output.width, f.output.height, g_quality);
+        VRLOG("dlss: %s %ux%u -> %ux%u (quality %d, preset K)", slotName(slot), inW, inH, f.output.width, f.output.height, int(quality));
     }
     auto res = [](const Image& i, bool rw, VkImageAspectFlags aspect) {
         return NVSDK_NGX_Create_ImageView_Resource_VK(i.view, i.image, {aspect, 0, 1, 0, 1}, i.format, i.width, i.height, rw);
@@ -157,6 +166,7 @@ bool dlssEvaluate(int slot, const Frame& f) {
 
 // ---------------- FSR 3.1 (FidelityFX API, Vulkan) ----------------
 struct Fsr {
+    bool ready = false;
     HMODULE dll = nullptr;
     ffxFunctions fn{};
     ffxContext ctx[kSlots] = {};
@@ -176,6 +186,7 @@ bool fsrInit(const wchar_t* dir) {
         VRLOG("fsr: FidelityFX API entry points missing");
         return false;
     }
+    g_fsr.ready = true;
     return true;
 }
 
@@ -255,16 +266,40 @@ bool fsrEvaluate(int slot, const Frame& f) {
     return true;
 }
 
-bool isNvidia(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice pd) {
+uint32_t vendorId(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice pd) {
     auto gp = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(gipa(inst, "vkGetPhysicalDeviceProperties"));
     VkPhysicalDeviceProperties p{};
     if (gp) gp(pd, &p);
-    return p.vendorID == 0x10DE;
+    return p.vendorID;
+}
+bool isNvidia(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice pd) { return vendorId(inst, gipa, pd) == 0x10DE; }
+
+// Desktop menu mode (docs/re/R28_rescaling_filter_menu.md): every backend this GPU supports is brought up so the menu
+// can switch at runtime; the startup choice is the menu's saved one (or option upscaler, see src/se4/gfx_menu.cpp).
+bool initMenu(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice pd, const wchar_t* dir) {
+    const uint32_t vendor = vendorId(inst, gipa, pd);
+    if (vendor != 0x10DE) VRLOG("upscaler: DLSS not offered: not an NVIDIA GPU (vendor 0x%04x)", vendor);
+    else if (!dlssInit(gipa, dir)) VRLOG("upscaler: DLSS not offered: NGX / DLSS unavailable (see the dlss: line above)");
+    if (!fsrInit(dir)) VRLOG("upscaler: FSR 3.1 not offered (see the fsr: line above)");
+    const int opt = g_menuStart != -2 ? g_menuStart : se4::options::get("upscaler", 0);
+    const bool dlss = g_dlss.ready, fsr = g_fsr.ready;
+    Kind k = Kind::Off;
+    if (opt == 1) k = fsr ? Kind::FSR : dlss ? Kind::DLSS : Kind::Off;
+    else if (opt != 0) k = dlss ? Kind::DLSS : fsr ? Kind::FSR : Kind::Off;  // DLSS or auto
+    g_kind = k;
+    VRLOG("upscaler: desktop menu mode: DLSS %s, FSR 3.1 %s; start %s (requested %d; quality from %s, sharpness %.2f)", dlss ? "available" : "unavailable",
+          fsr ? "available" : "unavailable", name(), opt, se4::options::has("upscale_quality") ? "upscale_quality" : "the engine's Max 3D rendering Mpix",
+          g_sharpness);
+    return dlss || fsr;
 }
 }  // namespace
 
+bool menuMode() { return !se4::g_vrEnabled && se4::options::get("desktop_upscaler", 0) != 0; }
+bool wanted() { return se4::options::get("upscaler", 0) != 0 || menuMode(); }
+void setMenuStart(int opt) { g_menuStart = std::clamp(opt, -1, 2); }
+
 void instanceExtensions(const char** names, uint32_t& count, uint32_t max) {
-    if (se4::options::get("upscaler", 0) == 0 || !ngx::load()) return;
+    if (!wanted() || !ngx::load()) return;
     auto req = reinterpret_cast<decltype(&NVSDK_NGX_VULKAN_RequiredExtensions)>(ngx::sym("NVSDK_NGX_VULKAN_RequiredExtensions"));
     unsigned int ic = 0, dc = 0;
     const char **ie = nullptr, **de = nullptr;
@@ -273,7 +308,7 @@ void instanceExtensions(const char** names, uint32_t& count, uint32_t max) {
 }
 
 void deviceExtensions(VkInstance, VkPhysicalDevice, const char** names, uint32_t& count, uint32_t max) {
-    if (se4::options::get("upscaler", 0) == 0 || !ngx::load()) return;
+    if (!wanted() || !ngx::load()) return;
     auto req = reinterpret_cast<decltype(&NVSDK_NGX_VULKAN_RequiredExtensions)>(ngx::sym("NVSDK_NGX_VULKAN_RequiredExtensions"));
     unsigned int ic = 0, dc = 0;
     const char **ie = nullptr, **de = nullptr;
@@ -288,6 +323,7 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
     g_quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
     g_sharpness = std::clamp(se4::options::get("upscale_sharpness", 15), 0, 100) / 100.0f;
     g_fsrDepth = std::clamp(se4::options::get("upscale_fsr_depth", 0), 0, 2);
+    if (menuMode()) return initMenu(inst, gipa, pd, dir);
     if (opt == 0) {
         VRLOG("upscaler: off");
         return false;
@@ -301,7 +337,20 @@ bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceP
 }
 
 Kind active() { return g_kind; }
-const char* name() { return g_kind == Kind::DLSS ? "DLSS" : g_kind == Kind::FSR ? "FSR 3.1" : "off"; }
+const char* name(Kind k) { return k == Kind::DLSS ? "DLSS" : k == Kind::FSR ? "FSR 3.1" : "off"; }
+const char* name() { return name(g_kind); }
+
+bool available(Kind k) { return k == Kind::Off || (k == Kind::DLSS && g_dlss.ready) || (k == Kind::FSR && g_fsr.ready); }
+
+bool select(Kind k) {
+    if (!available(k)) return false;
+    const Kind was = g_kind.exchange(k);
+    if (was != k) {
+        resetHistory();
+        VRLOG("upscaler: %s -> %s (histories reset)", name(was), name(k));
+    }
+    return true;
+}
 
 float ratio() { return g_kind == Kind::Off ? 1.0f : core::upscaleRatio(g_quality); }
 
@@ -319,8 +368,9 @@ float mipBias(uint32_t renderW, uint32_t outW) { return g_kind == Kind::Off ? 0.
 
 bool evaluate(int slot, const Frame& f) {
     if (slot < 0 || slot >= kSlots) return false;
-    if (g_kind == Kind::DLSS) return dlssEvaluate(slot, f);
-    if (g_kind == Kind::FSR) return fsrEvaluate(slot, f);
+    const Kind k = g_kind;
+    if (k == Kind::DLSS) return dlssEvaluate(slot, f);
+    if (k == Kind::FSR) return fsrEvaluate(slot, f);
     return false;
 }
 

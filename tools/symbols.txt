@@ -214,3 +214,16 @@ manual:end_view             # R27: hooked: restores the flat projection after th
 var:gfx_iAntiAliasingSamples   # R27: flat upscaler gate (must be 1), read only
 var:gfx_pixMaxRenderTargetSize # R27: flat render box (RenderView's 3D-canvas clamp), read only
 var:ren_bForceCAS              # R27: flat render box, read only
+manual:gfxopt_init          # R28: hooked (post): append mod options to the Rescaling Filter collection
+manual:gfxopt_step          # R28: hooked (post): keep the Rescaling Filter row visible while the mod upscaler is available
+manual:wlink_bind           # R28: reference (widget cvar link layout)
+manual:wlink_get            # R28: hooked: report the mod filter as the link's value
+manual:wlink_set            # R28: hooked: swallow mod sentinel values, clear mod mode on stock values
+manual:wlink_reset          # R28: optional hook: Default resets the mod mode too
+manual:optcoll_add          # R28: called from the gfxopt_init post-hook
+manual:optcoll_find         # R28: reference (cvar text -> option index)
+manual:mc_setsel            # R28: reference (selection -> wlink_set -> OnChange)
+manual:mc_sync              # R28: reference (cvar -> displayed option)
+var:ren_iRescalingFilter     # R28: read only; never written by the mod (saved 0..5)
+var:ren_fRenderingPixelRatio # R28: read only; render-size input (no menu widget)
+var:ren_fMax3DRenderingMPix  # R28: read only; the menu's resolution-scale control

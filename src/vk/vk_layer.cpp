@@ -23,6 +23,7 @@
 #include "vk/scope_layer.hpp"
 #include "vk/gpu_timing.hpp"
 #include "se4/scope.hpp"
+#include "se4/gfx_menu.hpp"
 #include "up/upscaler.hpp"
 #include "core/math.hpp"
 #include <windows.h>
@@ -128,7 +129,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateInstance(const VkInstanceCreateInfo* ci
     VRLOG("vk: game vkCreateInstance (%u extensions)", ci->enabledExtensionCount);
     auto& rt = xr::runtime();
     if (!se4::g_vrEnabled || !rt.ensure()) {
-        // Desktop play: only the upscaler, when one is selected, needs its instance extensions.
+        // Desktop play: only the upscaler, when one is selected (or in desktop menu mode), needs its instance extensions.
         VkInstanceCreateInfo fci = *ci;
         const char* upExt[16];
         uint32_t upN = 0;
@@ -202,6 +203,7 @@ void setupDevice(VkPhysicalDevice pd, uint32_t family) {
     se4::payloadDirectory(dir, MAX_PATH);
     up::init(g.instance, pd, g.device, realGIPA, realGDPA, g.xrQueue, family, dir);
     upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
+    if (g.flat) gfxmenu::onUpscalerReady();  // desktop menu mode: DLSS / FSR 3.1 in the Rescaling Filter list
     if (!g.flat) scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
 }
 

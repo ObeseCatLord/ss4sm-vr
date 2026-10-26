@@ -4,4 +4,6 @@
 namespace se4::options {
 void load(const wchar_t* payloadDirFile);  // any path inside the payload directory (e.g. the log path)
 int get(const char* key, int fallback);
+// The key is set in options.txt (whatever its value).
+bool has(const char* key);
 }  // namespace se4::options

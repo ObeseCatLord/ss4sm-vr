@@ -45,4 +45,25 @@ inline void jitterOffset(uint32_t frame, uint32_t renderW, uint32_t outW, float&
 inline float upscaleMipBias(uint32_t renderW, uint32_t outW) {
     return renderW && outW ? std::log2(float(renderW) / float(outW)) : 0.0f;
 }
+
+// Quality mode for an actual output/render ratio, for upscalers that take one at creation (DLSS): 0 native AA (render =
+// output), else the first of 1 quality (1.5), 2 balanced (1.72), 3 performance (2.0), 4 ultra performance (3.0) whose
+// nominal ratio reaches it, so the render size lies between that mode's nominal size and the output (its dynamic range).
+inline int upscaleQualityOfRatio(uint32_t renderW, uint32_t outW) {
+    if (!renderW || !outW || renderW >= outW) return 0;
+    const float r = float(outW) / float(renderW);
+    return r <= 1.51f ? 1 : r <= 1.73f ? 2 : r <= 2.01f ? 3 : 4;
+}
+
+// Desktop menu mode (docs/re/R28_rescaling_filter_menu.md s4): the render size is the engine's own MPix-limiter result
+// for an output size, clamped per axis to [ceil(out/3), out] (DLSS / FSR 3.1 ultra performance is the lower limit). A
+// missing engine size (<= 0) means the output size.
+inline void menuRenderSize(uint32_t outW, uint32_t outH, int engineW, int engineH, uint32_t& rw, uint32_t& rh) {
+    auto axis = [](uint32_t out, int engine) {
+        if (!out) return 0u;
+        const uint32_t lo = (out + 2) / 3;
+        return engine <= 0 ? out : std::clamp(uint32_t(engine), lo, out);
+    };
+    rw = axis(outW, engineW), rh = axis(outH, engineH);
+}
 }  // namespace core

@@ -74,6 +74,41 @@ int main() {
     assert(std::fabs(upscaleMipBias(rw, 1920) + 0.766f) < 2e-3f);
     assert(upscaleMipBias(960, 1920) == -1.0f);
 
+    // Quality mode of an actual ratio (DLSS creation in desktop menu mode): the configured ratios map back to their mode.
+    assert(upscaleQualityOfRatio(1920, 1920) == 0 && upscaleQualityOfRatio(0, 1920) == 0 && upscaleQualityOfRatio(1920, 0) == 0);
+    assert(upscaleQualityOfRatio(2000, 1920) == 0);  // larger than the output: not an upscale
+    for (int q = 0; q <= 3; ++q) {
+        upscaleRenderSize(2560, 1440, upscaleRatio(q), rw, rh);
+        assert(upscaleQualityOfRatio(rw, 2560) == q);
+    }
+    assert(upscaleQualityOfRatio(1932, 2560) == 1);  // R28 s4 example: 2.1 MPix at 1440p, ratio 1.325
+    assert(upscaleQualityOfRatio(1800, 1920) == 1);  // any upscale is at least the quality mode
+    assert(upscaleQualityOfRatio(1600, 2560) == 2);  // ratio 1.6: balanced
+    assert(upscaleQualityOfRatio(1400, 2560) == 3);  // ratio 1.83: performance
+    assert(upscaleQualityOfRatio(1200, 2560) == 4);  // ratio 2.13: ultra performance
+    assert(upscaleQualityOfRatio(854, 2560) == 4);   // ratio 3: ultra performance
+
+    // Desktop menu render size: the engine's limiter result clamped to [ceil(out/3), out] per axis.
+    menuRenderSize(2560, 1440, 1932, 1087, rw, rh);  // R28 s4 example
+    assert(rw == 1932 && rh == 1087);
+    menuRenderSize(2560, 1440, 2560, 1440, rw, rh);  // cap Unlimited or >= 95 %: native AA
+    assert(rw == 2560 && rh == 1440);
+    menuRenderSize(2560, 1440, 4000, 3000, rw, rh);  // never above the output
+    assert(rw == 2560 && rh == 1440);
+    menuRenderSize(3840, 2160, 640, 360, rw, rh);  // 4K with a 0.23 MPix limit: clamped to a third
+    assert(rw == 1280 && rh == 720);
+    menuRenderSize(1000, 1001, 1, 1, rw, rh);  // ceil(out/3)
+    assert(rw == 334 && rh == 334);
+    menuRenderSize(1920, 1080, 0, -5, rw, rh);  // no engine size: the output size
+    assert(rw == 1920 && rh == 1080);
+    menuRenderSize(0, 1080, 100, 100, rw, rh);
+    assert(rw == 0 && rh == 360);
+    for (uint32_t w = 3; w < 4000; w += 13)
+        for (int e : {1, int(w / 3), int(w / 2), int(w), int(w) + 7}) {
+            menuRenderSize(w, w, e, e, rw, rh);
+            assert(rw >= (w + 2) / 3 && rw <= w && rw * 3 >= w && rw == rh);
+        }
+
     std::puts("upscale checks passed");
     return 0;
 }
