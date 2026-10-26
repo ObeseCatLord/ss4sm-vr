@@ -148,7 +148,7 @@ void logElement(uint8_t* e, void** ctx) {
 // plane maps every pixel back along its own ray, so the crosshair keeps its native look and screen position but
 // sits at the target's depth in both eyes.
 bool crosshairAtTarget(void** ctx, uint8_t* e, uint8_t* dp, float dist) {
-    const int eye = vrdev::currentEye();
+    const int eye = vrdev::hudEye();
     float l, r, u, dn, e7[7];
     uint8_t* params = *reinterpret_cast<uint8_t**>(e + kParams);
     const int32_t* box = reinterpret_cast<const int32_t*>(dp + kDpBox);
@@ -421,7 +421,7 @@ bool installInset() {
 }
 // Turn the inset on for this element's render (flat 2D eye pass, screen-anchored elements only).
 bool insetOn(void** vt) {
-    const int eye = vrdev::currentEye();
+    const int eye = vrdev::hudEye();
     if (!realSafeArea || g_mode != 0 || (eye != 1 && eye != 2) || !vt) return false;
     if (vt[0x80 / 8] == g_crosshairRender || vt[0x80 / 8] == g_objHolderRender) return false;
     g_in.s = g_insetPct / 100.0f, g_in.k = g_insetScalePct / 100.0f, g_in.px = g_in.py = 0.5f;
@@ -462,6 +462,7 @@ struct CrosshairArgs {
 };
 
 void hookedElement(void** ctx, uint8_t* e) {
+    vrdev::setHudDrawport(ctx && ctx[9] ? *static_cast<void**>(ctx[9]) : nullptr);
     if (g_log && e) logElement(e, ctx);
     void** vt = e ? *reinterpret_cast<void***>(e) : nullptr;
     if (vt && vt[0x80 / 8] == g_crosshairRender) {
@@ -528,7 +529,7 @@ void hookedElement(void** ctx, uint8_t* e) {
     if (batching) *batching = 0;
     if (onHand) {
         g_spotCtx = {ctx, e, dp};
-        const int eye = vrdev::currentEye();
+        const int eye = vrdev::hudEye();
         float e7[7], l, r, u, dn;
         if (g_panelText && vrdev::eyeInHead(eye, e7) && vrdev::eyeFov(eye, l, r, u, dn)) {
             g_pt.anchor = {core::normalize({anchor[0], anchor[1], anchor[2], anchor[3]}), {anchor[4], anchor[5], anchor[6]}};

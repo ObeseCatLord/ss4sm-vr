@@ -22,6 +22,13 @@ bool hookViewport();
 void headPlacement(float out[7]);
 // The eye the engine is rendering now (device +0x18: 1 left, 2 right, 3 scope, 0 none).
 int currentEye();
+// The eye whose render target `dp` is (the drawport slot 0x028 returned), or 0. Single pass renders the HUD with
+// the device's eye field at 0; this tells the eye from the drawport.
+int eyeOfDrawport(const void* dp);
+// HUD render (main thread): the eye being drawn - the device's eye field, else the eye of the drawport the HUD element
+// draws into (set by hud_vr per element; single pass).
+void setHudDrawport(const void* dp);
+int hudEye();
 // Eye-in-head pose of eye 1/2 (quaternion xyzw + position in engine units), as slot 0x078 inverts it. False when
 // the views are not valid.
 bool eyeInHead(int eye, float out[7]);

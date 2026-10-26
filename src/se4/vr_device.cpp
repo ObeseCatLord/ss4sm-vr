@@ -116,6 +116,7 @@ struct EyeTarget {
     int w = 0, h = 0;
 };
 EyeTarget g_eye[2];
+void* volatile g_eyeRt[2];  // the drawport slot 0x028 last returned per eye (single pass: the HUD finds its eye by it)
 
 void eyeSize(int& w, int& h) {
     const auto& v = xr::runtime().views();
@@ -167,6 +168,7 @@ void* sEyeRT(Object*, void* gfx, int eye) {
     if (!rt && InterlockedIncrement(&nullLogged[eye - 1]) <= 3)
         VRLOG("vrdev: eye %d target is NULL (holder %p wrapper %p, id %d)", eye, t.holder, wrapper,
               *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(t.holder) + 0x7c));
+    g_eyeRt[eye - 1] = rt;
     return rt;
 }
 void sBeginFrame(Object*) {
@@ -623,6 +625,13 @@ bool eyeFov(int eye, float& left, float& right, float& up, float& down) {
     return true;
 }
 int currentEye() { return g_installed ? field<int32_t>(0x18) : 0; }
+int eyeOfDrawport(const void* dp) { return !dp ? 0 : dp == g_eyeRt[0] ? 1 : dp == g_eyeRt[1] ? 2 : 0; }
+int g_hudDpEye;  // main thread: the eye of the HUD element being drawn, from its drawport (setHudDrawport)
+void setHudDrawport(const void* dp) { g_hudDpEye = eyeOfDrawport(dp); }
+int hudEye() {
+    const int e = currentEye();
+    return e == 1 || e == 2 ? e : g_hudDpEye;
+}
 bool eyeInHead(int eye, float out[7]) {
     const auto& v = xr::runtime().views();
     if (!(eye == 1 || eye == 2) || !v.valid) return false;

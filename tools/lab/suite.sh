@@ -3,6 +3,7 @@
 # usage: suite.sh ss4|sm <out-dir> [stage ...]   stages: core vehicle survival melee artifact
 # (default: core vehicle survival artifact on SS4; SM has no Survival map, so melee replaces survival)
 # Prints PASS/FAIL per check and a summary; captures go to <out-dir>. Run tools/lab/stop_lab.sh afterwards.
+# SUITE_OPTS="key=value ..." adds options to every stage (e.g. SUITE_OPTS=single_pass=1).
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$(dirname "$HERE")")"; ID="$ROOT/lab/monado/input_driver"
 G=$1; OUT=$2; shift 2; mkdir -p "$OUT"
 DEFAULT="core vehicle survival artifact"; [ "$G" = sm ] && DEFAULT="core vehicle melee artifact"
@@ -40,7 +41,7 @@ cap() { "$HERE/capture.sh" Monado "$OUT/$1.png" 100 >/dev/null 2>&1; }
 press() { $ID $H $LH $R0 "$@" >/dev/null; sleep 0.4; $ID $H $LH $R0 >/dev/null; }
 start() {  # start <level> [options lines...]
   local level=$1; shift
-  printf '%s\n' "lab_giveall=1" "$@" > "$OPT"
+  printf '%s\n' "lab_giveall=1" $SUITE_OPTS "$@" > "$OPT"
   "$HERE/stop_lab.sh" >/dev/null 2>&1
   timeout 900 "$HERE/level_test.sh" "$G" "$level" "$OUT/start" +cht_bEnableCheats 1 +cht_bGod 1 "${EXTRA[@]}" >/dev/null 2>&1
   "$HERE/until_player.sh" "$G" 400 >/dev/null || { check "level $level starts" 0; return 1; }

@@ -41,7 +41,7 @@ float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
         // fields sit 8 bytes later, like its vrd.
         const int d = int(player_vr::vrdOffset()) - 0x25c8;
         VRLOG("crosshair: render reaches the view (eye %d, show predicate %d, hud_bShowCrosshair %d, flag13 %d, wheel bit %d, weapon %x, +0x2568 %llx)",
-              vrdev::currentEye(), pred ? pred(player) : -1, show ? *show : -1, (*reinterpret_cast<uint32_t*>(player + 0xfa8 + d) >> 13) & 1,
+              vrdev::hudEye(), pred ? pred(player) : -1, show ? *show : -1, (*reinterpret_cast<uint32_t*>(player + 0xfa8 + d) >> 13) & 1,
               *reinterpret_cast<uint32_t*>(player + 0x269c + d) & 1, *reinterpret_cast<uint32_t*>(player + 0xf90 + d),
               static_cast<unsigned long long>(*reinterpret_cast<uint64_t*>(player + 0x2568 + d)));
         (void)opt;
@@ -55,13 +55,13 @@ float* __cdecl eyeView(uint8_t* player, float* out, int flag) {
     const unsigned off = player_vr::vrdOffset();
     float e[7];
     if (!r || !off || !player_vr::localVrd() || *reinterpret_cast<void**>(player + off) != player_vr::localVrd() ||
-        !vrdev::eyeInHead(vrdev::currentEye(), e))
+        !vrdev::eyeInHead(vrdev::hudEye(), e))
         return r;
     const core::Quat q{r[0], r[1], r[2], r[3]};
     const core::Vec3 p = core::Vec3{r[4], r[5], r[6]} + core::rotate(q, {e[4], e[5], e[6]});
     static int burst;
     if (diag && burst < 12 && GetTickCount64() - last > 1000)
-        ++burst, VRLOG("crosshair:   eye %d offset %.4f %.4f %.4f rot %.3f %.3f %.3f %.3f -> view %.3f %.3f %.3f (head q %.3f %.3f %.3f %.3f)", vrdev::currentEye(),
+        ++burst, VRLOG("crosshair:   eye %d offset %.4f %.4f %.4f rot %.3f %.3f %.3f %.3f -> view %.3f %.3f %.3f (head q %.3f %.3f %.3f %.3f)", vrdev::hudEye(),
                        e[4], e[5], e[6], e[0], e[1], e[2], e[3], p.x, p.y, p.z, r[0], r[1], r[2], r[3]);
     const core::Quat qe = core::multiply(q, core::Quat{e[0], e[1], e[2], e[3]});
     r[0] = qe.x, r[1] = qe.y, r[2] = qe.z, r[3] = qe.w, r[4] = p.x, r[5] = p.y, r[6] = p.z;
