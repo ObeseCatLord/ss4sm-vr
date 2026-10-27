@@ -58,9 +58,14 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    arms look right from there.
 7d. Body IK (`body_ik=1` in options.txt): in a mirror, third-person view (`plcmdThirdPersonView`) or another
    machine, the player body's arms should reach the hands and weapons. Log: `body: IK handler ... registered`.
-7e. Foveation: off by default except on a Steam Frame. Try `foveation=1` (fixed) in options.txt. The centre should
-   stay sharp and the periphery should be slightly blurrier, with a higher frame rate in dense scenes. The log
-   shows `fov: active` and `fov: scene render pass ...`.
+7e. Foveated rendering (Options > Graphics > Foveated Rendering, VR only): Eye-Tracked / Fixed / Off. The default is
+   Eye-Tracked on a headset with eye tracking (Steam Frame and others; the row then offers it) and Off otherwise, so
+   the Beyond starts with it off. Choose Fixed: the area around each lens centre stays sharp and the edges of the
+   view get coarser (2x2 shading), with lower GPU time in the perf HUD. Report whether you notice the edges, and
+   whether foliage edges flicker there. The log shows `fov: start ...` and `menu: foveated rendering fixed`; the
+   choice is saved as `foveation=` in `ss4smvr/upscaler_menu.txt`. With eye tracking, the sharp area should follow
+   your gaze with no visible lag. Tuning: `foveation_fixed_inner/outer` (percent of the image height),
+   `foveation_coarse=4` (4x4 at the far edge: faster, blockier).
 7f. Hands: with a one-handed hold, the left arm follows the left controller and the controller model is hidden.
     The fingers curl with the trigger (index finger) and the touches (thumb). Bring the left hand to the rifle's
     foregrip and squeeze: the rifle should follow the line from the right hand to the left hand. Releasing the

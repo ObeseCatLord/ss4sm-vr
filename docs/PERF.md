@@ -20,7 +20,7 @@ How it is measured:
 | render_scale=170 | 4.66 | 6.06 | 7.97 | 1920x2160 (lab maximum) |
 | render_scale=204 | 4.71 | 6.08 | 9.58 | 1920x2160 (clamped) |
 | 170, single_pass=1 | 4.76 | **5.14** | 8.61 | 1920x2160 |
-| 170, foveation=1 (fixed) | 4.72 | 6.06 | 10.47 | 1920x2160 |
+| 170, foveation=1 (fixed; attachment ignored then, see below) | 4.72 | 6.06 | 10.47 | 1920x2160 |
 | 170, upscaler=2 (DLSS/DLAA, preset K) | 5.37 | 6.31 | 21.63 | 1920x2160 |
 | 170, upscaler=2, upscale_quality=1 | 5.36 | 6.39 | 16.45 | 1920x2160 (renders at full size, see below) |
 | 170, upscaler=1, upscale_quality=1 (FSR 3.1) | 5.22 | 6.40 | 19.98 | 1920x2160 (renders at full size) |
@@ -36,8 +36,13 @@ Findings:
   - With `SUITE_OPTS=single_pass=1`, the core and vehicle stages pass in SS4 (17/17) and SM (17/17).
   - **Single pass is the default** (`single_pass=0` for two-pass). Selecting an upscaler defaults to two-pass, because
     the upscalers are integrated there.
-- **Fixed foveation** gives no measurable GPU saving in this scene at this size, where the 4090 is not shading-bound.
-  Check it again at headset resolution and in a dense scene.
+- **Foveation.** The "no measurable saving" above was a bug: the engine's pipelines take the shading rate as
+  dynamic state, so the attachment was ignored (fixed 2026-10-27, R31). Measured after the fix (two-pass, 170,
+  coarsest rate 2x2):
+  - off 3.40 ms; fixed 3.13 ms (−8 %); eye-tracked (simulated gaze) 2.99 ms (−12 %);
+  - DLSS phase B at 67 %: 3.70 → 3.42 ms;
+  - single pass: 3.33 → 2.93 ms (4x4 build).
+  - The saving grows with shading cost.
 - **Upscalers.**
   - Native-AA mode (DLAA, or FSR at ratio 1) costs about 0.6–0.7 ms per frame.
   - **Phase B (R25, 2026-10-26):** with `upscale_quality` 1–3 the scene now renders at output/ratio. The

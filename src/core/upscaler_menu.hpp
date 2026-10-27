@@ -80,12 +80,27 @@ inline bool swayFromValue(const char* v, int& m) {
     return false;
 }
 
+// VR foveated rendering (src/vk/foveation.hpp): 2 eye-tracked, 1 fixed, 0 off; -1 automatic (eye-tracked on a headset
+// whose runtime offers eye gaze, else off). The row offers Eye-Tracked only with eye gaze. Values "ss4smvr:fov_eye" /
+// "ss4smvr:fov_fixed" / "ss4smvr:fov_off", matched by exact text.
+inline constexpr const char* kFovLink = "ss4smvr_foveation";
+inline constexpr int kFovModes[3] = {2, 1, 0};
+inline const char* fovValue(int m) { return m == 2 ? "ss4smvr:fov_eye" : m == 1 ? "ss4smvr:fov_fixed" : m == 0 ? "ss4smvr:fov_off" : nullptr; }
+inline const char* fovLabel(int m) { return m == 2 ? "Eye-Tracked" : m == 1 ? "Fixed" : m == 0 ? "Off" : nullptr; }
+inline const char* fovName(int m) { return m == 2 ? "eye" : m == 1 ? "fixed" : m == 0 ? "off" : nullptr; }
+inline bool fovFromValue(const char* v, int& m) {
+    for (int k : kFovModes)
+        if (v && !strcmp(v, fovValue(k))) return m = k, true;
+    return false;
+}
+
 // The mod's state file ss4smvr/upscaler_menu.txt:
 //   upscaler=off|dlss|fsr      desktop choice (also "fsr31", "0"/"1"/"2" as in options.txt: 0 off, 1 fsr, 2 dlss)
 //   vr_upscaler=off|dlss|fsr   VR choice (same values)
 //   vr_render=<percent>        VR render resolution, snapped to kVrPercents
 //   sharpness=<0..100>         RCAS sharpening after either upscaler (desktop and VR)
 //   foliage_sway=game|off      foliage sway while an upscaler runs (desktop and VR)
+//   foveation=eye|fixed|off    VR foveated rendering (absent: automatic)
 // '#' comments, blank lines, spaces, CRLF and other keys are ignored; per key the last valid line wins.
 struct MenuState {
     bool hasUpscaler = false, hasVrUpscaler = false;
@@ -94,6 +109,7 @@ struct MenuState {
     int vrPercent = -1;  // -1: not set
     bool hasSway = false;
     int sway = kSwayDefault;
+    int foveation = -1;  // -1: not set (automatic)
 };
 
 // True when any key was found.
@@ -144,6 +160,9 @@ inline bool parseMenuState(const char* text, MenuState& out) {
             } else if (is(k, ke, "foliage_sway")) {
                 for (int m : kSwayModes)
                     if (is(v, ve, swayName(m))) out.sway = m, out.hasSway = found = true;
+            } else if (is(k, ke, "foveation")) {
+                for (int m : kFovModes)
+                    if (is(v, ve, fovName(m))) out.foveation = m, found = true;
             } else if (is(k, ke, "vr_render")) {
                 const int n = number();
                 if (n >= 1 && n <= 100) out.vrPercent = snapVrPercent(n), found = true;
@@ -167,7 +186,7 @@ inline bool parseMenuState(const char* text, MenuUpscaler& out) {
 inline int formatMenuState(const MenuState& st, char* buf, size_t n) {
     int len = snprintf(buf, n,
                        "# Set in Options > Graphics (written by the mod): (vr_)upscaler off|dlss|fsr, vr_render %%,\n"
-                       "# sharpness 0..100, foliage_sway game|off\n");
+                       "# sharpness 0..100, foliage_sway game|off, foveation eye|fixed|off\n");
     auto add = [&](const char* fmt, auto v) {
         const int k = snprintf(len >= 0 && size_t(len) < n ? buf + len : nullptr, len >= 0 && size_t(len) < n ? n - size_t(len) : 0, fmt, v);
         len = len < 0 || k < 0 ? -1 : len + k;
@@ -177,6 +196,7 @@ inline int formatMenuState(const MenuState& st, char* buf, size_t n) {
     if (st.vrPercent > 0) add("vr_render=%d\n", st.vrPercent);
     if (st.sharpness >= 0) add("sharpness=%d\n", st.sharpness);
     if (st.hasSway) add("foliage_sway=%s\n", swayName(st.sway));
+    if (st.foveation >= 0) add("foveation=%s\n", fovName(st.foveation));
     return len;
 }
 inline int formatMenuState(MenuUpscaler m, char* buf, size_t n) {

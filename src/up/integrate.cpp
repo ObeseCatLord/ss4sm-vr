@@ -11,6 +11,7 @@
 #include "se4/player_vr.hpp"
 #include "se4/vr_device.hpp"
 #include "up/upscaler.hpp"
+#include "vk/foveation.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -912,6 +913,12 @@ void __cdecl hookedExecute(void* a1, void* a2, void* a3, void* a4) {
         }
         *g_extraBias = bias;
     }
+    // Foveation: this eye's shading-rate pattern (gaze or lens centre), scaled to the phase-B render sub-rect.
+    if ((eye == 1 || eye == 2) && fov::available()) {
+        float sc = 1.0f;
+        if (upscaling() && phaseB() && armed(eye) && g_size[eye].ow) sc = float(g_size[eye].rw) / float(g_size[eye].ow);
+        fov::beforeEye(eye, sc, sc);
+    }
     realExecute(a1, a2, a3, a4);
     if (g_extraBias) *g_extraBias = 0.0f;
     t_ppWroteEye = false;
@@ -965,11 +972,20 @@ bool patchLodBias() {
     return true;
 }
 // Phase B needs the execute-view hook (it ends the rescale skip) and the bias even when upscale_lod_bias is 0.
+bool g_execHooked;
+bool hookExecute() {
+    if (g_execHooked) return true;
+    void* exec = se4::build().at<void>(se4::gen::execute_view);
+    if (!exec || MH_CreateHook(exec, reinterpret_cast<void*>(hookedExecute), reinterpret_cast<void**>(&realExecute)) != MH_OK ||
+        MH_EnableHook(exec) != MH_OK)
+        return false;
+    return g_execHooked = true;
+}
 bool installLodBias() {
     void* exec = se4::build().at<void>(se4::gen::execute_view);
     if (!exec || (g_lodBias == 0.0f && !g_phaseBReady)) return false;
     if (!patchLodBias() && !g_phaseBReady) return false;
-    if (MH_CreateHook(exec, reinterpret_cast<void*>(hookedExecute), reinterpret_cast<void**>(&realExecute)) != MH_OK || MH_EnableHook(exec) != MH_OK) {
+    if (!hookExecute()) {
         if (g_phaseBReady) VRLOG("upint: phase B off: execute-view hook FAILED");
         g_phaseBReady = false;
         if (g_extraBias) *g_extraBias = 0.0f;
@@ -1848,6 +1864,13 @@ void onVrFrameBegin() {
 }
 bool flatReady() { return g_flatReady; }
 void requestKind(up::Kind k) { g_request = int(k); }
+
+// VR: the execute-view hook for per-eye foveation patterns, with or without an upscaler.
+bool installEyeHook() {
+    const bool ok = hookExecute();
+    VRLOG("upint: execute-view hook for per-eye foveation %s", ok ? "on" : "FAILED - foveation patterns stay per frame");
+    return ok;
+}
 
 bool install() {
     g_evaluate = up::wanted();

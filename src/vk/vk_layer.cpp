@@ -479,6 +479,72 @@ struct Projection {
     bool failed = false;
 } pj;
 
+// Lab: lab_eye_dump=<s> writes the left eye image once, <s> seconds after the first stereo frame, to
+// ss4smvr/eye_dump.ppm (8-bit RGBA/BGRA eye formats), for image checks at full resolution (foveation, upscaling).
+struct EyeDump {
+    VkBuffer buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    void* ptr = nullptr;
+    uint32_t w = 0, h = 0;
+    int state = 0;  // 0 waiting, 1 copy recorded, 2 done
+    ULONGLONG t0 = 0;
+} g_dump;
+bool g_dumpBgr;
+bool dumpRecord(VkCommandBuffer cb, VkImage img, VkFormat fmt, uint32_t w, uint32_t h) {
+    static const int after = se4::options::get("lab_eye_dump", 0);
+    if (!after || g_dump.state || (fmt != VK_FORMAT_R8G8B8A8_UNORM && fmt != VK_FORMAT_B8G8R8A8_UNORM && fmt != VK_FORMAT_R8G8B8A8_SRGB &&
+                                   fmt != VK_FORMAT_B8G8R8A8_SRGB))
+        return false;
+    if (!g_dump.t0) g_dump.t0 = GetTickCount64();
+    if (GetTickCount64() - g_dump.t0 < ULONGLONG(after) * 1000) return false;
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.size = VkDeviceSize(w) * h * 4;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (DFN(vkCreateBuffer)(g.device, &bi, nullptr, &g_dump.buf) != VK_SUCCESS) return g_dump.state = 2, false;
+    VkMemoryRequirements mr;
+    DFN(vkGetBufferMemoryRequirements)(g.device, g_dump.buf, &mr);
+    VkPhysicalDeviceMemoryProperties mp;
+    reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(realGIPA(g.instance, "vkGetPhysicalDeviceMemoryProperties"))(g.physical, &mp);
+    const VkMemoryPropertyFlags want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    ai.allocationSize = mr.size;
+    ai.memoryTypeIndex = UINT32_MAX;
+    for (uint32_t i = 0; i < mp.memoryTypeCount && ai.memoryTypeIndex == UINT32_MAX; ++i)
+        if ((mr.memoryTypeBits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want) ai.memoryTypeIndex = i;
+    if (ai.memoryTypeIndex == UINT32_MAX || DFN(vkAllocateMemory)(g.device, &ai, nullptr, &g_dump.mem) != VK_SUCCESS) return g_dump.state = 2, false;
+    DFN(vkBindBufferMemory)(g.device, g_dump.buf, g_dump.mem, 0);
+    DFN(vkMapMemory)(g.device, g_dump.mem, 0, VK_WHOLE_SIZE, 0, &g_dump.ptr);
+    VkBufferImageCopy c{};
+    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.imageExtent = {w, h, 1};
+    DFN(vkCmdCopyImageToBuffer)(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_dump.buf, 1, &c);
+    g_dump.w = w, g_dump.h = h, g_dump.state = 1;
+    g_dumpBgr = fmt == VK_FORMAT_B8G8R8A8_UNORM || fmt == VK_FORMAT_B8G8R8A8_SRGB;
+    return true;
+}
+void dumpWrite(VkFence fence) {
+    if (g_dump.state != 1) return;
+    g_dump.state = 2;
+    DFN(vkWaitForFences)(g.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    wchar_t path[MAX_PATH];
+    se4::payloadDirectory(path, MAX_PATH - 20);
+    wcscat(path, L"\\eye_dump.ppm");
+    FILE* f = _wfopen(path, L"wb");
+    if (!f) return;
+    fprintf(f, "P6\n%u %u\n255\n", g_dump.w, g_dump.h);
+    const uint8_t* p = static_cast<const uint8_t*>(g_dump.ptr);
+    std::vector<uint8_t> row(size_t(g_dump.w) * 3);
+    for (uint32_t y = 0; y < g_dump.h; ++y) {
+        for (uint32_t x = 0; x < g_dump.w; ++x) {
+            const uint8_t* q = p + (size_t(y) * g_dump.w + x) * 4;
+            row[x * 3] = q[g_dumpBgr ? 2 : 0], row[x * 3 + 1] = q[1], row[x * 3 + 2] = q[g_dumpBgr ? 0 : 2];
+        }
+        fwrite(row.data(), 1, row.size(), f);
+    }
+    fclose(f);
+    VRLOG("lab: left eye %ux%u written to eye_dump.ppm", g_dump.w, g_dump.h);
+}
+
 bool isUnorm8(VkFormat f) { return f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORMAT_B8G8R8A8_UNORM || f == VK_FORMAT_A2B10G10R10_UNORM_PACK32; }
 
 bool setupProjection(const eyes::Frame& f) {
@@ -691,6 +757,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
                     DFN(vkCmdCopyImage)(cb, ef.image[e], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
                 }
             }
+            dumpRecord(cb, ef.image[0], pj.srcFormat, pj.w, pj.h);
             b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             b.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -709,6 +776,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &m.done[s];
         realQueueSubmit(q, 1, &si, m.fence[s]);
+        dumpWrite(m.fence[s]);
         waitOn = m.done[s];
         // No CPU wait: the blit is submitted on the session's queue before xrReleaseSwapchainImage, and the
         // runtime orders its own work on that queue after it (OpenXR Vulkan swapchain rules).

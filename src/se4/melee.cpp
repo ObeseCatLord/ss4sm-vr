@@ -291,27 +291,33 @@ SwingTrack& swingTrack(void* vrd) {
 
 // A lethal DMT_PLAYERMELEE hit on `target` from `player`, as applyHit builds a weapon's (no weapon index).
 bool killByMelee(uint8_t* player, uint8_t* target, uint8_t* res, core::Vec3 dir) {
-    alignas(16) uint8_t dmg[0x100];
-    memset(dmg, 0, sizeof dmg);
-    damageCtor(dmg);
-    using InflictorFn = void(__cdecl*)(uint8_t*, uint8_t*);
-    (*reinterpret_cast<InflictorFn**>(player))[0x3e8 / 8](player, dmg);
-    at<uint32_t>(dmg, 0x78) |= 4;
-    at<int32_t>(dmg, 0x64) = kDmtPlayerMelee;
-    using CheckFn = int(__cdecl*)(uint8_t*, uint8_t*, int, uint64_t);
-    if (!(*reinterpret_cast<CheckFn**>(target))[0x3f0 / 8](target, dmg, kDmtPlayerMelee, at<uint64_t>(res, 0x68))) return false;
-    at<int32_t>(dmg, 0x68) = -1;
-    // Just past the remaining health (en_slHealth +0x574, a CSyncedSLONG whose value is at +0; both builds): the target
-    // dies its own player-melee death (animation, ragdoll) instead of the overkill a huge amount could cause.
-    const int32_t health = std::max(at<int32_t>(target, 0x574), 1);
-    at<int32_t>(dmg, 0x60) = health * 2 + 10;
-    at<float>(dmg, 0x48) = dir.x, at<float>(dmg, 0x4c) = dir.y, at<float>(dmg, 0x50) = dir.z;
-    memcpy(dmg + 0x54, res + 0x28, 12);
-    at<uint64_t>(dmg, 0x80) = at<uint64_t>(res, 0x60);
-    at<uint64_t>(dmg, 0x88) = at<uint64_t>(res, 0x68);
-    at<uint64_t>(dmg, 0x90) = at<uint64_t>(res, 0x50);
-    using ReceiveFn = void(__cdecl*)(uint8_t*, void*, uint8_t*);
-    (*reinterpret_cast<ReceiveFn**>(target))[0x400 / 8](target, scriptCtx(), dmg);
+    // The smallest lethal amount: just past the remaining health (en_slHealth +0x574, a CSyncedSLONG whose value is at +0;
+    // both builds). Damage beyond health by more than the enemy's en_dswOverkillDamage blows it up (gibs); just past it,
+    // the enemy dies its own player-melee death (animation, ragdoll). A damage multiplier that leaves it alive gets
+    // another just-lethal hit (at most three).
+    for (int hit = 0; hit < 3; ++hit) {
+        const int32_t health = at<int32_t>(target, 0x574);
+        if (hit && health <= 0) return true;
+        alignas(16) uint8_t dmg[0x100];
+        memset(dmg, 0, sizeof dmg);
+        damageCtor(dmg);
+        using InflictorFn = void(__cdecl*)(uint8_t*, uint8_t*);
+        (*reinterpret_cast<InflictorFn**>(player))[0x3e8 / 8](player, dmg);
+        at<uint32_t>(dmg, 0x78) |= 4;
+        at<int32_t>(dmg, 0x64) = kDmtPlayerMelee;
+        using CheckFn = int(__cdecl*)(uint8_t*, uint8_t*, int, uint64_t);
+        if (!(*reinterpret_cast<CheckFn**>(target))[0x3f0 / 8](target, dmg, kDmtPlayerMelee, at<uint64_t>(res, 0x68))) return hit != 0;
+        at<int32_t>(dmg, 0x68) = -1;
+        at<int32_t>(dmg, 0x60) = std::max(health, 1) + 1;
+        at<float>(dmg, 0x48) = dir.x, at<float>(dmg, 0x4c) = dir.y, at<float>(dmg, 0x50) = dir.z;
+        memcpy(dmg + 0x54, res + 0x28, 12);
+        at<uint64_t>(dmg, 0x80) = at<uint64_t>(res, 0x60);
+        at<uint64_t>(dmg, 0x88) = at<uint64_t>(res, 0x68);
+        at<uint64_t>(dmg, 0x90) = at<uint64_t>(res, 0x50);
+        using ReceiveFn = void(__cdecl*)(uint8_t*, void*, uint8_t*);
+        (*reinterpret_cast<ReceiveFn**>(target))[0x400 / 8](target, scriptCtx(), dmg);
+        if (hit && se4::options::get("melee_prompt_debug", 0)) VRLOG("melee: extra just-lethal hit %d (health was %d)", hit, health);
+    }
     return true;
 }
 

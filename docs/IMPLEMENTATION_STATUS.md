@@ -144,7 +144,7 @@
     `tools/lab/stop_lab.sh` ends every session.
   - Level starts write quicksaves to the user's Steam cloud folder (14 lab saves, numbers 401–414; the 2021
     saves are intact). Both games' saves are backed up in `lab/save-backups/`.
-- Foveated rendering (`src/vk/foveation.cpp`), untested:
+- Foveated rendering (`src/vk/foveation.cpp`), superseded by R31 (2026-10-27, below):
   - Mechanism: a VK_KHR_fragment_shading_rate attachment on the scene passes (render passes with depth and
     colour). Eye-size framebuffers get the pattern; the engine's own VRS combines with it (the coarser rate
     wins).
@@ -507,3 +507,30 @@
   player. Not yet exercised: the lab could not board a vehicle (06_Countryside vehicles locked; the 06b ATV is
   spawned later by the level script).
 - Priority (user, 2026-10-25): finish and test everything in SS4 first, then bring SM to parity.
+
+## 2026-10-27: depth partition, prompted melee by swing (R30), eye-tracked foveation (R31)
+- **Shrub ghosting (R30 s1):** the engine draws the world into viewport depth [0.1, 1] and far content into [0, 0.1].
+  `vkCmdSetViewport` gives the split, and `motion.comp` decodes depth per range. Distances and strafing ghosting are
+  correct in the lab.
+- **Prompted melee by swing (R30):**
+  - The native melee finder now answers for VR players (one NOP), so the prompt appears on exactly the enemies the
+    game allows. In VR the prompt shows no button, and the Use button no longer starts the canned kill.
+  - A hand swing through the prompted enemy kills it. There is no player animation, lock or placement.
+  - **Change (R31 s5):** the hit is now just lethal (health + 1), so the enemy plays its own death instead of an
+    overkill blow-up (`en_dswOverkillDamage`).
+  - Lab: Forum, 4 kills, one hit each.
+- **Foveated rendering (R31):**
+  - **Default:** eye-tracked on headsets whose runtime offers `XR_EXT_eye_gaze_interaction` (Steam Frame and
+    others); otherwise off, with Fixed as the option.
+  - **Menu:** VR graphics row "Foveated Rendering", saved as `foveation=`.
+  - **Method:** a VRS shading-rate attachment. Quad views were rejected: PC SteamVR, which serves the Frame, has
+    none.
+  - **Root cause of the earlier no-op:** the engine's pipelines take the shading rate as dynamic state. The combiner
+    is now set at bind.
+  - **Placement:** patterns are per eye, uploaded before each eye's first scene pass. Phase-B sub-rects are scaled.
+    2x2 is the coarsest rate by default, because 4x4 made foliage blocky.
+  - **Lab GPU savings:** fixed −8 %, eye-tracked −12 %, DLSS phase B −8 %.
+  - VR suites with `foveation=1`: SS4 21/21 and SM 21/21.
+  - Not lab-verified: the menu row (the pause menu did not open in that session).
+- **Lab options:** `lab_eye_dump=<s>` (left eye written to `ss4smvr/eye_dump.ppm`), `lab_fov_gaze=1` (simulated
+  gaze), `lab_fov_trace=1`.

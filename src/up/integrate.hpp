@@ -24,6 +24,8 @@
 
 namespace upint {
 bool install();
+// VR: the execute-view hook that uploads each eye's foveation pattern before its scene (vk/foveation.hpp beforeEye).
+bool installEyeHook();
 // Desktop play (VR not enabled) with an upscaler selected (docs/re/R27_flat_upscaler.md): the flat main view is
 // upscaled as slot 0. RenderView of the main view (inside the player-views pass, current drawport on the main
 // drawport's texture) is classified at entry; its MPix limiter call returns the identity (phase A) or out/ratio

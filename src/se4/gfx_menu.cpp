@@ -6,6 +6,7 @@
 #include "se4/options.hpp"
 #include "up/integrate.hpp"
 #include "up/upscaler.hpp"
+#include "vk/foveation.hpp"
 #include <windows.h>
 #include <MinHook.h>
 #include <algorithm>
@@ -82,6 +83,7 @@ bool g_vr;  // VR menu mode: the choice is saved as vr_upscaler and the Mpix row
 std::atomic<int> g_choice{0};  // MenuUpscaler shown in the list and requested from the upscaler
 std::atomic<int> g_sharpPct{core::kSharpnessDefault};
 std::atomic<int> g_sway{core::kSwayDefault};
+std::atomic<int> g_fov{-1};  // the foveation row's mode (2 eye-tracked, 1 fixed, 0 off), -1 until the device is known
 wchar_t g_statePath[MAX_PATH];
 core::MenuState g_state;  // what the file holds (the other mode's keys are kept when saving)
 SRWLOCK g_stateLock = SRWLOCK_INIT;
@@ -177,7 +179,26 @@ void chooseSway(int m) {
     saveState(what);
 }
 
+void chooseFov(int m) {
+    fov::setMode(m == 2 ? fov::Mode::Dynamic : m == 1 ? fov::Mode::Fixed : fov::Mode::Off);
+    if (g_fov.exchange(m) == m) return;
+    AcquireSRWLockExclusive(&g_stateLock);
+    g_state.foveation = m;
+    ReleaseSRWLockExclusive(&g_stateLock);
+    char what[40];
+    snprintf(what, sizeof what, "foveation=%s", core::fovName(m));
+    saveState(what);
+}
+int fovNow() {
+    const fov::Mode m = fov::mode();
+    return m == fov::Mode::Dynamic ? 2 : m == fov::Mode::Fixed ? 1 : 0;
+}
+
 const char* linkName(uintptr_t link) { return link ? *reinterpret_cast<const char* const*>(link) : nullptr; }
+bool isFovLink(uintptr_t link) {
+    const char* n = linkName(link);
+    return n && !strcmp(n, core::kFovLink);
+}
 bool isSwayLink(uintptr_t link) {
     const char* n = linkName(link);
     return n && !strcmp(n, core::kSwayLink);
@@ -354,42 +375,72 @@ uint8_t* addSharpnessSlider(uintptr_t self, uint8_t* filter) {
     return w;
 }
 
-// R29 s5: "Foliage Sway (DLSS / FSR)": Game Setting / Off, applied while an upscaler runs (src/se4/foliage.hpp).
-// Built like the filter row (multichoice, option collection, link) after the sharpening slider; the link is renamed
-// after binding, as for the slider, so its reads and writes are the mod's only.
-void addSwayRow(uintptr_t self, uint8_t* filter, uint8_t* after) {
-    if (!g_choiceOk || !g_sliderOk || !filter) return;
+// A multichoice row of the mod's (R29 s5), built like the filter row (multichoice, option collection, link) and placed
+// after `after`; the link is renamed after binding, as for the slider, so its reads and writes are the mod's only.
+struct ChoiceRow {
+    const char *ident, *label, *tooltip, *link;
+    const int* modes;
+    int count;
+    const char* (*optLabel)(int);
+    const char* (*optValue)(int);
+};
+uint8_t* addChoiceRow(uintptr_t self, uint8_t* filter, uint8_t* after, const ChoiceRow& row) {
+    if (!g_choiceOk || !g_sliderOk || !filter || !after) return nullptr;
     uint8_t* panel = panelOf(filter);
     void* menu = menuOf(self);
-    if (!panel || !menu) return;
+    if (!panel || !menu) return nullptr;
     uint8_t* w = static_cast<uint8_t*>(engineAlloc(0x1f0, *g_mcType));
     uint8_t* coll = static_cast<uint8_t*>(engineAlloc(0x18, *g_collType));
-    if (!w || !coll) return;
+    if (!w || !coll) return nullptr;
     mcCtor(w, menu);
     collCtor(coll);
     addChild(w, panel);
     void* id = nullptr;
-    identCtor(&id, "FoliageSway");
+    identCtor(&id, row.ident);
     *reinterpret_cast<void**>(w + kWidgetName) = id;
-    setLabel(w, "Foliage Sway (DLSS / FSR)", 1);
-    setTooltip(w, menu, "%1", kFmtString,
-               "Leaves and bushes sway without motion vectors, which DLSS and FSR cannot follow (shimmer). Off keeps foliage still "
-               "while the mod's upscaler runs; Game Setting keeps the game's own sway.");
+    setLabel(w, row.label, 1);
+    setTooltip(w, menu, "%1", kFmtString, row.tooltip);
     uint8_t* link = static_cast<uint8_t*>(wlinkBind(w, kCvar));
-    if (!link) return;
-    strAssign(link, core::kSwayLink);
+    if (!link) return nullptr;
+    strAssign(link, row.link);
     *reinterpret_cast<uint8_t**>(link + kLinkColl) = coll;
-    for (int m : core::kSwayModes) {
+    for (int i = 0; i < row.count; ++i) {
         void *l = nullptr, *v = nullptr;
-        strCtor(&l, core::swayLabel(m));
-        strCtor(&v, core::swayValue(m));
+        strCtor(&l, row.optLabel(row.modes[i]));
+        strCtor(&v, row.optValue(row.modes[i]));
         optAdd(coll, &l, &v);
         strDtor(&l);
         strDtor(&v);
     }
     *reinterpret_cast<float*>(w + kWidgetLabelWidth) = -1.0f;
     placeAfter(panel, after, w);
-    VRLOG("menu: foliage sway row %p added (row %d, %s)", static_cast<void*>(w), childIndex(panel, w), core::swayName(g_sway.load()));
+    return w;
+}
+
+// R29 s5: "Foliage Sway (DLSS / FSR)": Game Setting / Off, applied while an upscaler runs (src/se4/foliage.hpp).
+uint8_t* addSwayRow(uintptr_t self, uint8_t* filter, uint8_t* after) {
+    uint8_t* w = addChoiceRow(self, filter, after,
+                              {"FoliageSway", "Foliage Sway (DLSS / FSR)",
+                               "Leaves and bushes sway without motion vectors, which DLSS and FSR cannot follow (shimmer). Off keeps foliage "
+                               "still while the mod's upscaler runs; Game Setting keeps the game's own sway.",
+                               core::kSwayLink, core::kSwayModes, 2, core::swayLabel, core::swayValue});
+    if (w) VRLOG("menu: foliage sway row %p added (row %d, %s)", static_cast<void*>(w), childIndex(panelOf(filter), w), core::swayName(g_sway.load()));
+    return w;
+}
+
+// R31: "Foveated Rendering" (VR, with attachment shading rates): Eye-Tracked (only when the runtime offers eye gaze) /
+// Fixed / Off, switched at runtime (src/vk/foveation.hpp).
+void addFovRow(uintptr_t self, uint8_t* filter, uint8_t* after) {
+    if (!g_vr || !fov::available()) return;
+    const bool gaze = fov::gazeSupported();
+    uint8_t* w = addChoiceRow(self, filter, after,
+                              {"FoveatedRendering", "Foveated Rendering",
+                               gaze ? "Renders the edges of your view at a lower shading rate. Eye-Tracked keeps full detail where you look "
+                                      "(the default on this headset); Fixed keeps it around the lens centre."
+                                    : "Renders the edges of each lens at a lower shading rate for more performance. Fixed keeps full detail "
+                                      "around the lens centre. Eye-Tracked needs a headset with eye tracking.",
+                               core::kFovLink, gaze ? core::kFovModes : core::kFovModes + 1, gaze ? 3 : 2, core::fovLabel, core::fovValue});
+    if (w) VRLOG("menu: foveation row %p added (row %d, %s)", static_cast<void*>(w), childIndex(panelOf(filter), w), core::fovName(fovNow()));
 }
 
 // R29 s4 (VR): the "Max 3D rendering Mpix" row (a multichoice bound to ren_fMax3DRenderingMPix, 8 numeric options)
@@ -447,7 +498,8 @@ uintptr_t __cdecl hookedInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr
     uint8_t* filter = filterWidget(self);
     ensureEntries(filter, "init");
     uint8_t* slider = addSharpnessSlider(self, filter);
-    if (slider) addSwayRow(self, filter, slider);
+    uint8_t* sway = slider ? addSwayRow(self, filter, slider) : nullptr;
+    addFovRow(self, filter, sway ? sway : slider);
     convertMpixRow(self, filter);
     return r;
 }
@@ -478,6 +530,10 @@ uintptr_t __cdecl hookedGet(uintptr_t link, uintptr_t out, uintptr_t a3, uintptr
     }
     if (out && isSwayLink(link)) {
         strCtor(reinterpret_cast<void*>(out), core::swayValue(g_sway.load()));
+        return out;
+    }
+    if (out && isFovLink(link)) {
+        strCtor(reinterpret_cast<void*>(out), core::fovValue(fovNow()));
         return out;
     }
     const uintptr_t r = realGet(link, out, a3, a4);
@@ -512,6 +568,15 @@ uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintp
         }
         return 0;
     }
+    if (isFovLink(link)) {
+        const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
+        int m;
+        if (core::fovFromValue(v, m)) {
+            VRLOG("menu: foveated rendering %s", core::fovName(m));
+            chooseFov(m);
+        }
+        return 0;
+    }
     if (isPctLink(link)) {
         const char* v = value ? *reinterpret_cast<const char* const*>(value) : nullptr;
         int pct;
@@ -543,7 +608,7 @@ uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintp
 // wlink_snapshot(link): the popup and Apply snapshot each link's cvar by name; the mod's rows name no cvar, so they
 // keep the empty snapshot (otherwise the engine logs "Cannot get values for cvar ...").
 uintptr_t __cdecl hookedSnap(uintptr_t link, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
-    if (isSharpLink(link) || isSwayLink(link)) return 0;
+    if (isSharpLink(link) || isSwayLink(link) || isFovLink(link)) return 0;
     return realSnap(link, a2, a3, a4);
 }
 
@@ -557,6 +622,12 @@ uintptr_t __cdecl hookedReset(uintptr_t link, uintptr_t a2, uintptr_t a3, uintpt
     if (isSwayLink(link)) {
         VRLOG("menu: foliage sway default %s", core::swayName(core::kSwayDefault));
         chooseSway(core::kSwayDefault);
+        return 0;
+    }
+    if (isFovLink(link)) {  // automatic: eye-tracked with eye gaze, else off
+        const int m = fov::gazeSupported() ? 2 : 0;
+        VRLOG("menu: foveated rendering default %s", core::fovName(m));
+        chooseFov(m);
         return 0;
     }
     if (isPctLink(link)) {
@@ -628,6 +699,8 @@ bool prepare() {
     g_sharpPct = std::clamp(sharp, 0, 100);
     up::setSharpness(g_sharpPct.load() / 100.0f);
     if (g_vr) upint::setVrPercent(g_state.vrPercent > 0 ? g_state.vrPercent : core::kVrPercentDefault);
+    // Foveation (VR): the saved row choice is the start unless options.txt sets foveation (fov::decide at device creation).
+    if (g_vr && g_state.foveation >= 0) fov::setStartChoice(g_state.foveation);
     // Foliage sway while upscaling: option upscale_foliage_sway (-1 game, 0 off; 1 / 2 cap the game's level) overrides the file.
     const int sway = se4::options::has("upscale_foliage_sway") ? std::clamp(se4::options::get("upscale_foliage_sway", core::kSwayDefault), -1, 2)
                      : g_state.hasSway                         ? g_state.sway

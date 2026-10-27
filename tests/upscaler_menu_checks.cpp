@@ -132,6 +132,31 @@ int main() {
         assert(!swayFromValue("ss4smvr:sway", r) && !swayFromValue("ss4smvr:sway_limited", r) && !swayFromValue(nullptr, r) && r == 7 &&
                !swayValue(1) && !swayValue(2));
     }
+    // Foveation: state key (absent = automatic) and row values.
+    {
+        MenuState st;
+        assert(st.foveation == -1);
+        assert(parseMenuState("foveation=eye\n", st) && st.foveation == 2);
+        assert(parseMenuState("foveation=fixed\n", st) && st.foveation == 1);
+        assert(parseMenuState("foveation=off\n", st) && st.foveation == 0);
+        MenuState bad;
+        assert(!parseMenuState("foveation=dynamic\nfoveation=2\nfoveation=Eye\n", bad) && bad.foveation == -1);
+        MenuState all;
+        assert(parseMenuState("upscaler=dlss\nvr_upscaler=fsr\nvr_render=67\nsharpness=40\nfoliage_sway=game\nfoveation=fixed\n", all));
+        const int n = formatMenuState(all, buf, sizeof buf);
+        assert(n > 0 && n < int(sizeof buf));
+        MenuState back;
+        assert(parseMenuState(buf, back) && back.foveation == 1 && back.hasSway && back.sharpness == 40 && back.vrPercent == 67);
+        MenuState none;
+        formatMenuState(none, buf, sizeof buf);
+        assert(!strstr(buf, "\nfoveation="));
+        for (int m : kFovModes) {
+            int r = 7;
+            assert(fovValue(m) && fovLabel(m) && fovName(m) && fovFromValue(fovValue(m), r) && r == m);
+        }
+        int r = 7;
+        assert(!fovFromValue("ss4smvr:fov", r) && !fovFromValue(nullptr, r) && r == 7 && !fovValue(-1) && !fovValue(3));
+    }
 
     std::puts("upscaler menu checks passed");
     return 0;
