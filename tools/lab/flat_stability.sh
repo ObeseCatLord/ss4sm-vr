@@ -22,7 +22,8 @@ for cfg in "$@"; do
   # Pompeii's intro cutscene (no skip key in flat) ends 1.5-3 min after Continue: wait for the health HUD (green cross,
   # bottom left), then settle.
   hud=0
-  for ((t=0; t<360; t+=5)); do
+  [ "${HUDWAIT:-1}" = 0 ] && { sleep 200; hud=1; }  # debug views fool the HUD test: a fixed wait instead
+  for ((t=0; t<360 && hud==0; t+=5)); do
     sleep 5
     "$HERE/capture.sh" "Serious Sam 4" "$OUT/.hud.png" >/dev/null 2>&1 || continue
     hud=$(python3 -I -c "
@@ -34,7 +35,19 @@ print(int(((r[...,1]>150)&(r[...,1]>r[...,0]+60)&(r[...,1]>r[...,2]+60)).sum()>4
   done
   [ "$hud" = 1 ] || { echo "$tag: no gameplay HUD within 6 min"; continue; }
   sleep "${SETTLE:-10}"
+  # MOVE=1: hold the strafe-right key (D) while capturing, for ghosting checks
+  [ "${MOVE:-0}" = 1 ] && python3 -I -c "
+import time
+from Xlib import X, XK, display
+from Xlib.ext import xtest
+d = display.Display(':3'); c = d.keysym_to_keycode(XK.string_to_keysym('d'))
+xtest.fake_input(d, X.KeyPress, c); d.sync()" 
   for i in $(seq -w 1 10); do "$HERE/capture.sh" "Serious Sam 4" "$OUT/$tag-f$i.png" >/dev/null 2>&1; done
+  [ "${MOVE:-0}" = 1 ] && python3 -I -c "
+from Xlib import X, XK, display
+from Xlib.ext import xtest
+d = display.Display(':3'); c = d.keysym_to_keycode(XK.string_to_keysym('d'))
+xtest.fake_input(d, X.KeyRelease, c); d.sync()"
   python3 -I "$HERE/image_stats.py" "$OUT/$tag"-f??.png | sed "s/^/$tag: /"
   grep -E "dlss: flat|fsr: flat|foliage:" "$MODLOG" | tail -4 | sed "s/^/$tag:   /"
 done

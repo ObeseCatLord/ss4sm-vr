@@ -61,6 +61,16 @@ void onBeginCommandBuffer(VkCommandBuffer cb);
 bool patchPass(VkRenderPassCreateInfo& ci, std::vector<VkAttachmentDescription>& att);
 bool patchPass2(VkRenderPassCreateInfo2& ci, std::vector<VkAttachmentDescription2>& att);
 void onBeginPass(VkCommandBuffer cb);
+// Lab pass trace (option upscale_pass_trace=N: N frames after the first evaluation): every render pass that uses the
+// captured scene depth, with its depth load/store ops and colour formats.
+bool passTraceOn();
+// Every vkCmdSetViewport: the engine's depth partition (docs/re/R30_prompted_melee_swing.md s1).
+void onViewport(float minDepth, float maxDepth);
+void traceRenderPass(VkRenderPass rp, const VkAttachmentDescription* a, uint32_t n);
+void traceRenderPass2(VkRenderPass rp, const VkAttachmentDescription2* a, uint32_t n);
+void traceView(VkImageView view, VkImage image);
+void traceFramebuffer(VkFramebuffer fb, VkRenderPass rp, const VkImageView* views, uint32_t n);
+void traceBeginPass(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi);
 void onEndPass(VkCommandBuffer cb);
 void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkImageLayout to);
 

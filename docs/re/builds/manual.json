@@ -201,7 +201,10 @@
   "widget_set_label": "0x140907d10",
   "widget_set_tooltip": "0x14015ab70",
   "slider_alloc_site": "0x140856bab",
-  "wlink_snapshot": "0x14015ecd0"
+  "wlink_snapshot": "0x14015ecd0",
+  "melee_find": "0x14041ff20",
+  "melee_start": "0x140473b40",
+  "melee_prompt_site": "0x1400b29d4"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -396,7 +399,10 @@
   "slider_alloc_site": "0x1408592db",
   "slider_ctor": "0x140921c50",
   "widget_set_label": "0x14090a440",
-  "wlink_snapshot": "0x140161680"
+  "wlink_snapshot": "0x140161680",
+  "melee_find": "0x140422640",
+  "melee_start": "0x140476270",
+  "melee_prompt_site": "0x1400b5324"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -600,7 +606,10 @@
   "slider_alloc_site": "0x1408569ab",
   "slider_ctor": "0x14091fcc0",
   "widget_set_label": "0x140908340",
-  "wlink_snapshot": "0x14015f980"
+  "wlink_snapshot": "0x14015f980",
+  "melee_find": "0x14041fff0",
+  "melee_start": "0x140474140",
+  "melee_prompt_site": "0x1400b2bb4"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -795,6 +804,9 @@
   "slider_alloc_site": "0x1408590cb",
   "slider_ctor": "0x1409223e0",
   "widget_set_label": "0x14090aa60",
-  "wlink_snapshot": "0x140162320"
+  "wlink_snapshot": "0x140162320",
+  "melee_find": "0x140422700",
+  "melee_start": "0x140476860",
+  "melee_prompt_site": "0x1400b54f4"
  }
 }

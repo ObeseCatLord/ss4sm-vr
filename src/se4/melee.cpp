@@ -13,11 +13,13 @@
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
+#include "se4/patch.hpp"
 #include "se4/player_vr.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
 #include <windows.h>
 #include <MinHook.h>
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -245,6 +247,256 @@ void hookedGenericStep(uint8_t* weapon, void* stepArg) {
     sweep(weapon, stepArg, true);
 }
 
+// ---- Prompted melee by swing (docs/re/R30_prompted_melee_swing.md) ----
+// The engine's melee kill (Use/Melee on an enemy that shows the "Melee" prompt) is a canned synchronized animation that
+// moves and locks the player. For VR players it becomes a swing instead: while the player's PNF_PLAYER_MELEE_AVAILABLE
+// net flag is set (the authority sets it each step from melee_find, the same test as the prompt and the button), a hand
+// that sweeps through melee_find's target fast enough kills it with DMT_PLAYERMELEE damage: no animation, no placement,
+// the game's melee health restore (HealthAmmoRestore.lua checks the death damage type), native gibs and credit. The
+// button no longer starts the canned kill for VR players, and the prompt shows no button glyph in VR.
+// Options melee_prompt_swing (default 1), melee_prompt_speed (cm/s, default 150).
+constexpr size_t kNetFlags = 0x7a4;                // CPuppetEntity::en_pnfNetFlags (both builds)
+constexpr uint32_t kMeleeAvailable = 0x200000;     // PNF_PLAYER_MELEE_AVAILABLE
+constexpr int kDmtPlayerMelee = 38;                // DMT_PLAYERMELEE
+using FindFn = int(__cdecl*)(uint8_t* player, int one, uint8_t** target, const char** anim, int* index);
+using StartFn = void(__cdecl*)(uint8_t* player, int32_t hTarget, const char* anim, int index);
+using ToHandleFn = int32_t(__cdecl*)(void* entity);
+using CtxFn = void*(__cdecl*)();
+FindFn meleeFind;
+StartFn realStart;
+ToHandleFn toHandle;
+CtxFn scriptCtx;
+uint8_t* g_findFn;
+float g_swingSpeed = 1.5f;
+bool g_promptDebug;  // lab: option melee_prompt_debug
+struct SwingTrack {
+    void* vrd = nullptr;
+    core::Vec3 hand[2]{};
+    core::Vec3 rel[2]{};  // hand minus head: the swing speed ignores walking and riding
+    LARGE_INTEGER t{};
+    bool valid = false;
+    double lastKill = 0;
+    bool armed = false;
+};
+SwingTrack g_swings[8];
+
+SwingTrack& swingTrack(void* vrd) {
+    for (auto& t : g_swings)
+        if (t.vrd == vrd) return t;
+    for (auto& t : g_swings)
+        if (!t.vrd) return t = {}, t.vrd = vrd, t;
+    SwingTrack& t = g_swings[uintptr_t(vrd) / 64 % 8];
+    return t = {}, t.vrd = vrd, t;
+}
+
+// A lethal DMT_PLAYERMELEE hit on `target` from `player`, as applyHit builds a weapon's (no weapon index).
+bool killByMelee(uint8_t* player, uint8_t* target, uint8_t* res, core::Vec3 dir) {
+    alignas(16) uint8_t dmg[0x100];
+    memset(dmg, 0, sizeof dmg);
+    damageCtor(dmg);
+    using InflictorFn = void(__cdecl*)(uint8_t*, uint8_t*);
+    (*reinterpret_cast<InflictorFn**>(player))[0x3e8 / 8](player, dmg);
+    at<uint32_t>(dmg, 0x78) |= 4;
+    at<int32_t>(dmg, 0x64) = kDmtPlayerMelee;
+    using CheckFn = int(__cdecl*)(uint8_t*, uint8_t*, int, uint64_t);
+    if (!(*reinterpret_cast<CheckFn**>(target))[0x3f0 / 8](target, dmg, kDmtPlayerMelee, at<uint64_t>(res, 0x68))) return false;
+    at<int32_t>(dmg, 0x68) = -1;
+    // Just past the remaining health (en_slHealth +0x574, a CSyncedSLONG whose value is at +0; both builds): the target
+    // dies its own player-melee death (animation, ragdoll) instead of the overkill a huge amount could cause.
+    const int32_t health = std::max(at<int32_t>(target, 0x574), 1);
+    at<int32_t>(dmg, 0x60) = health * 2 + 10;
+    at<float>(dmg, 0x48) = dir.x, at<float>(dmg, 0x4c) = dir.y, at<float>(dmg, 0x50) = dir.z;
+    memcpy(dmg + 0x54, res + 0x28, 12);
+    at<uint64_t>(dmg, 0x80) = at<uint64_t>(res, 0x60);
+    at<uint64_t>(dmg, 0x88) = at<uint64_t>(res, 0x68);
+    at<uint64_t>(dmg, 0x90) = at<uint64_t>(res, 0x50);
+    using ReceiveFn = void(__cdecl*)(uint8_t*, void*, uint8_t*);
+    (*reinterpret_cast<ReceiveFn**>(target))[0x400 / 8](target, scriptCtx(), dmg);
+    return true;
+}
+
+// The use action's melee_start call (melee_find called just before it): the canned kill. Skipped for VR players,
+// who kill by swinging; DoUseMeleeAttack (scripts) and desktop players keep it.
+void __cdecl hookedStart(uint8_t* player, int32_t hTarget, const char* anim, int index) {
+    const uint8_t* ret = static_cast<const uint8_t*>(__builtin_return_address(0));
+    bool fromUse = false;
+    for (int back = 8; back <= 0x60 && !fromUse; ++back) {
+        const uint8_t* c = ret - back;
+        if (c[0] != 0xE8) continue;
+        int32_t rel;
+        memcpy(&rel, c + 1, 4);
+        fromUse = c + 5 + rel == g_findFn;
+    }
+    if (fromUse && vrdOf(player)) {
+        static int logged;
+        if (logged++ < 4) VRLOG("melee: Use/Melee kill (%s) not started for a VR player - swing at the enemy instead", anim ? anim : "?");
+        return;
+    }
+    realStart(player, hTarget, anim, index);
+}
+}  // namespace
+
+void onVrdTick(void** vrdp) {
+    if (!meleeFind || !vrdp || !vrdp[0]) return;
+    auto* player = static_cast<uint8_t*>(vrdp[0]);
+    void* vrd = vrdp;
+    SwingTrack& st = swingTrack(vrd);
+    core::Vec3 hand[2], rel[2];
+    float head7[7] = {};
+    if (headWorld) headWorld(vrd, head7);
+    const core::Vec3 eye{head7[4], head7[5], head7[6]};
+    const bool haveHead = head7[4] || head7[5] || head7[6];
+    for (int r = 0; r < 2; ++r) {  // role 0 right, 1 left
+        float p7[7];
+        player_vr::controllerWorld(vrd, r, p7);
+        hand[r] = {p7[4], p7[5], p7[6]};
+        rel[r] = hand[r] - eye;
+    }
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    const bool armed = (at<uint32_t>(player, kNetFlags) & kMeleeAvailable) != 0;
+    if (g_promptDebug && vrd == player_vr::localVrd()) {  // lab: the finder's answer once a second
+        static ULONGLONG last;
+        if (GetTickCount64() - last > 1000) {
+            last = GetTickCount64();
+            uint8_t* t = nullptr;
+            const char* an = nullptr;
+            int ix = -1;
+            const int ok = meleeFind(player, 1, &t, &an, &ix);
+            VRLOG("melee: debug finder %d target %p, net flags %08x", ok, static_cast<void*>(t), at<uint32_t>(player, kNetFlags));
+        }
+    }
+    if (armed != st.armed) {
+        st.armed = armed;
+        static int logged;
+        if (logged++ < 40) VRLOG("melee: prompt %s for VR player %p", armed ? "shown (swing to melee)" : "gone", static_cast<void*>(player));
+    }
+    const double dt = st.valid ? seconds(st.t, now) : 0.0;
+    const double nowS = double(now.QuadPart) / double(g_freq.QuadPart);
+    if (armed && st.valid && dt > 1e-4 && dt < 0.25 && nowS - st.lastKill > 0.5) {
+        const auto& b = se4::build();
+        float scale = 1.0f;
+        if (auto* ws = b.at<float>(se4::gen::vr_fWorldScale); ws && *ws > 0.01f) scale = 1.0f / *ws;
+        uint8_t* target = nullptr;
+        const char* anim = nullptr;
+        int index = -1;
+        if (!g_bullet) identFn(&g_bullet, "bullet");
+        if (meleeFind(player, 1, &target, &anim, &index) && target) {
+            for (int r = 0; r < 2; ++r) {
+                const core::Vec3 dr = rel[r] - st.rel[r];
+                const float rdist = std::sqrt(core::dot(dr, dr));
+                const float speed = rdist / float(dt) / scale;
+                if (speed < g_swingSpeed || !(rdist > 1e-5f)) continue;
+                core::Vec3 dv = hand[r] - st.hand[r];
+                float dist = std::sqrt(core::dot(dv, dv));
+                if (!(dist > 1e-5f)) dv = dr, dist = rdist;
+                const core::Vec3 dir = dv * (1.0f / dist);
+                // The hand's path (pushed 25 cm on along the swing) and the line from the head through the hand.
+                core::Vec3 from[2] = {st.hand[r], eye}, to[2] = {hand[r] + dir * (0.25f * scale), hand[r]};
+                core::Vec3 he = hand[r] - eye;
+                const float hl = std::sqrt(core::dot(he, he));
+                if (hl > 1e-3f) to[1] = hand[r] + he * (0.3f * scale / hl);
+                alignas(16) uint8_t res[0x200];
+                memset(res, 0, sizeof res);
+                resCtor(res);
+                at<int32_t>(res, 0x00) = toHandle(player);
+                at<float>(res, 0x98) = 0.15f * scale;
+                bool killed = false;
+                for (int i = 0; i < (haveHead ? 2 : 1) && !killed; ++i) {
+                    const float f[3] = {from[i].x, from[i].y, from[i].z}, e[3] = {to[i].x, to[i].y, to[i].z};
+                    segmentCast(res, at<void*>(player, 0x30), f, e, g_bullet, g_bullet);
+                    const int32_t h = at<int32_t>(res, 0x08);
+                    if (g_promptDebug)
+                        VRLOG("melee: debug swing %s at %.1f m/s, cast %d hit %p (target %p)", r ? "left" : "right", speed, i, h ? handleEntity(h) : nullptr,
+                              static_cast<void*>(target));
+                    if (!h || handleEntity(h) != target) continue;
+                    killed = killByMelee(player, target, res, dir);
+                    VRLOG("melee: prompted kill of %p (%s) by a %s-hand swing at %.1f m/s (%s)%s", static_cast<void*>(target), anim ? anim : "?",
+                          r ? "left" : "right", speed, i ? "head line" : "hand path", killed ? "" : " - refused by the target's damage check");
+                }
+                resDtor(res + 0xa8);
+                if (void* rr = at<void*>(res, 0x50)) refRelease(rr, res + 0x50);
+                if (killed) {
+                    st.lastKill = nowS;
+                    if (vrd == player_vr::localVrd() && xr::runtime().running())
+                        xr::input().vibrate(xr::runtime().session(), r == 0 ? 1 : 0, 1.0f, 0.12f);
+                    break;
+                }
+            }
+        }
+    }
+    st.hand[0] = hand[0], st.hand[1] = hand[1], st.rel[0] = rel[0], st.rel[1] = rel[1], st.t = now, st.valid = true;
+}
+
+namespace {
+// The prompt "%1 Melee" gets "{plcmdUse}" (the button glyph) at melee_prompt_site+0xf; in VR it gets "" instead.
+bool patchPromptGlyph() {
+    auto* site = se4::build().at<uint8_t>(se4::gen::melee_prompt_site);
+    if (!site || site[0xf] != 0x4C || site[0x10] != 0x8D || site[0x11] != 0x0D) return false;
+    int32_t rel;
+    memcpy(&rel, site + 0x12, 4);
+    const char* glyph = reinterpret_cast<const char*>(site + 0x16 + rel);
+    if (strcmp(glyph, "{plcmdUse}")) return false;
+    auto* empty = reinterpret_cast<char*>(se4::patch::allocNear(site, 8));
+    if (!empty) return false;
+    empty[0] = 0;
+    const intptr_t d = reinterpret_cast<intptr_t>(empty) - reinterpret_cast<intptr_t>(site + 0x16);
+    if (d != int32_t(d)) return false;
+    const int32_t nd = int32_t(d);
+    uint8_t now[4];
+    memcpy(now, &nd, 4);
+    return se4::patch::writeCode(site + 0x12, site + 0x12, now, 4);
+}
+
+bool hook(void* target, void* detour, void** real, const char* what);
+
+// melee_find returns "no target" at once for a player with CPlayerVRData (`cmp [r12+vrd], r14; jne out` near its
+// start; the canned kills never worked in VR), so neither the prompt nor the flag ever came up in VR. The swing kill
+// replaces the canned animation, so that one jump is removed: the finder (and with it the prompt and the
+// PNF_PLAYER_MELEE_AVAILABLE flag) answers for VR players exactly as for desktop players.
+bool patchFinderVrCheck(uint8_t* find) {
+    const uint32_t vrd = player_vr::vrdOffset();
+    for (uint8_t* p = find; p < find + 0x100; ++p) {
+        if (p[0] != 0x4D || p[1] != 0x39 || p[2] != 0xB4 || p[3] != 0x24) continue;
+        uint32_t disp;
+        memcpy(&disp, p + 4, 4);
+        if (disp != vrd || p[8] != 0x0F || p[9] != 0x85) continue;
+        static const uint8_t nops[6] = {0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00};
+        uint8_t old[6];
+        memcpy(old, p + 8, 6);
+        return se4::patch::writeCode(p + 8, old, nops, 6);
+    }
+    return false;
+}
+
+// Swing kills on every VR peer (the authority's damage counts), the button and prompt changes for the local VR player.
+void installPrompted() {
+    if (!se4::options::get("melee_prompt_swing", 1)) return;
+    const auto& b = se4::build();
+    auto* find = b.at<uint8_t>(se4::gen::melee_find);
+    auto* start = b.at<uint8_t>(se4::gen::melee_start);
+    toHandle = reinterpret_cast<ToHandleFn>(b.at<void>(se4::gen::entity_to_handle));
+    scriptCtx = reinterpret_cast<CtxFn>(b.at<void>(se4::gen::script_ctx));
+    if (!find || !start || !toHandle || !scriptCtx || !handleEntity || !segmentCast || !resCtor || !damageCtor) {
+        VRLOG("melee: build lacks the prompted-melee symbols - prompted melee stays the button");
+        return;
+    }
+    g_findFn = find;
+    g_swingSpeed = std::clamp(se4::options::get("melee_prompt_speed", 150), 30, 1000) / 100.0f;
+    g_promptDebug = se4::options::get("melee_prompt_debug", 0) != 0;
+    headWorld = reinterpret_cast<HeadFn>(b.at<void>(se4::gen::vrd_head_world));
+    if (!player_vr::vrdOffset() || !patchFinderVrCheck(find)) {
+        VRLOG("melee: the melee finder's VR check was not found - prompted melee stays off in VR");
+        return;
+    }
+    if (se4::g_vrEnabled) {
+        if (!hook(start, reinterpret_cast<void*>(hookedStart), reinterpret_cast<void**>(&realStart), "melee start")) return;
+        VRLOG("melee: prompt without a button glyph %s", patchPromptGlyph() ? "on" : "FAILED (site does not match)");
+    }
+    meleeFind = reinterpret_cast<FindFn>(find);
+    VRLOG("melee: prompted melee by swing on (hand speed %.1f m/s)", g_swingSpeed);
+}
+
 bool hook(void* target, void* detour, void** real, const char* what) {
     if (!target || MH_CreateHook(target, detour, real) != MH_OK || MH_EnableHook(target) != MH_OK) {
         VRLOG("melee: %s hook FAILED", what);
@@ -255,7 +507,6 @@ bool hook(void* target, void* detour, void** real, const char* what) {
 }  // namespace
 
 bool install() {
-    if (!se4::options::get("melee_physical", 1)) return false;
     const auto& b = se4::build();
     handleEntity = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
     segmentCast = reinterpret_cast<CastFn>(b.at<void>(se4::gen::segment_cast));
@@ -266,6 +517,9 @@ bool install() {
     refRelease = reinterpret_cast<ReleaseFn>(b.at<void>(se4::gen::ref_release));
     identFn = reinterpret_cast<IdentFn>(b.at<void>(se4::gen::ident_ctor));
     g_minSpeed = b.at<float>(se4::gen::vr_fMinSwingToHitSpeed);
+    QueryPerformanceFrequency(&g_freq);
+    installPrompted();
+    if (!se4::options::get("melee_physical", 1)) return false;
     auto* step = b.at<void>(se4::gen::knife_step);
     auto* swing = b.at<void>(se4::gen::knife_swing_test);
     if (!handleEntity || !segmentCast || !resCtor || !resDtor || !damageCtor || !weaponParams || !refRelease || !identFn || !step || !swing) {

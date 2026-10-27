@@ -376,13 +376,44 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateRenderPassObs(VkDevice d, const VkRende
                                                        VkRenderPass* out) {
     VkRenderPassCreateInfo c = *ci;
     std::vector<VkAttachmentDescription> att;
-    return nextCreateRenderPass(d, upint::patchPass(c, att) ? &c : ci, a, out);
+    const VkResult r = nextCreateRenderPass(d, upint::patchPass(c, att) ? &c : ci, a, out);
+    if (r == VK_SUCCESS) upint::traceRenderPass(*out, ci->pAttachments, ci->attachmentCount);
+    return r;
 }
 VKAPI_ATTR VkResult VKAPI_CALL hookCreateRenderPass2Obs(VkDevice d, const VkRenderPassCreateInfo2* ci, const VkAllocationCallbacks* a,
                                                         VkRenderPass* out) {
     VkRenderPassCreateInfo2 c = *ci;
     std::vector<VkAttachmentDescription2> att;
-    return nextCreateRenderPass2(d, upint::patchPass2(c, att) ? &c : ci, a, out);
+    const VkResult r = nextCreateRenderPass2(d, upint::patchPass2(c, att) ? &c : ci, a, out);
+    if (r == VK_SUCCESS) upint::traceRenderPass2(*out, ci->pAttachments, ci->attachmentCount);
+    return r;
+}
+// Lab pass trace (upscale_pass_trace): image views and framebuffers, to see which passes use the scene depth.
+PFN_vkCmdSetViewport realSetViewport;
+VKAPI_ATTR void VKAPI_CALL hookSetViewport(VkCommandBuffer cb, uint32_t first, uint32_t n, const VkViewport* v) {
+    for (uint32_t i = 0; i < n; ++i)
+        if (v[i].minDepth != 0.0f || v[i].maxDepth != 1.0f) {
+            upint::onViewport(v[i].minDepth, v[i].maxDepth);
+            if (!upint::passTraceOn()) continue;
+            static int logged;
+            static float lastMin = -1, lastMax = -1;
+            if ((v[i].minDepth != lastMin || v[i].maxDepth != lastMax) && logged++ < 40)
+                VRLOG("passtrace: viewport depth range %.6f..%.6f (%.0fx%.0f)", v[i].minDepth, v[i].maxDepth, v[i].width, v[i].height);
+            lastMin = v[i].minDepth, lastMax = v[i].maxDepth;
+        }
+    realSetViewport(cb, first, n, v);
+}
+PFN_vkCreateImageView realCreateView;
+PFN_vkCreateFramebuffer realCreateFb;
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateView(VkDevice d, const VkImageViewCreateInfo* ci, const VkAllocationCallbacks* a, VkImageView* out) {
+    const VkResult r = realCreateView(d, ci, a, out);
+    if (r == VK_SUCCESS) upint::traceView(*out, ci->image);
+    return r;
+}
+VKAPI_ATTR VkResult VKAPI_CALL hookCreateFb(VkDevice d, const VkFramebufferCreateInfo* ci, const VkAllocationCallbacks* a, VkFramebuffer* out) {
+    const VkResult r = realCreateFb(d, ci, a, out);
+    if (r == VK_SUCCESS) upint::traceFramebuffer(*out, ci->renderPass, ci->pAttachments, (ci->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) ? 0 : ci->attachmentCount);
+    return r;
 }
 PFN_vkCmdEndRenderPass realEndPass;
 PFN_vkCmdEndRenderPass2 realEndPass2;
@@ -398,10 +429,12 @@ PFN_vkCmdBeginRenderPass nextBeginPass;
 PFN_vkCmdBeginRenderPass2 nextBeginPass2;
 VKAPI_ATTR void VKAPI_CALL hookBeginPassObs(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, VkSubpassContents c) {
     upint::onBeginPass(cb);
+    upint::traceBeginPass(cb, bi);
     nextBeginPass(cb, bi, c);
 }
 VKAPI_ATTR void VKAPI_CALL hookBeginPass2Obs(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi, const VkSubpassBeginInfo* si) {
     upint::onBeginPass(cb);
+    upint::traceBeginPass(cb, bi);
     nextBeginPass2(cb, bi, si);
 }
 VKAPI_ATTR void VKAPI_CALL hookDestroyImage(VkDevice d, VkImage img, const VkAllocationCallbacks* a) {
@@ -782,6 +815,18 @@ PFN_vkVoidFunction deviceOverride(const char* name) {
         realEndPass2 = reinterpret_cast<PFN_vkCmdEndRenderPass2>(realGDPA(g.device, name));
         if (!realEndPass2) return nullptr;
         return reinterpret_cast<PFN_vkVoidFunction>(hookEndPass2);
+    }
+    if (up::wanted() && !strcmp(name, "vkCmdSetViewport")) {  // the scene depth partition, for the motion vectors
+        realSetViewport = DFN(vkCmdSetViewport);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookSetViewport);
+    }
+    if (upint::passTraceOn() && !strcmp(name, "vkCreateImageView")) {
+        realCreateView = DFN(vkCreateImageView);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookCreateView);
+    }
+    if (upint::passTraceOn() && !strcmp(name, "vkCreateFramebuffer")) {
+        realCreateFb = DFN(vkCreateFramebuffer);
+        return reinterpret_cast<PFN_vkVoidFunction>(hookCreateFb);
     }
     if (!strcmp(name, "vkCmdBeginRenderPass")) {
         auto f = fov::override(name);

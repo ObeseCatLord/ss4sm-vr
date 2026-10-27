@@ -1192,5 +1192,20 @@
   "call_of": "wlink_bind",
   "index": 3,
   "_note": "(link): link+8 = cvar_get_str(link name) (R29 s2); 4th call in wlink_bind (alloc, link ctor, cstring_assign, snapshot)"
+ },
+ "melee_find": {
+  "src": "0x14041ff20",
+  "len": 64,
+  "_note": "int (player, int 1, CEntity** outTarget, const char** outAnim, int* outIndex): the player melee target (view cone, PlayerMeleeSelection); its result sets PNF_PLAYER_MELEE_AVAILABLE (en_pnfNetFlags bit 0x200000) each step on the authority (0x1404a3670) (R30)"
+ },
+ "melee_start": {
+  "src": "0x140473b40",
+  "len": 64,
+  "_note": "(player, hTarget, const char* anim, int index): the canned melee kill (net call on a client, sync animation and placement on the authority); behind DoUseMeleeAttack and the two use actions (R12 s2.3, R30)"
+ },
+ "melee_prompt_site": {
+  "src": "0x1400b29d4",
+  "len": 32,
+  "_note": "HUD message: lea rcx,\"ETRSMeleeMessage=%1 Melee\"; call translate; mov rdx,rax; lea r9,\"{plcmdUse}\" (+0xf) shown while PNF_PLAYER_MELEE_AVAILABLE (R30)"
  }
 }

@@ -2,6 +2,7 @@
 // tables; offsets inside functions are found by matching the instruction bytes in the running build and
 // are refused unless the match is exact and unique.
 #include "se4/player_vr.hpp"
+#include "se4/melee.hpp"
 #include "se4/net.hpp"
 #include "se4/turn.hpp"
 #include "core/math.hpp"
@@ -368,6 +369,7 @@ int __cdecl hookedInAir(void** vrd) {
 void __cdecl hookedVrdTick(void** vrd) {
     realVrdTick(vrd);
     body::onVrdTick(vrd);
+    melee::onVrdTick(vrd);
     net::tick(vrd, vrd && vrd == g_localVrd);
     if (vrd && vrd == g_localVrd) {
         gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)

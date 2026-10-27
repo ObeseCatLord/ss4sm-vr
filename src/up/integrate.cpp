@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace upint {
@@ -97,6 +98,11 @@ struct Fn {
     PFN_vkCmdCopyImage copy;
     PFN_vkCmdBlitImage blit;
     PFN_vkCmdClearColorImage clear;
+    PFN_vkCreateBuffer createBuffer;
+    PFN_vkGetBufferMemoryRequirements bufReq;
+    PFN_vkBindBufferMemory bindBuf;
+    PFN_vkMapMemory map;
+    PFN_vkCmdCopyImageToBuffer copyToBuf;
 } vk;
 
 struct OwnImage {
@@ -117,6 +123,7 @@ struct Resources {
     OwnImage sharp;
     uint32_t sw = 0, sh = 0;
     VkDescriptorSet sharpSet = VK_NULL_HANDLE;
+    VkDescriptorSet debugSet = VK_NULL_HANDLE;  // lab debug view: motion -> sharp
     bool sharpFailed = false;
 } g_res;
 
@@ -129,6 +136,11 @@ VkDescriptorPool g_pool;
 VkDescriptorSetLayout g_rcasDsl;
 VkPipelineLayout g_rcasPl;
 VkPipeline g_rcasPipe;
+// The engine's depth partition (viewport depth range [split, 1] for the world, [0, split] beyond), from vkCmdSetViewport.
+std::atomic<float> g_depthSplit{0.0f};
+int g_passTrace = -1;  // option upscale_pass_trace (frames), read once
+volatile LONG g_traceFrames, g_traceSeq;
+int g_debugView;  // lab: upscale_debug_view 1 paints the view distance, 2 the motion vectors, instead of the image
 
 uint32_t memType(uint32_t bits) {
     for (uint32_t i = 0; i < vk.mem.memoryTypeCount; ++i)
@@ -257,6 +269,7 @@ void releaseResources() {
     destroyOwn(g_res.motion);
     destroyOwn(g_res.output);
     if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet);
+    if (g_res.debugSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.debugSet);
     destroyOwn(g_res.sharp);
     g_res = {};
 }
@@ -275,7 +288,8 @@ bool ensureResources() {
     g_res.colorView = viewOf(g_color.image, g_color.format, VK_IMAGE_ASPECT_COLOR_BIT);
     g_res.depthView = viewOf(g_depth.image, g_depth.format, VK_IMAGE_ASPECT_DEPTH_BIT);
     bool ok = g_res.colorView && g_res.depthView &&
-              createOwn(g_res.motion, g_res.w, g_res.h, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+              createOwn(g_res.motion, g_res.w, g_res.h,
+                        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
               createOwn(g_res.output, g_res.w, g_res.h,
                         VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     g_res.ow = g_res.w, g_res.oh = g_res.h;
@@ -310,6 +324,7 @@ bool ensureOutput(uint32_t w, uint32_t h) {
     if (g_res.ow == w && g_res.oh == h) return g_res.output.image != VK_NULL_HANDLE;  // a failed size is not retried
     destroyOwn(g_res.output);
     if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet), g_res.sharpSet = VK_NULL_HANDLE;
+    if (g_res.debugSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.debugSet), g_res.debugSet = VK_NULL_HANDLE;
     destroyOwn(g_res.sharp);
     g_res.sw = g_res.sh = 0;
     g_res.sharpFailed = false;
@@ -328,13 +343,11 @@ bool ensureSharp() {
     if (g_res.sharp.image && g_res.sw == g_res.ow && g_res.sh == g_res.oh) return true;
     if (g_res.sharpFailed || !g_res.output.view) return false;
     bool ok = createRcasPipeline() && createOwn(g_res.sharp, g_res.ow, g_res.oh, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-    if (ok) {
-        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        ai.descriptorPool = g_pool;
-        ai.descriptorSetCount = 1;
-        ai.pSetLayouts = &g_rcasDsl;
-        ok = vk.allocSets(vk.dev, &ai, &g_res.sharpSet) == VK_SUCCESS;
-    }
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = g_pool;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &g_rcasDsl;
+    if (ok) ok = vk.allocSets(vk.dev, &ai, &g_res.sharpSet) == VK_SUCCESS;
     if (ok) {
         VkDescriptorImageInfo in{VK_NULL_HANDLE, g_res.output.view, VK_IMAGE_LAYOUT_GENERAL};
         VkDescriptorImageInfo out{VK_NULL_HANDLE, g_res.sharp.view, VK_IMAGE_LAYOUT_GENERAL};
@@ -343,6 +356,12 @@ bool ensureSharp() {
         w[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, g_res.sharpSet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &out};
         vk.updateSets(vk.dev, 2, w, 0, nullptr);
         g_res.sw = g_res.ow, g_res.sh = g_res.oh;
+        if (g_debugView && vk.allocSets(vk.dev, &ai, &g_res.debugSet) == VK_SUCCESS) {
+            VkDescriptorImageInfo mv{VK_NULL_HANDLE, g_res.motion.view, VK_IMAGE_LAYOUT_GENERAL};
+            w[0].dstSet = w[1].dstSet = g_res.debugSet;
+            w[0].pImageInfo = &mv;
+            vk.updateSets(vk.dev, 2, w, 0, nullptr);
+        }
     } else {
         if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet), g_res.sharpSet = VK_NULL_HANDLE;
         destroyOwn(g_res.sharp);
@@ -517,12 +536,86 @@ void imageBarrier(VkImageMemoryBarrier& b, VkImage img, VkImageAspectFlags aspec
     b.subresourceRange = {aspect, 0, 1, 0, 1};
 }
 
+// Lab (upscale_debug_view): every ~2 s, the motion image's middle row (z = view distance) is copied to a host buffer
+// and 16 samples of it are logged a frame later.
+struct Readback {
+    VkBuffer buf = VK_NULL_HANDLE;
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    uint16_t* data = nullptr;
+    uint32_t w = 0;
+    bool pending = false;
+    ULONGLONG last = 0;
+} g_rb;
+float halfToFloat(uint16_t h) {
+    const uint32_t s = (h >> 15) & 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
+    float v = e == 0 ? std::ldexp(float(m), -24) : e == 31 ? INFINITY : std::ldexp(float(m | 0x400), int(e) - 25);
+    return s ? -v : v;
+}
+void debugReadback(VkCommandBuffer cb, uint32_t W, uint32_t H) {
+    if (g_rb.pending && g_rb.data) {
+        for (int row = 0; row < 4; ++row) {
+            char line[512];
+            int n = 0;
+            for (int i = 0; i < 16; ++i) {
+                const float dist = halfToFloat(g_rb.data[(size_t(row) * g_rb.w + g_rb.w * (2 * i + 1) / 32) * 4 + 2]);
+                n += snprintf(line + n, sizeof line - n, " %.1f", dist);
+            }
+            VRLOG("upint: debug distance row %d/8 (m):%s", row * 2 + 1, line);
+        }
+        g_rb.pending = false;
+    }
+    if (GetTickCount64() - g_rb.last < 2000) return;
+    g_rb.last = GetTickCount64();
+    if (!g_rb.buf || g_rb.w != W) {
+        if (g_rb.buf) return;  // one size only (lab)
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bi.size = VkDeviceSize(W) * 8 * 4;
+        bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        if (vk.createBuffer(vk.dev, &bi, nullptr, &g_rb.buf) != VK_SUCCESS) return;
+        VkMemoryRequirements mr;
+        vk.bufReq(vk.dev, g_rb.buf, &mr);
+        uint32_t type = UINT32_MAX;
+        for (uint32_t i = 0; i < vk.mem.memoryTypeCount; ++i)
+            if ((mr.memoryTypeBits & (1u << i)) && (vk.mem.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                                                         (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+                type = i;
+                break;
+            }
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = type;
+        if (type == UINT32_MAX || vk.alloc(vk.dev, &ai, nullptr, &g_rb.mem) != VK_SUCCESS) return;
+        vk.bindBuf(vk.dev, g_rb.buf, g_rb.mem, 0);
+        void* p = nullptr;
+        vk.map(vk.dev, g_rb.mem, 0, VK_WHOLE_SIZE, 0, &p);
+        g_rb.data = static_cast<uint16_t*>(p);
+        g_rb.w = W;
+    }
+    VkImageMemoryBarrier b;
+    imageBarrier(b, g_res.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+    vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    VkBufferImageCopy c[4] = {};
+    for (int row = 0; row < 4; ++row) {  // rows at 1/8, 3/8, 5/8, 7/8 of the height
+        c[row].bufferOffset = VkDeviceSize(row) * W * 8;
+        c[row].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        c[row].imageOffset = {0, int32_t(H * (2 * row + 1) / 8), 0};
+        c[row].imageExtent = {W, 1, 1};
+    }
+    vk.copyToBuf(cb, g_res.motion.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g_rb.buf, 4, c);
+    imageBarrier(b, g_res.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT);
+    vk.barrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    g_rb.pending = true;
+}
+
 // Slot 0 is the flat main view (camera from the engine's matrices, sizes from the HDR box), 1/2 the VR eyes.
 void evaluateEye(VkCommandBuffer cb, int slot) {
     const int e = slot;
     const bool flat = slot == 0;
     PhaseB& pb = t_phaseB;
     const bool scaled = pb.slot == slot;  // phase B: render pb.rw x pb.rh, output pb.ow x pb.oh
+    if (g_passTrace > 0 && g_traceFrames <= g_passTrace) VRLOG("passtrace: frame %ld evaluate %s", InterlockedIncrement(&g_traceFrames) - 1, slotName(slot));
     if (!ensureResources() || (!scaled && !g_proj[e].valid)) return;
     core::Pose cur;
     const bool posed = g_proj[e].valid && (flat ? g_flatCam.valid : worldEye(slot, cur));
@@ -601,6 +694,8 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
         memcpy(pc.cur, &ct, sizeof pc.cur);
         memcpy(pc.prev, &pt, sizeof pc.prev);
         pc.size[0] = float(W), pc.size[1] = float(H), pc.size[2] = g_proj[e].n, pc.size[3] = g_proj[e].f;
+        pc.origin[2] = g_depthSplit.load(std::memory_order_relaxed);
+        pc.origin[3] = flat ? 0.25f : 0.0f;  // metres; flat only: VR hands and weapons are tracked, not camera-attached
         if (g_motionOn) {
             vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pipe);
             vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_res.set, 0, nullptr);
@@ -615,6 +710,7 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
                      VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
         vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
                    0, nullptr, 1, b);
+        if (g_debugView) debugReadback(cb, W, H);
 
         // 3. the upscaler: phase A native AA (render size == output size == canvas), phase B the render sub-rect of the
         //    canvas images to the output size.
@@ -651,16 +747,22 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
     // 3b. RCAS sharpening of the upscaled image (up::sharpness, 0 = off): output -> sharp, which is then copied.
     VkImage result = g_res.output.image;
     const float sharpness = up::sharpness();
-    if (ok && sharpness > 0.0f && ensureSharp()) {
+    const bool debug = ok && g_debugView && g_res.debugSet;
+    if (ok && (sharpness > 0.0f || g_debugView) && ensureSharp()) {
         imageBarrier(b[0], g_res.output.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
                      VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
         imageBarrier(b[1], g_res.sharp.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
                      VK_ACCESS_SHADER_WRITE_BIT);
         vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr,
                    0, nullptr, 2, b);
-        const float pc[4] = {sharpness, float(OW), float(OH), 0.0f};
+        if (debug) {  // the motion image is sampled by the upscaler (read-only layout): storage reads need GENERAL
+            imageBarrier(b[0], g_res.motion.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT);
+            vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, b);
+        }
+        const float pc[4] = {sharpness, float(OW), float(OH), debug ? float(g_debugView) : 0.0f};
         vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_rcasPipe);
-        vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_rcasPl, 0, 1, &g_res.sharpSet, 0, nullptr);
+        vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_rcasPl, 0, 1, debug ? &g_res.debugSet : &g_res.sharpSet, 0, nullptr);
         vk.push(cb, g_rcasPl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc, pc);
         vk.dispatch(cb, (OW + 7) / 8, (OH + 7) / 8, 1);
         result = g_res.sharp.image;
@@ -1012,6 +1114,15 @@ uintptr_t __cdecl hookedRenderView(uintptr_t a1, uintptr_t a2, uintptr_t a3, uin
             if (g_flat.ret != ret && g_flat.ret)
                 VRLOG("upint: flat rv: caller %s -> %s (history reset)", rvKind(g_flat.ret), rvKind(ret));
             g_flat = {view, static_cast<uint8_t*>(view) + kViewDpCopy, ret, g_frame};
+            if (g_debugView) {  // lab: the scene's projection (view+0x108) and the API copy (gfx+0xdf0) against the one the mod reads
+                static LogRate prate;
+                const float* V = reinterpret_cast<const float*>(static_cast<uint8_t*>(view) + 0x108);
+                uint8_t* gfx = gfxObject();
+                const float* A = gfx ? reinterpret_cast<const float*>(gfx + 0xdf0) : nullptr;
+                if (logRate(prate))
+                    VRLOG("upint: debug P view+0x108 [10] %.6f [11] %.6f [14] %.3f [15] %.3f | gfx+0xdf0 [10] %.6f [11] %.6f [14] %.3f | mod n %.4f f %.1f",
+                          V[10], V[11], V[14], V[15], A ? A[10] : 0.f, A ? A[11] : 0.f, A ? A[14] : 0.f, g_proj[0].n, g_proj[0].f);
+            }
             g_flatExec = true;
         } else g_flatArmed = false;
         static LogRate rate;
@@ -1535,6 +1646,11 @@ void onDevice(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, VkPhysicalDevice 
     F(copy, vkCmdCopyImage);
     F(blit, vkCmdBlitImage);
     F(clear, vkCmdClearColorImage);
+    F(createBuffer, vkCreateBuffer);
+    F(bufReq, vkGetBufferMemoryRequirements);
+    F(bindBuf, vkBindBufferMemory);
+    F(map, vkMapMemory);
+    F(copyToBuf, vkCmdCopyImageToBuffer);
 #undef F
 }
 
@@ -1581,6 +1697,71 @@ bool patchPass2(VkRenderPassCreateInfo2& ci, std::vector<VkAttachmentDescription
     if (!patchAttachments(ci.pAttachments, ci.attachmentCount, att)) return false;
     ci.pAttachments = att.data();
     return true;
+}
+
+// ---- lab pass trace ----
+namespace {
+struct RpInfo {
+    int depth = -1;
+    VkAttachmentLoadOp load = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    VkAttachmentStoreOp store = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    int colors = 0, hdr = 0;
+};
+std::mutex g_traceLock;
+std::unordered_map<VkRenderPass, RpInfo> g_rps;
+std::unordered_map<VkImageView, VkImage> g_views;
+std::unordered_map<VkFramebuffer, std::vector<VkImageView>> g_fbs;
+template <class A> void recordRp(VkRenderPass rp, const A* a, uint32_t n) {
+    RpInfo r;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (isDepth(a[i].format)) r.depth = int(i), r.load = a[i].loadOp, r.store = a[i].storeOp;
+        else ++r.colors, r.hdr += a[i].format == VK_FORMAT_R16G16B16A16_SFLOAT;
+    }
+    std::lock_guard<std::mutex> l(g_traceLock);
+    g_rps[rp] = r;
+}
+}  // namespace
+void onViewport(float minDepth, float maxDepth) {
+    if (maxDepth == 1.0f && minDepth > 0.0f && minDepth < 0.5f && g_depthSplit.load(std::memory_order_relaxed) != minDepth) {
+        g_depthSplit = minDepth;
+        VRLOG("upint: scene depth partition at %.3f (world in [%.3f, 1]): motion vectors decode it", minDepth, minDepth);
+    }
+}
+bool passTraceOn() {
+    if (g_passTrace < 0) g_passTrace = std::max(0, se4::options::get("upscale_pass_trace", 0));
+    return g_passTrace > 0;
+}
+void traceRenderPass(VkRenderPass rp, const VkAttachmentDescription* a, uint32_t n) {
+    if (passTraceOn()) recordRp(rp, a, n);
+}
+void traceRenderPass2(VkRenderPass rp, const VkAttachmentDescription2* a, uint32_t n) {
+    if (passTraceOn()) recordRp(rp, a, n);
+}
+void traceView(VkImageView view, VkImage image) {
+    std::lock_guard<std::mutex> l(g_traceLock);
+    g_views[view] = image;
+}
+void traceFramebuffer(VkFramebuffer fb, VkRenderPass, const VkImageView* views, uint32_t n) {
+    std::lock_guard<std::mutex> l(g_traceLock);
+    g_fbs[fb].assign(views, views + n);
+}
+void traceBeginPass(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
+    if (!passTraceOn() || !bi || !g_depth.image || g_traceFrames > g_passTrace) return;
+    std::lock_guard<std::mutex> l(g_traceLock);
+    auto fb = g_fbs.find(bi->framebuffer);
+    if (fb == g_fbs.end()) return;
+    bool depth = false, color = false;
+    for (VkImageView v : fb->second) {
+        auto it = g_views.find(v);
+        if (it == g_views.end()) continue;
+        depth |= it->second == g_depth.image;
+        color |= it->second == g_color.image;
+    }
+    if (!depth) return;
+    const RpInfo r = g_rps.count(bi->renderPass) ? g_rps[bi->renderPass] : RpInfo{};
+    VRLOG("passtrace: frame %ld #%ld cb %p pass %p depth load %d store %d colors %d (hdr %d, canvas %d) area %dx%d+%d+%d", g_traceFrames,
+          InterlockedIncrement(&g_traceSeq), static_cast<void*>(cb), reinterpret_cast<void*>(bi->renderPass), int(r.load), int(r.store), r.colors,
+          r.hdr, int(color), int(bi->renderArea.extent.width), int(bi->renderArea.extent.height), bi->renderArea.offset.x, bi->renderArea.offset.y);
 }
 
 void onBeginPass(VkCommandBuffer cb) {
@@ -1676,6 +1857,7 @@ bool install() {
     g_lodBias = se4::options::get("upscale_lod_bias", -100) / 100.0f;
     g_jitterScale = se4::options::get("upscale_jitter_scale", 100) / 100.0f;
     g_motionOn = se4::options::get("upscale_mv", 1) != 0;
+    g_debugView = std::clamp(se4::options::get("upscale_debug_view", 0), 0, 2);
     g_reportScale = se4::options::get("upscale_report_scale", 100) / 100.0f;
     g_jitterLag = se4::options::get("upscale_jitter_lag", 0);
     g_jitterSign[0] = se4::options::get("upscale_jitter_x", 1) < 0 ? -1.0f : 1.0f;

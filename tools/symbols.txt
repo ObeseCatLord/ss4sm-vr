@@ -234,3 +234,6 @@ manual:widget_set_label     # R29: (widget, label, 1)
 manual:widget_set_tooltip   # R29: variadic (widget, menu, "%1", 0xabcd0009, text)
 var:sha_iAllowTreeSwaying    # R29: foliage sway level (read only; its reads are redirected to a mod copy)
 manual:wlink_snapshot     # R29: hooked: the mod rows (renamed links) take no snapshot
+manual:melee_find          # R30: player melee target finder (sets PNF_PLAYER_MELEE_AVAILABLE)
+manual:melee_start         # R30: hooked: the canned melee kill; skipped for VR players from the use action
+manual:melee_prompt_site   # R30: the melee HUD message's "{plcmdUse}" argument (lea r9 at +0xf)
