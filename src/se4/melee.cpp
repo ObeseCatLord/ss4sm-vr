@@ -247,17 +247,16 @@ void hookedGenericStep(uint8_t* weapon, void* stepArg) {
     sweep(weapon, stepArg, true);
 }
 
-// ---- Prompted melee by swing (docs/re/R30_prompted_melee_swing.md) ----
-// The engine's melee kill (Use/Melee on an enemy that shows the "Melee" prompt) is a canned synchronized animation that
+// ---- Prompted melee by swing (docs/re/R30_prompted_melee_swing.md, R31 s5) ----
+// The engine's melee kill (Use/Melee on an enemy that shows the "Melee" prompt) is a synchronized animation pair that
 // moves and locks the player. For VR players it becomes a swing instead: while the player's PNF_PLAYER_MELEE_AVAILABLE
 // net flag is set (the authority sets it each step from melee_find, the same test as the prompt and the button), a hand
-// that sweeps through melee_find's target fast enough kills it with DMT_PLAYERMELEE damage: no animation, no placement,
-// the game's melee health restore (HealthAmmoRestore.lua checks the death damage type), native gibs and credit. The
-// button no longer starts the canned kill for VR players, and the prompt shows no button glyph in VR.
+// that sweeps through melee_find's target fast enough starts the game's own melee kill on it, the enemy half only
+// (nativeVictim): the enemy plays its melee death and the animation's damage event kills it; the player is not placed,
+// locked or animated. The button no longer starts the canned kill for VR players, and the prompt shows no button glyph.
 // Options melee_prompt_swing (default 1), melee_prompt_speed (cm/s, default 150).
 constexpr size_t kNetFlags = 0x7a4;                // CPuppetEntity::en_pnfNetFlags (both builds)
 constexpr uint32_t kMeleeAvailable = 0x200000;     // PNF_PLAYER_MELEE_AVAILABLE
-constexpr int kDmtPlayerMelee = 38;                // DMT_PLAYERMELEE
 using FindFn = int(__cdecl*)(uint8_t* player, int one, uint8_t** target, const char** anim, int* index);
 using StartFn = void(__cdecl*)(uint8_t* player, int32_t hTarget, const char* anim, int index);
 using ToHandleFn = int32_t(__cdecl*)(void* entity);
@@ -265,7 +264,6 @@ using CtxFn = void*(__cdecl*)();
 FindFn meleeFind;
 StartFn realStart;
 ToHandleFn toHandle;
-CtxFn scriptCtx;
 uint8_t* g_findFn;
 float g_swingSpeed = 1.5f;
 bool g_promptDebug;  // lab: option melee_prompt_debug
@@ -289,36 +287,59 @@ SwingTrack& swingTrack(void* vrd) {
     return t = {}, t.vrd = vrd, t;
 }
 
-// A lethal DMT_PLAYERMELEE hit on `target` from `player`, as applyHit builds a weapon's (no weapon index).
-bool killByMelee(uint8_t* player, uint8_t* target, uint8_t* res, core::Vec3 dir) {
-    // The smallest lethal amount: just past the remaining health (en_slHealth +0x574, a CSyncedSLONG whose value is at +0;
-    // both builds). Damage beyond health by more than the enemy's en_dswOverkillDamage blows it up (gibs); just past it,
-    // the enemy dies its own player-melee death (animation, ragdoll). A damage multiplier that leaves it alive gets
-    // another just-lethal hit (at most three).
-    for (int hit = 0; hit < 3; ++hit) {
-        const int32_t health = at<int32_t>(target, 0x574);
-        if (hit && health <= 0) return true;
-        alignas(16) uint8_t dmg[0x100];
-        memset(dmg, 0, sizeof dmg);
-        damageCtor(dmg);
-        using InflictorFn = void(__cdecl*)(uint8_t*, uint8_t*);
-        (*reinterpret_cast<InflictorFn**>(player))[0x3e8 / 8](player, dmg);
-        at<uint32_t>(dmg, 0x78) |= 4;
-        at<int32_t>(dmg, 0x64) = kDmtPlayerMelee;
-        using CheckFn = int(__cdecl*)(uint8_t*, uint8_t*, int, uint64_t);
-        if (!(*reinterpret_cast<CheckFn**>(target))[0x3f0 / 8](target, dmg, kDmtPlayerMelee, at<uint64_t>(res, 0x68))) return hit != 0;
-        at<int32_t>(dmg, 0x68) = -1;
-        at<int32_t>(dmg, 0x60) = std::max(health, 1) + 1;
-        at<float>(dmg, 0x48) = dir.x, at<float>(dmg, 0x4c) = dir.y, at<float>(dmg, 0x50) = dir.z;
-        memcpy(dmg + 0x54, res + 0x28, 12);
-        at<uint64_t>(dmg, 0x80) = at<uint64_t>(res, 0x60);
-        at<uint64_t>(dmg, 0x88) = at<uint64_t>(res, 0x68);
-        at<uint64_t>(dmg, 0x90) = at<uint64_t>(res, 0x50);
-        using ReceiveFn = void(__cdecl*)(uint8_t*, void*, uint8_t*);
-        (*reinterpret_cast<ReceiveFn**>(target))[0x400 / 8](target, scriptCtx(), dmg);
-        if (hit && se4::options::get("melee_prompt_debug", 0)) VRLOG("melee: extra just-lethal hit %d (health was %d)", hit, health);
+// The game's own melee kill, the enemy half only (R31 s5). The player's melee state (0x1405d0c00) runs
+// PlayerMeleeSelection and sends the target the same melee event with +0x34 set; the target answers with its melee-victim
+// state: AI and movement suspended, its own melee animation, and that animation's damage event kills it
+// (DMT_PLAYERMELEE, health restore, corpse). The player's state (placement, lock, player animation) is never created.
+// Runs where the game owns the target (server or single player); the victim state replicates to the clients.
+using RemoteFn = int(__cdecl*)(void* entity);
+using PtrFn = void*(__cdecl*)(void*);
+using EntryFn = uint8_t*(__cdecl*)(void* table, int index);
+using SelectFn = int(__cdecl*)(void* sender, uint8_t* player, uint8_t* target, const char* hull, const char* weapon, const char** anim,
+                               float* placement, uint32_t* showWeapon, int32_t* damage);
+using EventFn = void(__cdecl*)(uint8_t* event);
+using SendFn = int(__cdecl*)(uint8_t* entity, void* sender, uint8_t* event);
+RemoteFn entityRemote;
+CtxFn meleeCtx;
+PtrFn weaponDb, weaponTable;
+EntryFn weaponEntry;
+SelectFn meleeSelect;
+EventFn eventCtor, eventDtor;
+SendFn eventSend;
+
+enum class Victim { Started, NotAuthority, NoWeapon, NoAnimation, Refused };
+Victim nativeVictim(uint8_t* player, uint8_t* target, const char* hull, int index, const char** animOut) {
+    if (entityRemote(target)) return Victim::NotAuthority;
+    void* ctx = meleeCtx();
+    // The weapon's melee name as melee_start finds it: entry(table(db(player)), index) +0x98.
+    void* db = weaponDb(player);
+    void* table = db ? weaponTable(db) : nullptr;
+    uint8_t* entry = table && index >= 0 ? weaponEntry(table, index) : nullptr;
+    if (!entry) return Victim::NoWeapon;
+    alignas(16) uint8_t ev[0x80] = {};
+    eventCtor(ev);
+    const char* empty = at<const char*>(ev, 0x20);  // the engine's empty string (the ctor's default)
+    const char* weapon = at<const char*>(entry, 0x98);
+    const char* anim = empty;
+    float placement[16] = {};
+    uint32_t show = 0;
+    int32_t damage = 0;
+    if (!meleeSelect(ctx, player, target, hull ? hull : empty, weapon, &anim, placement, &show, &damage) || !anim || !*anim) {
+        eventDtor(ev);
+        return Victim::NoAnimation;
     }
-    return true;
+    *animOut = anim;
+    at<int32_t>(ev, 0x1c) = 0;          // not a test
+    at<const char*>(ev, 0x20) = anim;   // the melee animation (the victim's of the same name)
+    at<const char*>(ev, 0x28) = weapon;
+    at<int32_t>(ev, 0x30) = damage;     // 0 from the selection: the animation's damage event kills
+    at<int32_t>(ev, 0x34) = 1;          // to the victim
+    at<float>(ev, 0x38) = 0.0f;         // start now (the native delay is the player's walk to the placement)
+    at<uint8_t*>(ev, 0x40) = player;
+    eventSend(target, ctx, ev);
+    const bool ok = at<int32_t>(ev, 0x18) != 0;
+    eventDtor(ev);
+    return ok ? Victim::Started : Victim::Refused;
 }
 
 // The use action's melee_start call (melee_find called just before it): the canned kill. Skipped for VR players,
@@ -416,9 +437,18 @@ void onVrdTick(void** vrdp) {
                         VRLOG("melee: debug swing %s at %.1f m/s, cast %d hit %p (target %p)", r ? "left" : "right", speed, i, h ? handleEntity(h) : nullptr,
                               static_cast<void*>(target));
                     if (!h || handleEntity(h) != target) continue;
-                    killed = killByMelee(player, target, res, dir);
-                    VRLOG("melee: prompted kill of %p (%s) by a %s-hand swing at %.1f m/s (%s)%s", static_cast<void*>(target), anim ? anim : "?",
-                          r ? "left" : "right", speed, i ? "head line" : "hand path", killed ? "" : " - refused by the target's damage check");
+                    const char* victimAnim = "";
+                    const Victim v = nativeVictim(player, target, anim, index, &victimAnim);
+                    killed = v == Victim::Started;
+                    if (v != Victim::NotAuthority)
+                        VRLOG("melee: %s-hand swing at %.1f m/s (%s) into %p: %s %s", r ? "left" : "right", speed, i ? "head line" : "hand path",
+                              static_cast<void*>(target),
+                              killed                       ? "native melee death started:"
+                              : v == Victim::NoWeapon      ? "no weapon entry for index"
+                              : v == Victim::NoAnimation   ? "PlayerMeleeSelection gave no animation"
+                                                           : "the target refused the melee event",
+                              killed ? victimAnim : "");
+                    else killed = true;  // a client: the server runs the kill from the replicated hands
                 }
                 resDtor(res + 0xa8);
                 if (void* rr = at<void*>(res, 0x50)) refRelease(rr, res + 0x50);
@@ -482,8 +512,17 @@ void installPrompted() {
     auto* find = b.at<uint8_t>(se4::gen::melee_find);
     auto* start = b.at<uint8_t>(se4::gen::melee_start);
     toHandle = reinterpret_cast<ToHandleFn>(b.at<void>(se4::gen::entity_to_handle));
-    scriptCtx = reinterpret_cast<CtxFn>(b.at<void>(se4::gen::script_ctx));
-    if (!find || !start || !toHandle || !scriptCtx || !handleEntity || !segmentCast || !resCtor || !damageCtor) {
+    entityRemote = reinterpret_cast<RemoteFn>(b.at<void>(se4::gen::melee_entity_remote));
+    meleeCtx = reinterpret_cast<CtxFn>(b.at<void>(se4::gen::melee_script_ctx));
+    weaponDb = reinterpret_cast<PtrFn>(b.at<void>(se4::gen::melee_weapon_db));
+    weaponTable = reinterpret_cast<PtrFn>(b.at<void>(se4::gen::melee_weapon_table));
+    weaponEntry = reinterpret_cast<EntryFn>(b.at<void>(se4::gen::melee_weapon_entry));
+    meleeSelect = reinterpret_cast<SelectFn>(b.at<void>(se4::gen::melee_select));
+    eventCtor = reinterpret_cast<EventFn>(b.at<void>(se4::gen::melee_event_ctor));
+    eventDtor = reinterpret_cast<EventFn>(b.at<void>(se4::gen::melee_event_dtor));
+    eventSend = reinterpret_cast<SendFn>(b.at<void>(se4::gen::melee_event_send));
+    if (!find || !start || !toHandle || !handleEntity || !segmentCast || !resCtor || !entityRemote || !meleeCtx || !weaponDb ||
+        !weaponTable || !weaponEntry || !meleeSelect || !eventCtor || !eventDtor || !eventSend) {
         VRLOG("melee: build lacks the prompted-melee symbols - prompted melee stays the button");
         return;
     }

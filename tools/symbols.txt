@@ -237,3 +237,12 @@ manual:wlink_snapshot     # R29: hooked: the mod rows (renamed links) take no sn
 manual:melee_find          # R30: player melee target finder (sets PNF_PLAYER_MELEE_AVAILABLE)
 manual:melee_start         # R30: hooked: the canned melee kill; skipped for VR players from the use action
 manual:melee_prompt_site   # R30: the melee HUD message's "{plcmdUse}" argument (lea r9 at +0xf)
+manual:melee_entity_remote # R31: nonzero for a client replica (melee_start's authority test)
+manual:melee_script_ctx    # R31: event sender/context
+manual:melee_weapon_db     # R31: player -> weapon params owner
+manual:melee_weapon_table  # R31: owner -> weapon table
+manual:melee_weapon_entry  # R31: (table, index) -> entry, +0x98 melee weapon name
+manual:melee_event_ctor    # R31: player melee event ctor (to the victim: +0x34 = 1)
+manual:melee_event_send    # R31: deliver an event to an entity's state machine
+manual:melee_event_dtor    # R31: player melee event dtor
+manual:melee_select        # R31: PlayerMeleeSelection call (victim animation name)

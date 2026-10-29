@@ -68,15 +68,57 @@ custom-engine page, lab runs on the isolated SS4 copy (lab-only option `lab_fov_
 - options.txt `foveation=-1|0|1|2` (auto, off, fixed, eye-tracked) overrides the saved choice at startup.
 - Lab: `lab_fov_gaze=1` simulates an eye tracker looking up-left (tangents -0.4, +0.3).
 
-## 5. Swing kills: the enemy's own death
+## 5. Swing kills: the game's own melee kill, enemy half only
 
-- R30 dealt 2 x health + 10. Characters have an overkill threshold (`en_dswOverkillDamage`, `sosd_dswOverkillDamage`);
-  damage that far past health can blow the enemy up instead of playing its death animation.
-- Now the hit is just lethal: remaining health + 1, `DMT_PLAYERMELEE`. A damage multiplier that leaves the enemy alive
-  gets another just-lethal hit (at most three). Gibs and kill credit stay native.
-- Eligibility is unchanged from R30: only the target the native melee finder chose (the enemy that shows the prompt:
-  hostile, non-decorative, in range and view, stunned where the enemy requires it, listed in
-  `PlayerMeleeSelection.lua` for the held weapon) can be killed this way.
+- **Superseded:** R30's own `DMT_PLAYERMELEE` damage (2 x health + 10, then health + 1). It reused the game's
+  prompt, but the kill was the mod's. It also skipped the enemy's melee death animation.
+- **The native kill is two halves:**
+  - `melee_start` sends the player melee event (ctor `0x140250640`, vtable `0x1416ad780`) to the player's state
+    machine.
+  - The player melee handler (`0x1405d0c00`) runs `melee_select` (`0x1404208f0`, `PlayerMeleeSelection`). It then
+    sends the **same event to the target** with `+0x34 = 1`.
+  - The target answers with its **melee-victim state** (ctor `0x1405d44d0`, vtable `0x1419575f0`) and sets
+    `+0x18` (accepted).
+  - Only then does the player handler set `en_pnfNetFlags` `0x80000` and create the **player's melee state**
+    (`0x1405d3190`: placement, lock, player animation).
+- **The victim state** (handlers at vtable +0x40 / +0x48):
+  - On enter, it suspends the AI and movement.
+  - When the start time is reached (now + `+0x38` seconds), it plays its melee animation, which has the name the
+    selection returned.
+  - The **damage event inside the enemy's own animation** applies `DMT_PLAYERMELEE` (`0x1405d4d60`, the attacker
+    as inflictor) and marks the body "corpse". If the animation has no damage event, the damage is forced on exit
+    ("Player melee damage is specified, but matching anim event is missing ...").
+  - The selection's damage output is always 0, so the animation event does the kill.
+  - The state serialises (+0x58 / +0x88), so it replicates.
+- **The mod's event fields** (`nativeVictim` in `src/se4/melee.cpp`), built exactly like the player handler builds
+  its target event:
+
+  | field | value |
+  |---|---|
+  | `+0x1c` | 0 |
+  | `+0x20` | the selected animation |
+  | `+0x28` | the weapon's melee name, `melee_weapon_entry(table, index)+0x98` as in `melee_start` |
+  | `+0x30` | damage 0 |
+  | `+0x34` | 1 |
+  | `+0x38` | 0 (the native delay is the player's walk to the placement) |
+  | `+0x40` | the player |
+
+  - It is sent with `melee_event_send` to the target.
+  - It runs only where the game owns the target (`melee_entity_remote` == 0: server or single player). The
+    victim state replicates to clients.
+  - The player state is never created: no placement, lock or player animation.
+- **New symbols** (all four exes; `signatures.json`):
+  - `melee_entity_remote`, `melee_script_ctx`, `melee_weapon_db`, `melee_weapon_table`, `melee_weapon_entry`,
+    `melee_event_ctor`, `melee_event_send` and `melee_event_dtor` are calls 17 / 18 / 21 / 22 / 25 / 34 / 35 / 36
+    of `melee_start` (the same layout in SS4 and SM).
+  - `melee_select` is the Sam4 signature, with an SM alt signature (the only function that references the
+    "PlayerMeleeSelection" string).
+- **Eligibility is unchanged from R30.** Only the target the native finder chose can be killed: the enemy that
+  shows the prompt, with the same stun rules and `PlayerMeleeSelection.lua`.
+- **Lab** (`melee_prompt_lab.sh`, which now re-places the test enemy only when it is off its spot):
+  - SS4 Forum and SM Refinery: `native melee death started: Processed_Melee_Kill_02`.
+  - SS4 captures: the Processed plays its melee-kill animation in place and collapses dead, while the player stays
+    free.
 
 ## 6. Lab (2026-10-27, SS4 lab copy, Pompeii start, still head, 1920x2160 per eye, RTX 4090, simulated Monado)
 
@@ -104,9 +146,6 @@ Eye-tracked runs use `lab_fov_gaze=1` (gaze up-left; pattern centre 0.32 / 0.37 
   for builds or settings that use the double-wide holder.
 - **This scene is light for a 4090** (3.4 ms for two 4-MP eyes). The saving grows with shading cost: headset
   resolution, dense scenes, slower GPUs.
-- **Prompted melee (Forum, `melee_prompt_lab.sh`):** 4 swing kills, each with one just-lethal hit (no extra hits
-  needed). The prompt still reads "Melee" with no button. The lab keeps the next enemy in front, so the death
-  itself is hidden in the captures.
 - **VR suites with `foveation=1`:** SS4 21 passed and SM 21 passed, 0 failed (the layer now hooks every
   `vkCmdBindPipeline`).
 - **Not verified in the lab:** the "Foveated Rendering" menu row. Keyboard Escape and the controller's Start

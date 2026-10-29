@@ -1207,5 +1207,63 @@
   "src": "0x1400b29d4",
   "len": 32,
   "_note": "HUD message: lea rcx,\"ETRSMeleeMessage=%1 Melee\"; call translate; mov rdx,rax; lea r9,\"{plcmdUse}\" (+0xf) shown while PNF_PLAYER_MELEE_AVAILABLE (R30)"
+ },
+ "melee_entity_remote": {
+  "call_of": "melee_start",
+  "index": 17,
+  "limit": 768,
+  "_note": "int (entity): nonzero on a client replica (not the authority); melee_start's authority test (R31 s5)"
+ },
+ "melee_script_ctx": {
+  "call_of": "melee_start",
+  "index": 18,
+  "limit": 768,
+  "_note": "() -> the event sender/context melee_start passes to the melee event (R31 s5)"
+ },
+ "melee_weapon_db": {
+  "call_of": "melee_start",
+  "index": 21,
+  "limit": 768,
+  "_note": "(player) -> its weapon params owner; melee_start: entry = melee_weapon_entry(melee_weapon_table(this), index), name at entry+0x98 (R31 s5)"
+ },
+ "melee_weapon_table": {
+  "call_of": "melee_start",
+  "index": 22,
+  "limit": 768,
+  "_note": "(owner) -> the player's weapon table (R31 s5)"
+ },
+ "melee_weapon_entry": {
+  "call_of": "melee_start",
+  "index": 25,
+  "limit": 768,
+  "_note": "(table, int index) -> weapon entry; +0x98 the weapon's melee name (PlayerMeleeSelection playerWeapon) (R31 s5)"
+ },
+ "melee_event_ctor": {
+  "call_of": "melee_start",
+  "index": 34,
+  "limit": 768,
+  "_note": "(event*) the player melee event (vtable 0x1416ad780): +0x18 accepted, +0x1c test, +0x20 anim, +0x28 weapon, +0x30 damage, +0x34 to the victim, +0x38 delay s, +0x40 attacker, +0x48 hull (R31 s5)"
+ },
+ "melee_event_send": {
+  "call_of": "melee_start",
+  "index": 35,
+  "limit": 768,
+  "_note": "bool (entity, sender, event*): delivers an event to the entity's state machine (R31 s5)"
+ },
+ "melee_event_dtor": {
+  "call_of": "melee_start",
+  "index": 36,
+  "limit": 768,
+  "_note": "(event*) (R31 s5)"
+ },
+ "melee_select": {
+  "src": "0x1404208f0",
+  "len": 64,
+  "_note": "int (sender, player, target, hull, weapon, const char** anim, float placement[7], uint* showWeapon, int* damage): runs PlayerMeleeSelection for the player melee state (0x1405d0c00); damage is always 0 (the victim animation's damage event kills) (R31 s5) SM: the only reference to the \"PlayerMeleeSelection\" string (0x140420cb2), alt signature.",
+  "alt": {
+   "build": "SamSM",
+   "src": "0x140420990",
+   "len": 64
+  }
  }
 }

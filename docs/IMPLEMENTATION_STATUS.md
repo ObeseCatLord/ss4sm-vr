@@ -516,9 +516,10 @@
   - The native melee finder now answers for VR players (one NOP), so the prompt appears on exactly the enemies the
     game allows. In VR the prompt shows no button, and the Use button no longer starts the canned kill.
   - A hand swing through the prompted enemy kills it. There is no player animation, lock or placement.
-  - **Change (R31 s5):** the hit is now just lethal (health + 1), so the enemy plays its own death instead of an
-    overkill blow-up (`en_dswOverkillDamage`).
-  - Lab: Forum, 4 kills, one hit each.
+  - **Change (R31 s5):** a swing now starts the game's own melee kill, enemy half only. The enemy gets the melee
+    event the native player handler sends its target, plays its melee-kill animation, and that animation's damage
+    event kills it. No mod damage, no player placement, lock or animation.
+  - Lab: `Processed_Melee_Kill_02` on SS4 Forum and SM Refinery.
 - **Foveated rendering (R31):**
   - **Default:** eye-tracked on headsets whose runtime offers `XR_EXT_eye_gaze_interaction` (Steam Frame and
     others); otherwise off, with Fixed as the option.

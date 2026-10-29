@@ -204,7 +204,16 @@
   "wlink_snapshot": "0x14015ecd0",
   "melee_find": "0x14041ff20",
   "melee_start": "0x140473b40",
-  "melee_prompt_site": "0x1400b29d4"
+  "melee_prompt_site": "0x1400b29d4",
+  "melee_select": "0x1404208f0",
+  "melee_entity_remote": "0x140ba6e30",
+  "melee_script_ctx": "0x1411223e0",
+  "melee_weapon_db": "0x14024c710",
+  "melee_weapon_table": "0x140966540",
+  "melee_weapon_entry": "0x1409655a0",
+  "melee_event_ctor": "0x140250640",
+  "melee_event_send": "0x140ba6bd0",
+  "melee_event_dtor": "0x14115adb0"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -402,7 +411,16 @@
   "wlink_snapshot": "0x140161680",
   "melee_find": "0x140422640",
   "melee_start": "0x140476270",
-  "melee_prompt_site": "0x1400b5324"
+  "melee_prompt_site": "0x1400b5324",
+  "melee_select": "0x140423010",
+  "melee_entity_remote": "0x140ba97e0",
+  "melee_script_ctx": "0x141124d30",
+  "melee_weapon_db": "0x14024edd0",
+  "melee_weapon_table": "0x140968c70",
+  "melee_weapon_entry": "0x140967cd0",
+  "melee_event_ctor": "0x140252d00",
+  "melee_event_send": "0x140ba9580",
+  "melee_event_dtor": "0x14115d700"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -609,7 +627,16 @@
   "wlink_snapshot": "0x14015f980",
   "melee_find": "0x14041fff0",
   "melee_start": "0x140474140",
-  "melee_prompt_site": "0x1400b2bb4"
+  "melee_prompt_site": "0x1400b2bb4",
+  "melee_entity_remote": "0x140ba7510",
+  "melee_script_ctx": "0x141122ba0",
+  "melee_weapon_db": "0x14024c330",
+  "melee_weapon_table": "0x140966e40",
+  "melee_weapon_entry": "0x140965e90",
+  "melee_event_ctor": "0x140250260",
+  "melee_event_send": "0x140ba72b0",
+  "melee_event_dtor": "0x14115b5f0",
+  "melee_select": "0x140420990"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -807,6 +834,15 @@
   "wlink_snapshot": "0x140162320",
   "melee_find": "0x140422700",
   "melee_start": "0x140476860",
-  "melee_prompt_site": "0x1400b54f4"
+  "melee_prompt_site": "0x1400b54f4",
+  "melee_entity_remote": "0x140ba9eb0",
+  "melee_script_ctx": "0x1411254e0",
+  "melee_weapon_db": "0x14024e9e0",
+  "melee_weapon_table": "0x140969560",
+  "melee_weapon_entry": "0x1409685b0",
+  "melee_event_ctor": "0x140252910",
+  "melee_event_send": "0x140ba9c50",
+  "melee_event_dtor": "0x14115df30",
+  "melee_select": "0x1404230a0"
  }
 }

@@ -60,7 +60,8 @@ lab runs on the isolated lab copies (lab-only options `upscale_debug_view`, `ups
   "Melee" with no button.
 - **Button.** In VR, `melee_start` called from a use action (the finder's call within 0x60 bytes before the call) is
   skipped for players with CPlayerVRData. `DoUseMeleeAttack` (scripts) and desktop players keep it.
-- **Swing.**
+- **Swing.** (Superseded by R31 s5: the swing now starts the game's own melee kill, enemy half only, instead of the
+  damage below.)
   - Every CPlayerVRData step, while the flag is set, the finder's target is taken.
   - A hand moving faster than `melee_prompt_speed` (default 1.5 m/s, relative to the head, so walking does not count)
     is swept with the segment cast, along the hand's path and along the head-to-hand line.

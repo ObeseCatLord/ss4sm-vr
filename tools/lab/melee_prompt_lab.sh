@@ -48,7 +48,10 @@ RunAsync(function()
       if tick % 120 == 0 then cur = cur % #alive + 1 end
       for i, e in ipairs(alive) do
         local at = (i == (cur - 1) % #alive + 1) and 0.9 or 30
-        e:SetPlacement(mthQuatVect(mthDirectionToQuaternion(d * -1), p + d * at))
+        -- re-placed only when off its spot, so a melee death animation (R31) can play where it stands
+        if mthLenV3f(e:GetPlacement():GetVect() - (p + d * at)) > 0.6 then
+          e:SetPlacement(mthQuatVect(mthDirectionToQuaternion(d * -1), p + d * at))
+        end
         if at < 1 then
           if STUN and tick % 60 == 1 and not e:IsStunned() then pcall(function() e:InflictDamage(math.floor(e:GetHealth() * 0.3)) end) end
           if tick % 30 == 0 then
@@ -84,12 +87,12 @@ for i in $(seq 1 150); do
   $ID $H $LH rpos=-0.25,1.25,-0.75 >/dev/null; sleep 0.15
   [ $i = 2 ] && "$HERE/capture.sh" Monado "$OUT/swing.png" 50
   # the first swing kill: a few frames of the enemy's death; the prompt (no button glyph) while it is shown
-  if [ -z "$deathcap" ] && grep -aq 'melee: prompted kill' "$MODLOG"; then
+  if [ -z "$deathcap" ] && grep -aq 'native melee death started' "$MODLOG"; then
     deathcap=1
-    for k in 1 2 3 4; do "$HERE/capture.sh" Monado "$OUT/death$k.png" 100; sleep 0.25; done
+    for k in 1 2 3 4 5 6; do "$HERE/capture.sh" Monado "$OUT/death$k.png" 100; sleep 0.4; done
   fi
   if [ -z "$promptcap" ] && tail -1 "$MODLOG" | grep -aq 'prompt shown'; then promptcap=1; "$HERE/capture.sh" Monado "$OUT/prompt.png" 100; fi
 done
 rm -f "$LUA"
-grep -aE 'melee: (prompt|prompted|Use/Melee)|melee:.*glyph|prompted melee' "$MODLOG" | tail -20
-echo "kills: $(grep -ac 'melee: prompted kill' "$MODLOG")"
+grep -aE 'melee: (prompt|prompted|Use/Melee|.*swing at)|melee:.*glyph|prompted melee' "$MODLOG" | tail -20
+echo "native melee deaths started: $(grep -ac 'native melee death started' "$MODLOG")"
