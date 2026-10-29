@@ -535,3 +535,12 @@
   - Not lab-verified: the menu row (the pause menu did not open in that session).
 - **Lab options:** `lab_eye_dump=<s>` (left eye written to `ss4smvr/eye_dump.ppm`), `lab_fov_gaze=1` (simulated
   gaze), `lab_fov_trace=1`.
+- **On-weapon ammo counters (R32):**
+  - **Engine counter:** SS4 still runs the engine's VR ammo counter (Fusion's), but only the minigun's and grenade
+    launcher's `_VR` meshes have the counter surface. Those two keep the engine's own counter (not yet seen in the
+    lab).
+  - **Every other gun:** the mod draws the same values with the same rules (three digits, cyan, red blinking below
+    10 %) as a quad on top of the weapon above the grip. One OpenXR quad layer per hand.
+  - **Not shown:** infinite-ammo and melee weapons.
+  - **Lab:** the double shotgun shows 40, then 36 after firing, matching the HUD.
+  - **Limits:** the quad is not hidden by the hand. Spots on other weapons are not lab-checked.

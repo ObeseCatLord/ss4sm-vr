@@ -2,6 +2,7 @@
 //
 // Attach runs inside the proxy's DllMain (loader lock, process start). Keep it to the build check and
 // one MinHook hook. Never create threads here: on Wine that stalls game startup (bisected 2026-10-23).
+#include "se4/ammo_counter.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/procaddr.hpp"
@@ -131,6 +132,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         if (!(skip & 0x200)) scope::install();
         if (!(skip & 0x800)) arms::install();
         if (!(skip & 0x400)) hands::install();
+        if (!(skip & 0x80000)) ammo::install();
         if (!(skip & 0x1000)) gadgets::install();
         if (!(skip & 0x2000)) wheel_panel::install();
         if (!(skip & 0x4000)) hud_vr::install();

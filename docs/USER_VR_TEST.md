@@ -66,6 +66,12 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
    choice is saved as `foveation=` in `ss4smvr/upscaler_menu.txt`. With eye tracking, the sharp area should follow
    your gaze with no visible lag. Tuning: `foveation_fixed_inner/outer` (percent of the image height),
    `foveation_coarse=4` (4x4 at the far edge: faster, blockier).
+7e2. Ammo counters (R32): hold each gun and look at the top of it, just above your hand. A small cyan readout shows
+    the gun's ammo, the same as the HUD, and turns red and blinks below 10 % of the maximum. The pistol (infinite
+    ammo) and melee weapons show none. The minigun and grenade launcher should show the game's own counter, built
+    into their VR models. Report weapons where the readout floats off the gun or sits in the way of aiming:
+    `ammo_counter_up_cm`, `ammo_counter_back_cm` and `ammo_counter_size_cm` move or size it for all weapons, and
+    per-weapon spots go into `kSpots` in `src/se4/ammo_counter.cpp`.
 7f. Hands: with a one-handed hold, the left arm follows the left controller and the controller model is hidden.
     The fingers curl with the trigger (index finger) and the touches (thumb). Bring the left hand to the rifle's
     foregrip and squeeze: the rifle should follow the line from the right hand to the left hand. Releasing the

@@ -20,6 +20,7 @@
 #include "vk/eye_images.hpp"
 #include "vk/foveation.hpp"
 #include "up/integrate.hpp"
+#include "vk/ammo_layer.hpp"
 #include "vk/scope_layer.hpp"
 #include "vk/gpu_timing.hpp"
 #include "se4/scope.hpp"
@@ -205,6 +206,7 @@ void setupDevice(VkPhysicalDevice pd, uint32_t family) {
     upint::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
     gfxmenu::onUpscalerReady();  // menu mode (desktop or VR): DLSS / FSR 3.1 in the Rescaling Filter list, the sharpening slider
     if (!g.flat) scopelayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
+    if (!g.flat) ammolayer::onDevice(g.instance, realGIPA, pd, g.device, realGDPA);
 }
 
 // Desktop play with an upscaler: the game's own device plus the upscaler's device extensions; no XR, no foveation.
@@ -689,6 +691,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
     const eyes::ScopeFrame scopeFrame = eyes::takeScope();
     const scope::Layer scopeLayer = scope::layer(xr::input().hand(1).grip, xr::input().hand(0).grip);
     const bool scopeOn = stereo && scopeLayer.visible && scopelayer::begin(scopeFrame);
+    const bool ammoOn = stereo && ammolayer::begin() > 0;
     TRACE("mirror: acquired %d idx %u, submit", haveImage, idx);
     VkSemaphore waitOn = VK_NULL_HANDLE;
     VkResult result;
@@ -765,6 +768,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
             DFN(vkCmdPipelineBarrier)(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
         }
         if (scopeOn) scopelayer::record(cb, scopeFrame, scopeLayer.reticle);
+        if (ammoOn) ammolayer::record(cb, s);
         DFN(vkEndCommandBuffer)(cb);
         std::vector<VkPipelineStageFlags> stages(pi->waitSemaphoreCount, VK_PIPELINE_STAGE_TRANSFER_BIT);
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -790,6 +794,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
     if (haveImage) rt.release(m.sc);
     if (stereo) rt.release(pj.sc);
     if (scopeOn) scopelayer::end();
+    if (ammoOn) ammolayer::end();
     TRACE("mirror: endFrame");
 
     // Projection layer: the engine rendered each eye with that eye's horizontal FOV and the vertical FOV
@@ -846,10 +851,24 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
                   p.position.z, p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w, scopeQuad.size.width, hp.x, hp.y, hp.z);
         }
     }
-    const XrCompositionLayerBaseHeader* layers[] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
-                                                           : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad),
-                                                    reinterpret_cast<XrCompositionLayerBaseHeader*>(&scopeQuad)};
-    bool ended = rt.endFrame(fs, layers, (stereo || (haveImage && m.placed)) ? (scopeOn ? 2 : 1) : 0);
+    XrCompositionLayerQuad ammoQuads[2];
+    const int ammoN = ammoOn ? ammolayer::layers(rt.playSpace(), ammoQuads) : 0;
+    const XrCompositionLayerBaseHeader* layers[4] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
+                                                            : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
+    uint32_t layerCount = 1;
+    if (scopeOn) layers[layerCount++] = reinterpret_cast<XrCompositionLayerBaseHeader*>(&scopeQuad);
+    for (int i = 0; i < ammoN; ++i) layers[layerCount++] = reinterpret_cast<XrCompositionLayerBaseHeader*>(&ammoQuads[i]);
+    if (ammoN) {
+        static int logged;
+        if (!logged++) {  // the first frame's quad, for lab checks
+            const auto& hp = rt.views().head.position;
+            const auto& p = ammoQuads[0].pose;
+            VRLOG("ammo: %d quad(s), first at %.3f %.3f %.3f q %.3f %.3f %.3f %.3f size %.3f (head %.3f %.3f %.3f)", ammoN, p.position.x,
+                  p.position.y, p.position.z, p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w, ammoQuads[0].size.width, hp.x,
+                  hp.y, hp.z);
+        }
+    }
+    bool ended = rt.endFrame(fs, layers, (stereo || (haveImage && m.placed)) ? layerCount : 0);
     static uint32_t frames, imaged, submitted;
     ++frames;
     imaged += haveImage;

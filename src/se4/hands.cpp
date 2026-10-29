@@ -1,3 +1,4 @@
+#include "se4/ammo_counter.hpp"
 #include "se4/hands.hpp"
 #include "core/math.hpp"
 #include "se4/build.hpp"
@@ -215,6 +216,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
             VRLOG("hands: %s hand weapon %s", rightHand ? "right" : "left", file ? file : "?");
         }
     }
+    if (params) ammo::onWeaponStep(weapon, player, rightHand);  // on-weapon ammo counter (src/se4/ammo_counter.hpp)
     const bool native = params && at<int32_t>(params, kTwoHanded) != 0;
     // Only a right-hand weapon takes the left hand as its support hand (a left weapon is the dual-wield one).
     // The off hand must be free: no second weapon in it (dual wielding).
