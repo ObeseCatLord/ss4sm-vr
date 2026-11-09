@@ -26,7 +26,7 @@ int main() {
            !strcmp(menuName(MenuUpscaler::Fsr), "fsr"));
 
     // State file round trip.
-    char buf[256];
+    char buf[1024];  // as gfx_menu.cpp saveState
     for (MenuUpscaler c : {MenuUpscaler::Off, MenuUpscaler::Dlss, MenuUpscaler::Fsr}) {
         const int n = formatMenuState(c, buf, sizeof buf);
         assert(n > 0 && n < int(sizeof buf) && buf[n - 1] == '\n');
@@ -131,6 +131,38 @@ int main() {
         int r = 7;
         assert(!swayFromValue("ss4smvr:sway", r) && !swayFromValue("ss4smvr:sway_limited", r) && !swayFromValue(nullptr, r) && r == 7 &&
                !swayValue(1) && !swayValue(2));
+    }
+    // VR Controls (R33): turning and ammo counter keys.
+    {
+        MenuState st;
+        assert(st.turnMethod == -1 && st.turnHand == -1 && st.turnSpeed == -1 && st.turnVignette == -1 && st.ammoCounter == -1);
+        assert(parseMenuState("turn_method=snap\nturn_hand=left\nturn_speed=200\nturn_vignette=1\nammo_counter=0\n", st));
+        assert(st.turnMethod == 2 && st.turnHand == 1 && st.turnSpeed == 200 && st.turnVignette == 1 && st.ammoCounter == 0);
+        MenuState bad;
+        assert(!parseMenuState("turn_method=fast\nturn_hand=up\nturn_speed=5\nturn_speed=1000\nturn_vignette=2\nammo_counter=on\n", bad));
+        assert(bad.turnMethod == -1 && bad.turnHand == -1 && bad.turnSpeed == -1 && bad.turnVignette == -1 && bad.ammoCounter == -1);
+        char b2[1024];  // as gfx_menu.cpp saveState
+        const int n = formatMenuState(st, b2, sizeof b2);
+        assert(n > 0 && n < int(sizeof b2));
+        MenuState back;
+        assert(parseMenuState(b2, back) && back.turnMethod == 2 && back.turnHand == 1 && back.turnSpeed == 200 && back.turnVignette == 1 &&
+               back.ammoCounter == 0);
+        {  // every key set, longest values: still fits saveState's buffer
+            MenuState full;
+            assert(parseMenuState("upscaler=dlss\nvr_upscaler=dlss\nvr_render=100\nsharpness=100\nfoliage_sway=game\n"
+                                  "foveation=fixed\nturn_method=smooth\nturn_hand=both\nturn_speed=720\nturn_vignette=1\n"
+                                  "ammo_counter=1\n",
+                                  full));
+            char b3[1024];
+            const int m = formatMenuState(full, b3, sizeof b3);
+            assert(m > 0 && m < int(sizeof b3));
+        }
+        for (int h = 0; h < 4; ++h) {
+            MenuState one;
+            char line[64];
+            snprintf(line, sizeof line, "turn_hand=%s\n", turnHandName(h));
+            assert(parseMenuState(line, one) && one.turnHand == h);
+        }
     }
     // Foveation: state key (absent = automatic) and row values.
     {

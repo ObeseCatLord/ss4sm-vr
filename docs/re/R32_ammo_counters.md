@@ -65,3 +65,27 @@ Sources:
   hand. It read 40 and then 36 after the shots, the same as the HUD.
 - **Bug found and fixed in the lab:** the mirror path releases the layer's image before it builds the layer list,
   so `layers()` keeps its own per-frame flag.
+
+## 4. In the scene (`src/up/shaders/counter.comp`, `src/up/integrate.cpp`)
+
+Fusion's counter is a mesh surface, so it is lit, tonemapped and hidden by whatever is in front of it. The quad layers
+of §2 are not. The counter is now drawn into each eye's scene instead; the quad layers stay as the fallback.
+
+- **Where.** At the post-processing canvas barrier (the same hook as the upscaler, `upint::onImageBarrier`), a compute
+  dispatch per visible hand writes into the eye's HDR canvas (rgba16f; storage usage is added when the canvas image is
+  created). With an upscaler it runs after DLSS / FSR, on the output-size canvas.
+- **How.**
+  - Each pixel's view ray (the eye's unjittered tangents) meets the counter's quad, given in eye space (the weapon-step
+    world placement through the eye's gfx camera).
+  - The hit is depth-tested against the scene depth (reverse-Z, decoded with the engine's depth partition as in
+    `motion.comp`), so a hand, the gun's own sight or a wall in front hides it.
+  - The readout (the same layout as `core::ammo::rasterize`) is blended in as an emissive panel: lit segments at
+    `ammo_counter_glow` / 100 times the base colour (default 4.0), so bloom picks them up. 2x2 samples per pixel.
+- **Single pass.** Both eyes are post-processed with device eye 0 and one gfx camera, and the drawport is not an eye
+  target. About 18 PP dispatches run per frame and only 2 read the canvas: the eye is the frame's n-th
+  canvas-reading barrier, the right eye first (lab trace; `ammo_counter_sp_first`, `ammo_counter_sp_trace=1`). The
+  count resets at each VR frame begin.
+- **Fallback.** The quad layers are skipped while the scene pass has drawn within the last 200 ms.
+- **Options:** `ammo_counter_scene` (default 1; 0 = quad layers only), `ammo_counter_glow`.
+- **Lab (single pass, SS4 Pompeii, `lab/runs/ammo15`):** the counter is in both eyes on the double shotgun and is
+  hidden behind the gun's hammer. Not yet visually checked: the DLSS / FSR path.

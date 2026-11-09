@@ -16,6 +16,11 @@ struct TurnData {
 TurnData* g_turn;
 float g_speed = 150.0f;  // deg/s (smooth)
 bool g_snap;
+int g_hand = 2;          // 0 none, 1 left stick, 2 right stick, 3 either (the vr_iRotationController values)
+bool g_vignette;
+// The VR Controls menu's saved choices (gfxmenu::prepare, before install); options.txt snap_turn / turn_speed /
+// turn_vignette win over them.
+int g_startMethod = -1, g_startHand = -1, g_startSpeed = -1, g_startVignette = -1;
 
 int32_t rel32To(const void* target, const uint8_t* next) {
     return int32_t(reinterpret_cast<intptr_t>(target) - reinterpret_cast<intptr_t>(next));
@@ -41,9 +46,11 @@ bool install() {
     if (!p1 || !p2 || !p3) return VRLOG("turn: build lacks the turn sites - no native turning"), false;
     g_turn = reinterpret_cast<TurnData*>(se4::patch::allocNear(p3, sizeof(TurnData)));
     if (!g_turn) return VRLOG("turn: no memory near the image"), false;
-    g_snap = se4::options::get("snap_turn", 0) != 0;
-    g_speed = float(se4::options::get("turn_speed", 150));
-    *g_turn = {g_snap ? 2 : 1, 2, se4::options::get("turn_vignette", 0) ? 1 : 0, 0.0f};
+    g_snap = se4::options::has("snap_turn") ? se4::options::get("snap_turn", 0) != 0 : g_startMethod == 2;
+    g_speed = float(se4::options::has("turn_speed") ? se4::options::get("turn_speed", 150) : g_startSpeed > 0 ? g_startSpeed : 150);
+    g_vignette = se4::options::has("turn_vignette") ? se4::options::get("turn_vignette", 0) != 0 : g_startVignette == 1;
+    if (g_startHand >= 0) g_hand = g_startHand;
+    *g_turn = {g_snap ? 2 : 1, 2, g_vignette ? 1 : 0, 0.0f};
     // P3: `mov rax,[rbx+0x10]; movss xmm8,[rax+0x14]` -> `movss xmm8,[rip+axis]; nop` (rax is dead after it).
     static const uint8_t kStick[10] = {0x48, 0x8B, 0x43, 0x10, 0xF3, 0x44, 0x0F, 0x10, 0x40, 0x14};
     uint8_t load[10] = {0xF3, 0x44, 0x0F, 0x10, 0x05, 0, 0, 0, 0, 0x90};
@@ -54,14 +61,38 @@ bool install() {
         return VRLOG("turn: stick load at %p not as expected - no native turning", static_cast<void*>(p3)), false;
     const bool ok1 = retargetRead(p1, 0x15, &g_turn->method), ok2 = retargetRead(p2, 0x05, &g_turn->role);
     const bool ok4 = p4 && retargetRead(p4, 0x05, &g_turn->comfort);
-    VRLOG("turn: native turn patched (%s %.0f deg/s, right hand, vignette %d; method %d role %d comfort %d at %p %p %p %p)",
-          g_snap ? "snap" : "smooth", g_speed, g_turn->comfort, int(ok1), int(ok2), int(ok4), static_cast<void*>(p1),
-          static_cast<void*>(p2), static_cast<void*>(p3), static_cast<void*>(p4));
+    // The VR Controls screen enables Rotation Sensitivity (smooth) or Rotation Angle (snap) from the same cvar (R33).
+    uint8_t* p5 = b.at<uint8_t>(se4::gen::vrmenu_rot_method_read);
+    const bool ok5 = p5 && retargetRead(p5, 0x0D, &g_turn->method);
+    static const char* const kHands[4] = {"no turning", "left stick", "right stick", "either stick"};
+    VRLOG("turn: native turn patched (%s %.0f deg/s, %s, vignette %d; method %d role %d comfort %d menu %d at %p %p %p %p %p)",
+          g_snap ? "snap" : "smooth", g_speed, kHands[g_hand & 3], g_turn->comfort, int(ok1), int(ok2), int(ok4), int(ok5),
+          static_cast<void*>(p1), static_cast<void*>(p2), static_cast<void*>(p3), static_cast<void*>(p4), static_cast<void*>(p5));
     return true;
 }
 
-void feed(float x, bool on) {
+void setStart(int method, int hand, int speed, int vignette) {
+    g_startMethod = method, g_startHand = hand, g_startSpeed = speed, g_startVignette = vignette;
+}
+void setSnap(bool snap) {
+    g_snap = snap;
+    if (g_turn) g_turn->method = snap ? 2 : 1;
+}
+void setHand(int hand) { g_hand = hand < 0 || hand > 3 ? 2 : hand; }
+void setSpeed(float degPerSec) { g_speed = degPerSec < 30 ? 30 : degPerSec > 720 ? 720 : degPerSec; }
+void setVignette(bool on) {
+    g_vignette = on;
+    if (g_turn) g_turn->comfort = on ? 1 : 0;
+}
+bool snap() { return g_snap; }
+int hand() { return g_hand; }
+float speed() { return g_speed; }
+bool vignette() { return g_vignette; }
+
+void feed(float leftX, float rightX, bool on) {
     if (!g_turn) return;
+    // The turning stick (Rotation Controller): right, left, whichever is pushed further, or none.
+    const float x = g_hand == 2 ? rightX : g_hand == 1 ? leftX : g_hand == 3 ? (std::fabs(leftX) > std::fabs(rightX) ? leftX : rightX) : 0.0f;
     if (!on || !(std::fabs(x) > 0.15f)) {  // the mod's deadzone; 0 lets the engine's |x| <= 0.001 early-out apply
         g_turn->axis = 0.0f;
         return;

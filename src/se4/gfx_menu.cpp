@@ -5,6 +5,8 @@
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "up/integrate.hpp"
+#include "se4/ammo_counter.hpp"
+#include "se4/turn.hpp"
 #include "up/upscaler.hpp"
 #include "vk/foveation.hpp"
 #include <windows.h>
@@ -55,6 +57,17 @@ using BindFn = void*(__cdecl*)(void* widget, const char* cvar);
 using IdentFn = void**(__cdecl*)(void** out, const char* name);
 using HandleFn = void*(__cdecl*)(int32_t handle);
 PassFn realInit, realStep, realGet, realSet, realReset, realSnap;
+PassFn realOptionsInit, realSettingsInit, realVrctlInit;  // VR Controls (R33)
+using ButtonCtorFn = void*(__cdecl*)(void* button, void* menu);
+using ButtonLabelFn = void(__cdecl*)(void* button, const char* label);
+using ButtonTargetFn = void(__cdecl*)(void* button, void* screenIdent, void* zero);
+using ButtonAlignFn = void(__cdecl*)(void* button, int a, int b);
+ButtonCtorFn buttonCtor;
+ButtonLabelFn buttonLabel;
+ButtonTargetFn buttonTarget;
+ButtonAlignFn buttonAlign;
+uintptr_t* g_buttonType;  // the submenu button's allocation type (decoded from settings_init)
+bool g_vrMenuOk;
 OptAddFn optAdd;
 StrCtorFn strCtor;
 StrDtorFn strDtor;
@@ -111,7 +124,7 @@ bool readState(core::MenuState& out) {
 // The mod's own file next to the payload (written through a temporary file, then renamed over the old one). `what`
 // names the change for the log. Menu thread.
 void saveState(const char* what) {
-    char buf[512];
+    char buf[1024];
     AcquireSRWLockExclusive(&g_stateLock);
     const int n = core::formatMenuState(g_state, buf, sizeof buf);
     ReleaseSRWLockExclusive(&g_stateLock);
@@ -199,6 +212,79 @@ bool isFovLink(uintptr_t link) {
     const char* n = linkName(link);
     return n && !strcmp(n, core::kFovLink);
 }
+// ---- VR Controls (docs/re/R33_vr_controls_menu.md) ----
+// Fusion's VR Controls screen (CMSVRControlsOptions) is still in SS4/SM; only its Options button was removed. The mod
+// puts the button back (Options and the in-game Settings, VR only). On the screen, rows whose cvar the mod's turning
+// overrides (R26: the engine reads the mod's values, no cvar is written) are renamed to these links and answered by the
+// link hooks below; rows for teleporting and other things the mod does not use are hidden; an Ammo Counters row is added.
+struct VrLink {
+    const char* cvar;  // the native row's cvar (nullptr: a row the mod adds)
+    const char* link;
+};
+const VrLink kVrLinks[] = {
+    {"vr_iRotationMethod", "ss4smvr_turn_method"},     // 0 same as movement / 1 continuous / 2 discrete
+    {"vr_iRotationController", "ss4smvr_turn_hand"},   // 0 none / 1 left / 2 right / 3 both
+    {"vr_fRotationSensitivity", "ss4smvr_turn_speed"},  // slider 0.1..4.0: the engine's 9.00009 rad/s per unit
+    {"vr_bEnableComfortLocomotion", "ss4smvr_turn_vignette"},
+    {nullptr, "ss4smvr_ammo_counter"},
+};
+constexpr float kDegPerSensitivity = 9.00009f * 57.29578f;  // R26 s3.2: smooth turn rate per vr_fRotationSensitivity unit
+// Rows hidden on the VR Controls screen: teleport/step locomotion (the mod moves continuously), Windows MR input, the
+// native VR movement settings, and the weapon-selection placement (dead in SS4: no reader, R33 s2).
+const char* const kVrHiddenCvars[] = {"vr_fTeleportMaxSpeed", "vr_bBlinkTeleport", "vr_bStepMovement", "vr_fStepMovementMaxSpeed",
+                                      "vr_bTrackpadClickToMove", "vr_bWindowsMRJoystickMovement", "vr_vwsslWeaponSelectionLocation",
+                                      "vr_fWeaponSelectionHeightDistanceFromHead", "vr_fWeaponSelectionDepthDistanceFromHead",
+                                      "vr_fVRWeaponPitchAdjustment",
+                                      // movement: the mod moves through the virtual pad, the native VR movement these
+                                      // rows set gets centred sticks (vr_device.cpp), so they would do nothing
+                                      "vr_iHeadOrientedStrafe", "vr_bStrafeMovement", "vr_bTrackpadRunFullSpeed",
+                                      "vr_bAllowMovementOnRotationController"};
+const char* const kVrHiddenNames[] = {"VRLocomotion", "WeaponSelectionStartLocation", "WeaponSelectionHeightDistanceFromHead",
+                                      "WeaponSelectionDepthDistanceFromHead", "WeaponPitch"};
+
+int vrLinkIndex(uintptr_t link) {
+    const char* n = linkName(link);
+    for (int i = 0; n && i < int(sizeof kVrLinks / sizeof kVrLinks[0]); ++i)
+        if (!strcmp(n, kVrLinks[i].link)) return i;
+    return -1;
+}
+void vrLinkValue(int i, char* buf, size_t n) {
+    switch (i) {
+    case 0: snprintf(buf, n, "%d", turn::snap() ? 2 : 1); break;
+    case 1: snprintf(buf, n, "%d", turn::hand()); break;
+    case 2: snprintf(buf, n, "%g", std::round(turn::speed() / kDegPerSensitivity * 100.0f) / 100.0f); break;
+    case 3: snprintf(buf, n, "%d", turn::vignette() ? 1 : 0); break;
+    default: snprintf(buf, n, "%d", ammo::enabled() ? 1 : 0); break;
+    }
+}
+void vrLinkSet(int i, const char* v) {
+    char* end = nullptr;
+    const double d = v ? strtod(v, &end) : 0.0;
+    if (!v || end == v || !std::isfinite(d)) return;
+    char what[48];
+    AcquireSRWLockExclusive(&g_stateLock);
+    switch (i) {
+    case 0: turn::setSnap(d >= 1.5), g_state.turnMethod = turn::snap() ? 2 : 1; break;
+    case 1: turn::setHand(int(d)), g_state.turnHand = turn::hand(); break;
+    case 2: turn::setSpeed(float(d) * kDegPerSensitivity), g_state.turnSpeed = int(std::lround(turn::speed())); break;
+    case 3: turn::setVignette(d >= 0.5), g_state.turnVignette = turn::vignette() ? 1 : 0; break;
+    default: ammo::setEnabled(d >= 0.5), g_state.ammoCounter = ammo::enabled() ? 1 : 0; break;
+    }
+    ReleaseSRWLockExclusive(&g_stateLock);
+    // as saved (turn speed in deg/s, not the slider's sensitivity units)
+    if (i == 2) snprintf(what, sizeof what, "%d", int(std::lround(turn::speed())));
+    else vrLinkValue(i, what, sizeof what);
+    char line[80];
+    snprintf(line, sizeof line, "%s=%s", kVrLinks[i].link + 8, what);
+    VRLOG("menu: VR Controls %s", line);
+    saveState(line);
+}
+void vrLinkReset(int i) {  // the screen's Default: the mod's defaults (smooth, right stick, 150 deg/s, no vignette, counters on)
+    char v[16];
+    snprintf(v, sizeof v, "%g", i == 0 ? 1.0 : i == 1 ? 2.0 : i == 2 ? 150.0 / kDegPerSensitivity : i == 3 ? 0.0 : 1.0);
+    vrLinkSet(i, v);
+}
+
 bool isSwayLink(uintptr_t link) {
     const char* n = linkName(link);
     return n && !strcmp(n, core::kSwayLink);
@@ -493,6 +579,95 @@ void convertMpixRow(uintptr_t self, uint8_t* filter) {
     VRLOG("menu: VR render resolution row not made: no Mpix row on the panel");
 }
 
+// Every widget of a screen (its root at screen+0x20), depth first, children before their parents' later siblings.
+template <class F> void forEachWidget(uint8_t* w, int depth, F&& f) {
+    if (!w || depth > 8) return;
+    f(w);
+    uint8_t** c = children(w);
+    for (int i = 0; c && i < childCount(w); ++i) forEachWidget(c[i], depth + 1, f);
+}
+constexpr size_t kScreenRoot = 0x20, kButtonTarget = 0x1a0;  // R33: screen widget root; submenu button's target IDENT
+
+// Options / in-game Settings (VR): a "VR Controls" button right after "Graphics Options", opening Fusion's screen.
+void addVrButton(uintptr_t self, const char* which) {
+    if (!g_vr || !g_vrMenuOk) return;
+    void* graphics = nullptr;
+    identCtor(&graphics, "CMSGraphicsOptions");
+    uint8_t* after = nullptr;
+    forEachWidget(*reinterpret_cast<uint8_t**>(self + kScreenRoot), 0, [&](uint8_t* w) {
+        if (!after && *reinterpret_cast<void**>(w + kButtonTarget) == graphics) after = w;
+    });
+    uint8_t* list = after ? panelOf(after) : nullptr;
+    void* menu = menuOf(self);
+    if (!list || !menu) return VRLOG("menu: %s: no Graphics Options button found - no VR Controls button", which);
+    uint8_t* b = static_cast<uint8_t*>(engineAlloc(0x1c8, *g_buttonType));
+    if (!b) return;
+    buttonCtor(b, menu);
+    addChild(b, list);
+    buttonLabel(b, "ETRSMenu.VRControls=VR Controls");
+    void* target = nullptr;
+    identCtor(&target, "CMSVRControlsOptions");
+    buttonTarget(b, target, nullptr);
+    buttonAlign(b, 0, 2);
+    setTooltip(b, menu, "%1", kFmtString, "Turning, comfort, movement and the mod's VR options.");
+    placeAfter(list, after, b);
+    VRLOG("menu: %s: VR Controls button added (row %d)", which, childIndex(list, b));
+}
+uintptr_t __cdecl hookedOptionsInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    const uintptr_t r = realOptionsInit(self, a2, a3, a4);
+    addVrButton(self, "Options");
+    return r;
+}
+uintptr_t __cdecl hookedSettingsInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    const uintptr_t r = realSettingsInit(self, a2, a3, a4);
+    addVrButton(self, "Settings");
+    return r;
+}
+
+// The VR Controls screen after its own init: rename, hide and add rows (s above kVrLinks).
+uintptr_t __cdecl hookedVrctlInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
+    const uintptr_t r = realVrctlInit(self, a2, a3, a4);
+    if (!g_vr) return r;
+    // No retitle: the screen title setter rebuilds the screen layout and would drop the rows the init just made.
+    void* hiddenNames[sizeof kVrHiddenNames / sizeof kVrHiddenNames[0]] = {};
+    for (size_t i = 0; i < sizeof kVrHiddenNames / sizeof kVrHiddenNames[0]; ++i) identCtor(&hiddenNames[i], kVrHiddenNames[i]);
+    int renamed = 0, hidden = 0;
+    uint8_t* anchor = nullptr;  // the last renamed row: the Ammo Counters row goes after it
+    forEachWidget(*reinterpret_cast<uint8_t**>(self + kScreenRoot), 0, [&](uint8_t* w) {
+        bool hide = false;
+        for (void* id : hiddenNames) hide |= id && *reinterpret_cast<void**>(w + kWidgetName) == id;
+        uintptr_t* links;
+        const int n = linksOf(w, links);
+        for (int k = 0; k < n; ++k) {
+            const char* name = linkName(links[k]);
+            if (!name) continue;
+            for (const char* c : kVrHiddenCvars) hide |= !strcmp(name, c);
+            for (const VrLink& v : kVrLinks)
+                if (v.cvar && !strcmp(name, v.cvar)) {
+                    strAssign(reinterpret_cast<void*>(links[k]), v.link);
+                    ++renamed;
+                    anchor = w;
+                    break;
+                }
+        }
+        if (hide) {
+            *reinterpret_cast<uint32_t*>(w + kWidgetFlags) |= kHidden;
+            ++hidden;
+        }
+    });
+    if (anchor) {
+        static const int kOnOff[2] = {1, 0};
+        uint8_t* row = addChoiceRow(self, anchor, anchor,
+                                    {"AmmoCounters", "Ammo Counters",
+                                     "Shows each gun's ammo on the gun itself, as in Serious Sam Fusion 2017 in VR.",
+                                     "ss4smvr_ammo_counter", kOnOff, 2, [](int m) { return m ? "On" : "Off"; },
+                                     [](int m) { return m ? "1" : "0"; }});
+        if (!row) VRLOG("menu: VR Controls: Ammo Counters row not added");
+    }
+    VRLOG("menu: VR Controls screen: %d rows answered by the mod, %d hidden", renamed, hidden);
+    return r;
+}
+
 uintptr_t __cdecl hookedInit(uintptr_t self, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
     const uintptr_t r = realInit(self, a2, a3, a4);
     uint8_t* filter = filterWidget(self);
@@ -536,6 +711,12 @@ uintptr_t __cdecl hookedGet(uintptr_t link, uintptr_t out, uintptr_t a3, uintptr
         strCtor(reinterpret_cast<void*>(out), core::fovValue(fovNow()));
         return out;
     }
+    if (const int vi = out ? vrLinkIndex(link) : -1; vi >= 0) {
+        char buf[16];
+        vrLinkValue(vi, buf, sizeof buf);
+        strCtor(reinterpret_cast<void*>(out), buf);
+        return out;
+    }
     const uintptr_t r = realGet(link, out, a3, a4);
     if (out && isPctLink(link)) {
         strAssign(reinterpret_cast<void*>(out), core::vrPercentValue(core::snapVrPercent(upint::vrPercent())));
@@ -566,6 +747,10 @@ uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintp
             VRLOG("menu: foliage sway %s", core::swayName(m));
             chooseSway(m);
         }
+        return 0;
+    }
+    if (const int vi = vrLinkIndex(link); vi >= 0) {
+        vrLinkSet(vi, value ? *reinterpret_cast<const char* const*>(value) : nullptr);
         return 0;
     }
     if (isFovLink(link)) {
@@ -608,7 +793,7 @@ uintptr_t __cdecl hookedSet(uintptr_t link, uintptr_t value, uintptr_t a3, uintp
 // wlink_snapshot(link): the popup and Apply snapshot each link's cvar by name; the mod's rows name no cvar, so they
 // keep the empty snapshot (otherwise the engine logs "Cannot get values for cvar ...").
 uintptr_t __cdecl hookedSnap(uintptr_t link, uintptr_t a2, uintptr_t a3, uintptr_t a4) {
-    if (isSharpLink(link) || isSwayLink(link) || isFovLink(link)) return 0;
+    if (isSharpLink(link) || isSwayLink(link) || isFovLink(link) || vrLinkIndex(link) >= 0) return 0;
     return realSnap(link, a2, a3, a4);
 }
 
@@ -622,6 +807,10 @@ uintptr_t __cdecl hookedReset(uintptr_t link, uintptr_t a2, uintptr_t a3, uintpt
     if (isSwayLink(link)) {
         VRLOG("menu: foliage sway default %s", core::swayName(core::kSwayDefault));
         chooseSway(core::kSwayDefault);
+        return 0;
+    }
+    if (const int vi = vrLinkIndex(link); vi >= 0) {
+        vrLinkReset(vi);
         return 0;
     }
     if (isFovLink(link)) {  // automatic: eye-tracked with eye gaze, else off
@@ -701,6 +890,11 @@ bool prepare() {
     if (g_vr) upint::setVrPercent(g_state.vrPercent > 0 ? g_state.vrPercent : core::kVrPercentDefault);
     // Foveation (VR): the saved row choice is the start unless options.txt sets foveation (fov::decide at device creation).
     if (g_vr && g_state.foveation >= 0) fov::setStartChoice(g_state.foveation);
+    // VR Controls (R33): the saved turning and ammo counter choices (options.txt wins in turn::install / ammo::install).
+    if (g_vr) {
+        turn::setStart(g_state.turnMethod, g_state.turnHand, g_state.turnSpeed, g_state.turnVignette);
+        ammo::setStart(g_state.ammoCounter);
+    }
     // Foliage sway while upscaling: option upscale_foliage_sway (-1 game, 0 off; 1 / 2 cap the game's level) overrides the file.
     const int sway = se4::options::has("upscale_foliage_sway") ? std::clamp(se4::options::get("upscale_foliage_sway", core::kSwayDefault), -1, 2)
                      : g_state.hasSway                         ? g_state.sway
@@ -769,6 +963,23 @@ bool prepare() {
         collCtor = reinterpret_cast<CollCtorFn>(const_cast<uint8_t*>(co) + 30 + rel32(co + 26));
         g_choiceOk = true;
     } else VRLOG("menu: foliage sway row off: the filter row's construction does not match (option upscale_foliage_sway sets it)");
+    // VR Controls (R33): the screen inits and the submenu button helpers; the button type from settings_init's
+    // `mov rdx,[rip+type]; mov ecx,0x1c8; call engine_alloc`.
+    if (g_vr && g_choiceOk) {
+        auto* settings = b.at<uint8_t>(se4::gen::settings_init);
+        buttonCtor = reinterpret_cast<ButtonCtorFn>(b.at<void>(se4::gen::menu_button_ctor));
+        buttonLabel = reinterpret_cast<ButtonLabelFn>(b.at<void>(se4::gen::menu_button_label));
+        buttonTarget = reinterpret_cast<ButtonTargetFn>(b.at<void>(se4::gen::menu_button_target));
+        buttonAlign = reinterpret_cast<ButtonAlignFn>(b.at<void>(se4::gen::menu_button_align));
+        for (int i = 0; settings && i < 0x800 - 17 && !g_buttonType; ++i) {
+            const uint8_t* q = settings + i;
+            if (q[0] == 0x48 && q[1] == 0x8B && q[2] == 0x15 && q[7] == 0xB9 && rel32(q + 8) == 0x1c8 && callsTo(q + 12, alloc))
+                g_buttonType = reinterpret_cast<uintptr_t*>(const_cast<uint8_t*>(q) + 7 + rel32(q + 3));
+        }
+        g_vrMenuOk = settings && b.at<void>(se4::gen::vrctl_init) && buttonCtor && buttonLabel && buttonTarget && buttonAlign &&
+                     g_buttonType;
+        VRLOG("menu: VR Controls %s", g_vrMenuOk ? "ready (Options / Settings > VR Controls)" : "off: symbols or the button type not found");
+    }
     g_prepared = true;
     return true;
 }
@@ -809,6 +1020,20 @@ void onUpscalerReady() {
         return;
     }
     g_installed = true;
+    if (g_vrMenuOk) {  // VR Controls: the screen inits (the link hooks above answer its rows)
+        const auto& b = se4::build();
+        struct V {
+            uint8_t* at;
+            void* fn;
+            PassFn* real;
+        } vh[] = {{b.at<uint8_t>(se4::gen::options_init), reinterpret_cast<void*>(hookedOptionsInit), &realOptionsInit},
+                  {b.at<uint8_t>(se4::gen::settings_init), reinterpret_cast<void*>(hookedSettingsInit), &realSettingsInit},
+                  {b.at<uint8_t>(se4::gen::vrctl_init), reinterpret_cast<void*>(hookedVrctlInit), &realVrctlInit}};
+        int on = 0;
+        for (V& h : vh)
+            if (h.at && MH_CreateHook(h.at, h.fn, reinterpret_cast<void**>(h.real)) == MH_OK && MH_EnableHook(h.at) == MH_OK) ++on;
+        VRLOG("menu: VR Controls hooks %d of 3 on%s", on, vh[0].at ? "" : " (no Options screen in this build: Settings only)");
+    }
     VRLOG("menu: Rescaling Filter entries on: %s%s%s; current %s, ren_iRescalingFilter %d (never written)", dlss ? "DLSS" : "", dlss && fsr ? ", " : "",
           fsr ? "FSR 3.1" : "", label(MenuUpscaler(g_choice.load())), cvarValue());
 }

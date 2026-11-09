@@ -101,6 +101,11 @@ inline bool fovFromValue(const char* v, int& m) {
 //   sharpness=<0..100>         RCAS sharpening after either upscaler (desktop and VR)
 //   foliage_sway=game|off      foliage sway while an upscaler runs (desktop and VR)
 //   foveation=eye|fixed|off    VR foveated rendering (absent: automatic)
+//   turn_method=smooth|snap    VR Controls (R33): Rotation Method
+//   turn_hand=none|left|right|both  Rotation Controller
+//   turn_speed=<deg/s>         smooth turn speed (Rotation Sensitivity), 30..720
+//   turn_vignette=0|1          Comfort mode (vignette while turning)
+//   ammo_counter=0|1           on-weapon ammo counters (R32)
 // '#' comments, blank lines, spaces, CRLF and other keys are ignored; per key the last valid line wins.
 struct MenuState {
     bool hasUpscaler = false, hasVrUpscaler = false;
@@ -110,7 +115,13 @@ struct MenuState {
     bool hasSway = false;
     int sway = kSwayDefault;
     int foveation = -1;  // -1: not set (automatic)
+    int turnMethod = -1;    // 1 smooth, 2 snap; -1 not set
+    int turnHand = -1;      // 0 none, 1 left, 2 right, 3 both (the vr_iRotationController values); -1 not set
+    int turnSpeed = -1;     // deg/s; -1 not set
+    int turnVignette = -1;  // 0/1; -1 not set
+    int ammoCounter = -1;   // 0/1; -1 not set
 };
+inline const char* turnHandName(int h) { return h == 0 ? "none" : h == 1 ? "left" : h == 2 ? "right" : h == 3 ? "both" : nullptr; }
 
 // True when any key was found.
 inline bool parseMenuState(const char* text, MenuState& out) {
@@ -163,6 +174,18 @@ inline bool parseMenuState(const char* text, MenuState& out) {
             } else if (is(k, ke, "foveation")) {
                 for (int m : kFovModes)
                     if (is(v, ve, fovName(m))) out.foveation = m, found = true;
+            } else if (is(k, ke, "turn_method")) {
+                if (is(v, ve, "smooth")) out.turnMethod = 1, found = true;
+                else if (is(v, ve, "snap")) out.turnMethod = 2, found = true;
+            } else if (is(k, ke, "turn_hand")) {
+                for (int h = 0; h < 4; ++h)
+                    if (is(v, ve, turnHandName(h))) out.turnHand = h, found = true;
+            } else if (is(k, ke, "turn_speed")) {
+                const int n = number();
+                if (n >= 30 && n <= 720) out.turnSpeed = n, found = true;
+            } else if (is(k, ke, "turn_vignette") || is(k, ke, "ammo_counter")) {
+                const int n = number();
+                if (n == 0 || n == 1) (is(k, ke, "turn_vignette") ? out.turnVignette : out.ammoCounter) = n, found = true;
             } else if (is(k, ke, "vr_render")) {
                 const int n = number();
                 if (n >= 1 && n <= 100) out.vrPercent = snapVrPercent(n), found = true;
@@ -186,7 +209,9 @@ inline bool parseMenuState(const char* text, MenuUpscaler& out) {
 inline int formatMenuState(const MenuState& st, char* buf, size_t n) {
     int len = snprintf(buf, n,
                        "# Set in Options > Graphics (written by the mod): (vr_)upscaler off|dlss|fsr, vr_render %%,\n"
-                       "# sharpness 0..100, foliage_sway game|off, foveation eye|fixed|off\n");
+                       "# sharpness 0..100, foliage_sway game|off, foveation eye|fixed|off\n"
+                       "# Set in Options > VR Controls: turn_method smooth|snap, turn_hand none|left|right|both,\n"
+                       "# turn_speed 30..720 (deg/s), turn_vignette 0|1, ammo_counter 0|1\n");
     auto add = [&](const char* fmt, auto v) {
         const int k = snprintf(len >= 0 && size_t(len) < n ? buf + len : nullptr, len >= 0 && size_t(len) < n ? n - size_t(len) : 0, fmt, v);
         len = len < 0 || k < 0 ? -1 : len + k;
@@ -197,6 +222,11 @@ inline int formatMenuState(const MenuState& st, char* buf, size_t n) {
     if (st.sharpness >= 0) add("sharpness=%d\n", st.sharpness);
     if (st.hasSway) add("foliage_sway=%s\n", swayName(st.sway));
     if (st.foveation >= 0) add("foveation=%s\n", fovName(st.foveation));
+    if (st.turnMethod == 1 || st.turnMethod == 2) add("turn_method=%s\n", st.turnMethod == 2 ? "snap" : "smooth");
+    if (turnHandName(st.turnHand)) add("turn_hand=%s\n", turnHandName(st.turnHand));
+    if (st.turnSpeed >= 30) add("turn_speed=%d\n", st.turnSpeed);
+    if (st.turnVignette >= 0) add("turn_vignette=%d\n", st.turnVignette);
+    if (st.ammoCounter >= 0) add("ammo_counter=%d\n", st.ammoCounter);
     return len;
 }
 inline int formatMenuState(MenuUpscaler m, char* buf, size_t n) {

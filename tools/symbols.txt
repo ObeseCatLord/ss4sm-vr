@@ -246,3 +246,12 @@ manual:melee_event_ctor    # R31: player melee event ctor (to the victim: +0x34 
 manual:melee_event_send    # R31: deliver an event to an entity's state machine
 manual:melee_event_dtor    # R31: player melee event dtor
 manual:melee_select        # R31: PlayerMeleeSelection call (victim animation name)
+manual:options_init        # R33: CMSOptions init (Options screen buttons)
+manual:settings_init       # R33: in-game Settings screen init
+manual:vrctl_init          # R33: CMSVRControlsOptions init (Fusion's VR Controls screen)
+manual:menu_button_ctor    # R33: submenu button ctor
+manual:menu_button_label   # R33: submenu button label
+manual:menu_button_target  # R33: submenu button target screen (IDENT)
+manual:menu_button_align   # R33: submenu button alignment
+manual:screen_set_title    # R33: menu screen title
+manual:vrmenu_rot_method_read # R33: VR Controls screen read of vr_iRotationMethod (row enable) -> mod turn method

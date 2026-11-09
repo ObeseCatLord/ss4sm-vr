@@ -24,7 +24,7 @@ FILES = {  # destination (relative to game dir) -> source (relative to build dir
     'Bin/x64/ss4smvr/ss4smvr.dll': 'ss4smvr.dll',
     'Bin/x64/ss4smvr/libopenxr_loader.dll': 'openxr/src/loader/libopenxr_loader.dll',
 }
-DEPS = pathlib.Path.home() / 'LargeGames/Development/deps-src'
+DEPS = pathlib.Path(os.environ.get('SS4SMVR_DEPS', pathlib.Path.home() / 'LargeGames/Development/deps-src'))
 # Third-party runtime DLLs taken from the SDK checkouts (never committed to the repo):
 #   nvngx_dlss.dll (NVIDIA DLSS SDK v310.9.16, redistributable with applications) next to the game exe, where
 #   NGX looks for it; amd_fidelityfx_vk.dll (AMD FidelityFX SDK v1.1.4, MIT, FSR 3.1 Vulkan) next to the mod.
@@ -79,7 +79,10 @@ def install(game, build, mode='vr'):
     exes = check_game(game)
     receipt = load_receipt(game) or {'files': {}}
     sources = {dst: build / src for dst, src in FILES.items()}
-    sources.update({dst: src for dst, src in SDK_FILES.items() if src.exists()})
+    for dst, src in SDK_FILES.items():  # the SDK checkout, else a copy in the build dir (CI artifacts carry them there)
+        alt = build / src.name
+        if src.exists() or alt.exists():
+            sources[dst] = src if src.exists() else alt
     generated = MODE_FILES[mode]
     for dst, s in sources.items():
         if not s.exists():

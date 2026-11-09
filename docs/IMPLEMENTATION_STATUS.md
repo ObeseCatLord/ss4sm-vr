@@ -543,4 +543,22 @@
     10 %) as a quad on top of the weapon above the grip. One OpenXR quad layer per hand.
   - **Not shown:** infinite-ammo and melee weapons.
   - **Lab:** the double shotgun shows 40, then 36 after firing, matching the HUD.
-  - **Limits:** the quad is not hidden by the hand. Spots on other weapons are not lab-checked.
+  - **Limits:** spots on other weapons are not lab-checked.
+  - **In the scene (R32 s4):** a compute pass at the post-processing canvas barrier draws the counter into each eye's
+    HDR canvas: a ray–quad hit, a depth test against the scene and an emissive blend, so tonemapping, bloom and
+    occlusion treat it like the gun. Single pass is lab-checked (both eyes; hidden behind the hammer). The quad layers
+    stay as the fallback. Not yet visually checked: the DLSS / FSR path.
+- **VR Controls menu (R33):**
+  - **Button:** Fusion's `CMSVRControlsOptions` screen is still in SS4 and SM; only its Options button was gone. In
+    VR, Options and the in-game Settings get a **VR Controls** button again, after Graphics Options.
+  - **Rows the mod answers** (renamed links, no cvar written): Rotation Method, Rotation Controller, Rotation
+    Sensitivity (the mod's turn speed), Comfort Mode (turn vignette) and an added **Ammo Counters** row.
+  - **Native rows kept:** Comfort Radius and Rotation Angle, which the native code the mod runs reads.
+  - **Hidden:** teleport, step, Windows MR and weapon-selection rows, and the native movement rows the mod's movement
+    does not use.
+  - **Enabled row:** the screen's row-enable read of `vr_iRotationMethod` is retargeted to the mod's method, so
+    Sensitivity or Angle is enabled to match.
+  - **Saved** in `ss4smvr/upscaler_menu.txt`.
+  - **Lab (SS4 and SM):** button and screen shown; Discrete, Ammo Counters Off and Default → Yes all apply and save;
+    snap is restored after a restart. VR suites: SS4 21/21, SM 21/21.
+  - **Bug fixed in the lab:** retitling the screen rebuilt its layout and dropped the rows.

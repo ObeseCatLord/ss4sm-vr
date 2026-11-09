@@ -119,7 +119,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         vrdev::hookShutdown();
         vrdev::hookViewport();
         vrdev::hookRender();
-        if (up::menuMode()) gfxmenu::prepare();  // VR: the saved upscaler, render resolution and sharpening (R29)
+        gfxmenu::prepare();  // VR: the saved upscaler, render resolution, sharpening (R29) and VR Controls (R33) choices
         if (upint::install()) foliage::install();
         upint::installEyeHook();
     }

@@ -1,0 +1,103 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # releases on tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Arch Linux, as on the development machine: MinGW-w64 GCC with the posix thread model and current glslc.
+    # (Ubuntu's MinGW defaults to the win32 thread model, which the OpenXR loader and std::thread code do not suit.)
+    container: archlinux:base-devel
+    env:
+      DLSS_TAG: v310.9.16
+      FFX_TAG: v1.1.4
+      VK_TAG: v1.4.363
+    steps:
+      - name: Toolchain
+        run: |
+          pacman -Syu --noconfirm --needed git cmake ninja python zip mingw-w64-gcc shaderc
+          x86_64-w64-mingw32-g++ --version | head -1
+          x86_64-w64-mingw32-g++ -v 2>&1 | grep 'Thread model'
+          glslc --version | head -1
+
+      - uses: actions/checkout@v4
+
+      - name: Third-party SDKs (pinned, headers and runtime DLLs only)
+        run: |
+          mkdir -p "$RUNNER_TEMP/deps" && cd "$RUNNER_TEMP/deps"
+          sparse() {  # sparse <url> <tag> <dir> <paths...>
+            git clone --quiet --depth 1 --filter=blob:none --sparse -b "$2" "$1" "$3"
+            git -C "$3" sparse-checkout set --no-cone "${@:4}"
+          }
+          sparse https://github.com/KhronosGroup/Vulkan-Headers.git "$VK_TAG" vulkan-headers /include/
+          sparse https://github.com/NVIDIA/DLSS.git "$DLSS_TAG" dlss /include/ /lib/Windows_x86_64/rel/nvngx_dlss.dll /LICENSE.txt
+          sparse https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git "$FFX_TAG" ffx /ffx-api/include/ /PrebuiltSignedDLL/amd_fidelityfx_vk.dll /LICENSE.txt
+          ls dlss/lib/Windows_x86_64/rel/nvngx_dlss.dll ffx/PrebuiltSignedDLL/amd_fidelityfx_vk.dll vulkan-headers/include/vulkan/vulkan_core.h
+
+      - name: Host unit tests
+        run: |
+          cmake -S . -B build-tests -G Ninja -DSS4SMVR_TESTS=ON
+          cmake --build build-tests
+          ctest --test-dir build-tests --output-on-failure
+
+      - name: Windows build (MinGW-w64)
+        run: |
+          D="$RUNNER_TEMP/deps"
+          cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake \
+            -DVULKAN_HEADERS_ROOT="$D/vulkan-headers/include" -DDLSS_SDK="$D/dlss" -DFFX_SDK="$D/ffx"
+          cmake --build build-win --target msimg32_proxy ss4smvr openxr_loader
+          # The loader must not need MinGW runtime DLLs (libgcc_s / libstdc++ / libwinpthread) that the game does not have.
+          for f in build-win/msimg32.dll build-win/ss4smvr.dll build-win/openxr/src/loader/libopenxr_loader.dll; do
+            echo "$f imports:"; x86_64-w64-mingw32-objdump -p "$f" | grep 'DLL Name' | sort -u
+            if x86_64-w64-mingw32-objdump -p "$f" | grep -qiE 'DLL Name: (libgcc|libstdc|libwinpthread)'; then
+              echo "::error::$f depends on a MinGW runtime DLL"; exit 1
+            fi
+          done
+
+      - name: Package
+        run: |
+          D="$RUNNER_TEMP/deps"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then VER="$GITHUB_REF_NAME"; else VER="$(git rev-parse --short HEAD)"; fi
+          P="pkg/ss4sm-vr-$VER"; mkdir -p "$P/Bin/x64/ss4smvr" "$P/licenses"
+          cp build-win/msimg32.dll "$D/dlss/lib/Windows_x86_64/rel/nvngx_dlss.dll" "$P/Bin/x64/"
+          cp build-win/ss4smvr.dll build-win/openxr/src/loader/libopenxr_loader.dll \
+             "$D/ffx/PrebuiltSignedDLL/amd_fidelityfx_vk.dll" "$P/Bin/x64/ss4smvr/"
+          : > "$P/Bin/x64/ss4smvr/enable_vr"   # VR opt-in (delete for flat play with the mod; see README)
+          cp README.md LICENSE NOTICE.md "$P/"; cp licenses/* "$P/licenses/"
+          (cd "$P" && find . -type f -exec sha256sum {} + | sort -k2 > SHA256SUMS.txt)
+          (cd pkg && zip -qr "ss4sm-vr-$VER.zip" "ss4sm-vr-$VER")
+          # CI build folder for tools/install.py --build (it takes the SDK DLLs from there)
+          mkdir -p pkg/build && cp build-win/msimg32.dll build-win/ss4smvr.dll "$D/dlss/lib/Windows_x86_64/rel/nvngx_dlss.dll" \
+             "$D/ffx/PrebuiltSignedDLL/amd_fidelityfx_vk.dll" pkg/build/ \
+             && mkdir -p pkg/build/openxr/src/loader && cp build-win/openxr/src/loader/libopenxr_loader.dll pkg/build/openxr/src/loader/
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          cat "$P/SHA256SUMS.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ss4sm-vr-${{ env.VER }}
+          path: pkg/ss4sm-vr-${{ env.VER }}
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-win-${{ env.VER }}
+          path: pkg/build
+          if-no-files-found: error
+
+      - name: Release (tags only)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pkg/ss4sm-vr-${{ env.VER }}.zip
+          draft: true

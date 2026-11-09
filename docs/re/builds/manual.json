@@ -213,7 +213,16 @@
   "melee_weapon_entry": "0x1409655a0",
   "melee_event_ctor": "0x140250640",
   "melee_event_send": "0x140ba6bd0",
-  "melee_event_dtor": "0x14115adb0"
+  "melee_event_dtor": "0x14115adb0",
+  "options_init": "0x1408c3c90",
+  "settings_init": "0x1408d06f0",
+  "vrctl_init": "0x1408ee4b0",
+  "menu_button_ctor": "0x140910380",
+  "menu_button_label": "0x140907290",
+  "menu_button_target": "0x1409106e0",
+  "menu_button_align": "0x1409072e0",
+  "screen_set_title": "0x140134200",
+  "vrmenu_rot_method_read": "0x1408efcaf"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -420,7 +429,15 @@
   "melee_weapon_entry": "0x140967cd0",
   "melee_event_ctor": "0x140252d00",
   "melee_event_send": "0x140ba9580",
-  "melee_event_dtor": "0x14115d700"
+  "melee_event_dtor": "0x14115d700",
+  "settings_init": "0x1408d2e20",
+  "vrctl_init": "0x1408f0be0",
+  "menu_button_ctor": "0x140912ab0",
+  "menu_button_label": "0x1409099c0",
+  "menu_button_target": "0x140912e10",
+  "menu_button_align": "0x140909a10",
+  "screen_set_title": "0x140136b50",
+  "vrmenu_rot_method_read": "0x1408f23df"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -636,7 +653,16 @@
   "melee_event_ctor": "0x140250260",
   "melee_event_send": "0x140ba72b0",
   "melee_event_dtor": "0x14115b5f0",
-  "melee_select": "0x140420990"
+  "melee_select": "0x140420990",
+  "options_init": "0x1408c3d30",
+  "settings_init": "0x1408d07d0",
+  "vrctl_init": "0x1408ee870",
+  "menu_button_ctor": "0x140910a20",
+  "menu_button_label": "0x1409078c0",
+  "menu_button_target": "0x140910d80",
+  "menu_button_align": "0x140907910",
+  "screen_set_title": "0x140134bd0",
+  "vrmenu_rot_method_read": "0x1408f006f"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -843,6 +869,14 @@
   "melee_event_ctor": "0x140252910",
   "melee_event_send": "0x140ba9c50",
   "melee_event_dtor": "0x14115df30",
-  "melee_select": "0x1404230a0"
+  "melee_select": "0x1404230a0",
+  "settings_init": "0x1408d2ef0",
+  "vrctl_init": "0x1408f0f90",
+  "menu_button_ctor": "0x140913140",
+  "menu_button_label": "0x140909fe0",
+  "menu_button_target": "0x1409134a0",
+  "menu_button_align": "0x14090a030",
+  "screen_set_title": "0x140137510",
+  "vrmenu_rot_method_read": "0x1408f278f"
  }
 }

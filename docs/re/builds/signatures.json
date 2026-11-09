@@ -1265,5 +1265,60 @@
    "src": "0x140420990",
    "len": 64
   }
+ },
+ "options_init": {
+  "src": "0x1408c3c90",
+  "len": 64,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1408c3d30",
+   "len": 64
+  },
+  "_note": "CMSOptions init (vt+0x120): the Options screen's submenu buttons (Game/Graphics/Sound/...); SS4 dropped Fusion's VR Controls button (R33). SM: the function referencing \"ETRSMenu.Options=Options\" at +0x32."
+ },
+ "settings_init": {
+  "src": "0x1408d06f0",
+  "len": 64,
+  "_note": "the in-game Settings screen init (vt+0x120): Game/Graphics/Sound/Voice/Advanced buttons (R33)"
+ },
+ "vrctl_init": {
+  "src": "0x1408ee4b0",
+  "len": 64,
+  "_note": "CMSVRControlsOptions init (vt+0x120): Fusion's (Advanced) VR Controls screen, still in SS4/SM but unreachable (R33)"
+ },
+ "menu_button_ctor": {
+  "call_of": "settings_init",
+  "index": 16,
+  "limit": 2048,
+  "_note": "(button, menu): submenu button ctor (alloc 0x1c8, type global decoded at runtime from the alloc before it) (R33)"
+ },
+ "menu_button_label": {
+  "call_of": "settings_init",
+  "index": 18,
+  "limit": 2048,
+  "_note": "(button, const char* \"ETRSKey=Text\") (R33)"
+ },
+ "menu_button_target": {
+  "call_of": "settings_init",
+  "index": 20,
+  "limit": 2048,
+  "_note": "(button, IDENT screen class, 0): the screen the button opens; stored at button+0x1a0 (R33)"
+ },
+ "menu_button_align": {
+  "call_of": "settings_init",
+  "index": 21,
+  "limit": 2048,
+  "_note": "(button, int, int): +0x158/+0x15c, the stock buttons use (0, 2) (R33)"
+ },
+ "screen_set_title": {
+  "call_of": "settings_init",
+  "index": 2,
+  "limit": 2048,
+  "_note": "(screen, const char* \"ETRSKey=Text\", 0): a menu screen's title (R33)"
+ },
+ "vrmenu_rot_method_read": {
+  "src": "0x1408efcaf",
+  "len": 24,
+  "_note": "mov ecx,[rip+vr_iRotationMethod] (8B 0D disp32, 6 bytes, disp at +2) in the VR Controls screen step: enables Rotation Sensitivity (smooth) or Rotation Angle (snap); retarget to the mod's turn method (R33)"
  }
 }

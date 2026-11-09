@@ -72,6 +72,17 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
     into their VR models. Report weapons where the readout floats off the gun or sits in the way of aiming:
     `ammo_counter_up_cm`, `ammo_counter_back_cm` and `ammo_counter_size_cm` move or size it for all weapons, and
     per-weapon spots go into `kSpots` in `src/se4/ammo_counter.cpp`.
+    The readout is drawn into the scene (R32 s4): your hand or the gun's sight in front of it should hide it, and the
+    lit digits should glow slightly. Check it with and without DLSS / FSR.
+7e3. VR Controls menu (R33): Options (or the pause menu's Settings) > VR Controls, below Graphics Options. It opens
+    "Advanced VR Controls" with Comfort Mode, Comfort Radius, Rotation Controller, Rotation Method, Rotation Angle,
+    Rotation Sensitivity and Ammo Counters. Check:
+    - Rotation Method Discrete snaps by Rotation Angle; Continuous turns smoothly at Rotation Sensitivity (0.29 = the
+      default 150 deg/s). The other row greys out.
+    - Rotation Controller Left / Right / Both picks the turning stick.
+    - Comfort Mode adds the engine's dark ring while turning; Comfort Radius sizes it.
+    - Ammo Counters On / Off shows or hides the readouts on the guns.
+    - The choices survive a restart (`ss4smvr/upscaler_menu.txt`), and Default (F2) restores them.
 7f. Hands: with a one-handed hold, the left arm follows the left controller and the controller model is hidden.
     The fingers curl with the trigger (index finger) and the touches (thumb). Bring the left hand to the rifle's
     foregrip and squeeze: the rifle should follow the line from the right hand to the left hand. Releasing the

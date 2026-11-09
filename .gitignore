@@ -4,3 +4,4 @@
 __pycache__/
 .venv/
 compile_commands.json
+/pkg/

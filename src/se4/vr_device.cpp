@@ -685,7 +685,7 @@ void updateFromInput() {
         for (int i = 0; i < kButtons; ++i) setButtonLocked(role, i, v[i]);
     }
     ReleaseSRWLockExclusive(&g_btnLock);
-    turn::feed(xr::input().hand(1).stick.x, player_vr::nativeTurn() && !gamepad::wheelHeld() && !g_menuActive);
+    turn::feed(xr::input().hand(0).stick.x, xr::input().hand(1).stick.x, player_vr::nativeTurn() && !gamepad::wheelHeld() && !g_menuActive);
 }
 
 bool hookViewport() {

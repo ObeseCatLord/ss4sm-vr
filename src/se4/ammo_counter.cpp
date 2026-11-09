@@ -78,7 +78,8 @@ bool install() {
     g_up = se4::options::get("ammo_counter_up_cm", 0) / 100.0f;
     g_back = se4::options::get("ammo_counter_back_cm", 0) / 100.0f;
     if (se4::options::has("ammo_counter_size_cm")) g_size = std::clamp(se4::options::get("ammo_counter_size_cm", 5), 1, 20) / 100.0f;
-    VRLOG("ammo: on-weapon ammo counters on%s", g_skipNative ? " (weapons with the engine's own VR counter keep it)" : " (on every weapon)");
+    VRLOG("ammo: on-weapon ammo counters %s%s", g_enabled ? "on" : "off (VR Controls > Ammo Counters)",
+          g_skipNative ? " (weapons with the engine's own VR counter keep it)" : " (on every weapon)");
     return true;
 }
 
