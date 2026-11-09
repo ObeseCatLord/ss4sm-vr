@@ -1,0 +1,101 @@
+#version 450
+// On-weapon ammo counter drawn into the eye's HDR scene canvas before post-processing (docs/re/R32 s4): each pixel's view
+// ray meets the counter's quad (eye space), the quad is depth-tested against the scene (reverse-Z, the engine's depth
+// partition as in motion.comp), and the readout (src/core/ammo_counter.hpp, the same layout) is blended in as an
+// emissive surface, so tonemapping, bloom and occlusion treat it like the scene.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D depthTex;
+layout(binding = 1, rgba16f) uniform image2D canvas;
+layout(push_constant) uniform PC {
+    vec4 tan;     // eye tangents l, r, u, d (unjittered)
+    vec4 info;    // near, far, depth split, digits ((d0+1) * 121 + (d1+1) * 11 + (d2+1), 0 = blank)
+    vec4 c;       // quad centre in eye space (xyz), panel alpha (w)
+    vec4 r;       // quad half width vector in eye space (xyz), unused (w)
+    vec4 u;       // quad half height vector in eye space (xyz), unused (w)
+    vec4 rect;    // pixel rect to cover: x0, y0, width, height (output pixels)
+    vec4 lit;     // lit segment colour (linear HDR rgb), alpha (blink)
+    vec4 size;    // output width, height; depth texel per output pixel x, y (phase B renders smaller)
+} pc;
+
+const float kW = 256.0, kH = 128.0;  // the readout's virtual pixel grid (as the CPU rasterizer's half image)
+
+// Seven-segment test, a copy of core::ammo::detail::inSegment (cell x 0..1, y 0..1.6).
+bool inSegment(vec2 q, int seg, float th) {
+    float h = 1.6, half_ = h / 2.0;
+    if (seg == 0 || seg == 3 || seg == 6) {
+        float cy = seg == 0 ? th / 2.0 : seg == 3 ? h - th / 2.0 : half_;
+        float dy = abs(q.y - cy);
+        if (dy > th / 2.0) return false;
+        float inset = th / 2.0 + dy;
+        return q.x > inset && q.x < 1.0 - inset;
+    }
+    float cx = (seg == 1 || seg == 2) ? 1.0 - th / 2.0 : th / 2.0;
+    float y0 = (seg == 1 || seg == 5) ? 0.0 : half_, y1 = (seg == 1 || seg == 5) ? half_ : h;
+    float dx = abs(q.x - cx);
+    if (dx > th / 2.0) return false;
+    float inset = th / 2.0 + dx;
+    return q.y > y0 + inset && q.y < y1 - inset;
+}
+bool segmentOn(int digit, int seg) {
+    const int mask[10] = int[10](0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f);
+    return digit >= 0 && digit <= 9 && ((mask[digit] >> seg) & 1) != 0;
+}
+
+// The readout at a point of its grid: rgb and coverage (0 outside the rounded panel). 0 panel, 1 unlit, 2 lit.
+vec4 readout(vec2 p, ivec3 d) {
+    float margin = kH * 0.14, cellH = kH - 2.0 * margin, cellW = cellH / 1.6, gap = cellW * 0.28;
+    float total = 3.0 * cellW + 2.0 * gap, x0 = (kW - total) / 2.0, slant = 0.12, radius = kH * 0.18;
+    vec2 cl = clamp(p, vec2(radius), vec2(kW - radius, kH - radius));
+    if (dot(p - cl, p - cl) > radius * radius) return vec4(0.0);
+    int kind = 0;
+    float v = (p.y - margin) / cellH * 1.6;
+    if (v >= 0.0 && v <= 1.6)
+        for (int i = 0; i < 3; ++i) {
+            float uu = (p.x - (x0 + float(i) * (cellW + gap))) / cellW + slant * (v - 0.8);
+            if (uu < -0.1 || uu > 1.1) continue;
+            for (int s = 0; s < 7; ++s)
+                if (inSegment(vec2(uu, v), s, 0.2)) kind = segmentOn(d[i], s) ? 2 : 1;
+        }
+    if (kind == 2) return vec4(pc.lit.rgb, pc.lit.a);
+    vec3 panel = vec3(0.0025, 0.0037, 0.0044), unlit = vec3(0.0047, 0.0075, 0.0094);  // linear of the CPU colours
+    return vec4(kind == 1 ? unlit : panel, pc.c.w);
+}
+
+void main() {
+    ivec2 p = ivec2(pc.rect.xy) + ivec2(gl_GlobalInvocationID.xy);
+    if (gl_GlobalInvocationID.x >= uint(pc.rect.z) || gl_GlobalInvocationID.y >= uint(pc.rect.w) || p.x >= int(pc.size.x) || p.y >= int(pc.size.y))
+        return;
+    vec3 n = cross(pc.r.xyz, pc.u.xyz);
+    float rr = dot(pc.r.xyz, pc.r.xyz), uu = dot(pc.u.xyz, pc.u.xyz);
+    int code = int(pc.info.w + 0.5);
+    ivec3 d = ivec3(code / 121 - 1, (code / 11) % 11 - 1, code % 11 - 1);
+    // scene distance at this pixel (the render sub-rect is the depth image's top-left in phase B)
+    ivec2 dp = ivec2((vec2(p) + 0.5) * pc.size.zw);
+    float dd = texelFetch(depthTex, dp, 0).r;
+    float nearZ = pc.info.x, farZ = pc.info.y, split = pc.info.z;
+    if (split > 0.0) dd = dd >= split ? (dd - split) / (1.0 - split) : dd / split;
+    float scene = farZ * nearZ / (nearZ + dd * (farZ - nearZ));
+    // 2x2 samples per pixel for smooth edges; one depth test at the pixel centre
+    vec4 acc = vec4(0.0);
+    int hits = 0;
+    for (int s = 0; s < 4; ++s) {
+        vec2 off = vec2(float(s & 1), float(s >> 1)) * 0.5 + 0.25;
+        vec2 uv = (vec2(p) + off) / pc.size.xy;
+        vec3 dir = vec3(mix(pc.tan.x, pc.tan.y, uv.x), mix(pc.tan.z, pc.tan.w, uv.y), -1.0);
+        float den = dot(n, dir);
+        if (abs(den) < 1e-8) continue;
+        float t = dot(n, pc.c.xyz) / den;  // = the eye-space depth (dir.z = -1)
+        if (t <= nearZ) continue;
+        vec3 l = dir * t - pc.c.xyz;
+        float a = dot(l, pc.r.xyz) / rr, b = dot(l, pc.u.xyz) / uu;
+        if (abs(a) > 1.0 || abs(b) > 1.0) continue;
+        if (t > scene * 1.004 + 0.002) continue;  // behind the scene (a hand, the gun's own sight, a wall)
+        vec4 col = readout(vec2((a * 0.5 + 0.5) * kW, (0.5 - b * 0.5) * kH), d);
+        acc += vec4(col.rgb * col.a, col.a);
+        ++hits;
+    }
+    if (hits == 0) return;
+    acc *= 0.25;  // average over the 4 samples (misses count as transparent)
+    vec4 under = imageLoad(canvas, p);
+    imageStore(canvas, p, vec4(under.rgb * (1.0 - acc.a) + acc.rgb, under.a));
+}

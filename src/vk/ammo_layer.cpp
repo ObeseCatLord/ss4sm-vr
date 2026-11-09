@@ -104,6 +104,7 @@ int begin() {
         g_hands[h] = ammo::hand(h);
         g_count += g_hands[h].visible && xr::input().hand(h).active;
     }
+    if (g_count && ammo::sceneDrawing()) return g_count = 0;  // drawn in the eyes' scenes (depth-tested) instead
     if (!g_count || !setup()) return g_count = 0;
     g_acquired = xr::runtime().acquire(g_sc, g_index);
     if (!g_acquired) g_count = 0;

@@ -75,7 +75,10 @@ add_custom_command(OUTPUT ${SHADER_OUT}/scope.comp.inc
 add_custom_command(OUTPUT ${SHADER_OUT}/rcas.comp.inc
   COMMAND ${GLSLC} -O --target-env=vulkan1.1 -mfmt=c ${CMAKE_SOURCE_DIR}/src/up/shaders/rcas.comp -o ${SHADER_OUT}/rcas.comp.inc
   DEPENDS ${CMAKE_SOURCE_DIR}/src/up/shaders/rcas.comp)
-add_custom_target(shaders DEPENDS ${SHADER_OUT}/motion.comp.inc ${SHADER_OUT}/scope.comp.inc ${SHADER_OUT}/rcas.comp.inc)
+add_custom_command(OUTPUT ${SHADER_OUT}/counter.comp.inc
+  COMMAND ${GLSLC} -O --target-env=vulkan1.1 -mfmt=c ${CMAKE_SOURCE_DIR}/src/up/shaders/counter.comp -o ${SHADER_OUT}/counter.comp.inc
+  DEPENDS ${CMAKE_SOURCE_DIR}/src/up/shaders/counter.comp)
+add_custom_target(shaders DEPENDS ${SHADER_OUT}/motion.comp.inc ${SHADER_OUT}/scope.comp.inc ${SHADER_OUT}/rcas.comp.inc ${SHADER_OUT}/counter.comp.inc)
 
 # Payload (Bin/x64/ss4smvr/ss4smvr.dll)
 add_library(ss4smvr SHARED src/se4/payload.cpp src/se4/log.cpp src/se4/build.cpp src/se4/cvars.cpp src/se4/procaddr.cpp src/se4/gamepad.cpp src/se4/focus.cpp src/se4/vr_device.cpp src/se4/player_vr.cpp src/se4/options.cpp src/se4/patch.cpp src/se4/crosshair.cpp src/se4/vehicles.cpp src/se4/body.cpp src/se4/melee.cpp src/se4/scope.cpp src/se4/hands.cpp src/se4/arms.cpp src/se4/gadgets.cpp src/se4/wheel_panel.cpp src/se4/hud_vr.cpp src/se4/artifact.cpp src/se4/prompts.cpp src/se4/net.cpp src/se4/turn.cpp src/se4/names.cpp src/se4/gfx_menu.cpp src/se4/foliage.cpp src/se4/ammo_counter.cpp

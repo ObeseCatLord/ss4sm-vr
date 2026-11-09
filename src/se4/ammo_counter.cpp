@@ -33,6 +33,8 @@ const Spot kSpots[] = {
 };
 
 bool g_on, g_skipNative = true;
+volatile LONG g_enabled = 1;  // VR Controls > Ammo Counters (runtime)
+int g_start = -1;             // the menu's saved choice (gfxmenu::prepare), before install
 float g_up, g_back, g_size = -1;
 using IntFn = int(__cdecl*)(uint8_t*);
 using PlacementFn = float*(__cdecl*)(uint8_t*, float*);
@@ -62,9 +64,16 @@ core::Quat axisAngle(core::Vec3 axis, float rad) {
 core::Pose fromP7(const float* p) { return {core::normalize({p[0], p[1], p[2], p[3]}), {p[4], p[5], p[6]}}; }
 }  // namespace
 
+void setStart(int on) { g_start = on; }
+void setEnabled(bool on) {
+    if (InterlockedExchange(&g_enabled, on ? 1 : 0) != LONG(on)) VRLOG("ammo: counters %s", on ? "on" : "off");
+}
+bool enabled() { return g_on && g_enabled; }
+
 bool install() {
-    g_on = se4::options::get("ammo_counter", 1) != 0;
+    g_on = se4::options::get("ammo_counter", 1) != 0;  // 0: no counters at all (not even in the menu)
     if (!g_on) return false;
+    g_enabled = g_start == 0 ? 0 : 1;
     g_skipNative = se4::options::get("ammo_counter_native", 1) != 0;
     g_up = se4::options::get("ammo_counter_up_cm", 0) / 100.0f;
     g_back = se4::options::get("ammo_counter_back_cm", 0) / 100.0f;
@@ -85,7 +94,7 @@ void onWeaponStep(uint8_t* weapon, uint8_t* player, bool rightHand) {
     Slot s;
     s.weapon = weapon;
     s.tick = GetTickCount64();
-    if (max > 0 && !native) {
+    if (max > 0 && !native && g_enabled) {
         s.h.count = reinterpret_cast<IntFn>(vt[kAmmo / 8])(weapon);
         s.h.max = max;
         float w7[7] = {}, hand7[7] = {};
@@ -104,6 +113,10 @@ void onWeaponStep(uint8_t* weapon, uint8_t* player, bool rightHand) {
             // the quad faces +z (back, towards the shooter), tilted up about the weapon's x axis towards the eyes
             s.h.gripToSpot = core::normalize(core::multiply(gripToWeapon, axisAngle({1, 0, 0}, -sp.tiltDeg * 3.14159265f / 180.0f)));
             s.h.width = g_size > 0 ? g_size : sp.width;
+            const core::Quat spotQ = core::normalize(core::multiply(wp.q, axisAngle({1, 0, 0}, -sp.tiltDeg * 3.14159265f / 180.0f)));
+            s.h.worldC = wp.p + core::rotate(wp.q, spot) * scale;
+            s.h.worldR = core::rotate(spotQ, {s.h.width / 2, 0, 0}) * scale;
+            s.h.worldU = core::rotate(spotQ, {0, s.h.width / 4, 0}) * scale;
             s.h.visible = true;
         }
     }
@@ -120,6 +133,10 @@ void onWeaponStep(uint8_t* weapon, uint8_t* player, bool rightHand) {
               s.h.count, max);
     }
 }
+
+volatile ULONGLONG g_sceneTick;
+void noteSceneDraw() { g_sceneTick = GetTickCount64(); }
+bool sceneDrawing() { return GetTickCount64() - g_sceneTick < 200; }
 
 Hand hand(int xrHand) {
     Hand h;

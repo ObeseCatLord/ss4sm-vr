@@ -1,9 +1,11 @@
 #include "up/integrate.hpp"
+#include "core/ammo_counter.hpp"
 #include "core/flat_view.hpp"
 #include "core/reproject.hpp"
 #include "core/upscale.hpp"
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
+#include "se4/ammo_counter.hpp"
 #include "se4/foliage.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
@@ -33,6 +35,9 @@ const uint32_t kMotionSpv[] =
 const uint32_t kRcasSpv[] =
 #include "rcas.comp.inc"
     ;
+const uint32_t kCounterSpv[] =
+#include "counter.comp.inc"
+    ;
 
 using HdrFn = void*(__cdecl*)(uint32_t a);
 using PpFn = void(__cdecl*)(void* gfx, void* dst, uint32_t flags, void* p4);
@@ -54,6 +59,8 @@ thread_local int t_ppDepth;  // inside realPp
 thread_local uint32_t t_ppFlags;
 thread_local VkCommandBuffer t_ppCb;
 thread_local int t_pendingSlot;  // slot + 1 to evaluate at the PP's first canvas barrier (0: none)
+thread_local bool t_counterOnly;  // that barrier only draws the ammo counters (no upscaler this eye)
+thread_local bool t_spPending;  // single pass: the eye is the frame's n-th canvas barrier
 // PP flags of the per-eye dispatch whose post-processing reads the canvas (learnt from its first barrier).
 volatile LONG g_ppFlags = -1;
 
@@ -126,6 +133,8 @@ struct Resources {
     VkDescriptorSet sharpSet = VK_NULL_HANDLE;
     VkDescriptorSet debugSet = VK_NULL_HANDLE;  // lab debug view: motion -> sharp
     bool sharpFailed = false;
+    VkDescriptorSet counterSet = VK_NULL_HANDLE;  // ammo counters (R32 s4): depth sampled, canvas as storage
+    bool counterFailed = false;
 } g_res;
 
 // Created once per device.
@@ -137,6 +146,14 @@ VkDescriptorPool g_pool;
 VkDescriptorSetLayout g_rcasDsl;
 VkPipelineLayout g_rcasPl;
 VkPipeline g_rcasPipe;
+VkPipeline g_counterPipe;  // counter.comp, on the motion pipeline's layout (same bindings and push-constant range)
+bool g_counters;           // on-weapon ammo counters in the eyes' scenes (options ammo_counter, ammo_counter_scene)
+float g_counterGlow = 4.0f;
+volatile LONG g_spPp;      // single pass: post-processing dispatches since the VR frame began (lab trace)
+volatile LONG g_spCanvas;  // single pass: canvas-reading dispatches since the VR frame began
+thread_local int t_spIndex = -1;
+int g_spTrace;  // lab: ammo_counter_sp_trace=<frames>
+int g_spFirst = 2;     // the eye single pass post-processes first (lab: the right eye, as the two-pass loop)
 // The engine's depth partition (viewport depth range [split, 1] for the world, [0, split] beyond), from vkCmdSetViewport.
 std::atomic<float> g_depthSplit{0.0f};
 int g_passTrace = -1;  // option upscale_pass_trace (frames), read once
@@ -221,10 +238,10 @@ bool createPipeline() {
     VkResult r = vk.createCompute(vk.dev, VK_NULL_HANDLE, 1, &cp, nullptr, &g_pipe);
     vk.destroyShader(vk.dev, mod, nullptr);
     if (r != VK_SUCCESS) return false;
-    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 8}};
+    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10}};
     VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dp.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    dp.maxSets = 4;
+    dp.maxSets = 6;
     dp.poolSizeCount = 2;
     dp.pPoolSizes = ps;
     return vk.createPool(vk.dev, &dp, nullptr, &g_pool) == VK_SUCCESS;
@@ -271,6 +288,7 @@ void releaseResources() {
     destroyOwn(g_res.output);
     if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet);
     if (g_res.debugSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.debugSet);
+    if (g_res.counterSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.counterSet);
     destroyOwn(g_res.sharp);
     g_res = {};
 }
@@ -1459,6 +1477,26 @@ bool flatPp(void* ret, void* dst, uint32_t flags, bool want) {
     return !why;
 }
 
+// Single pass post-processes each eye with device eye 0 into an internal drawport: the eye is the one whose pose is
+// nearest the camera the engine last rendered with (gfx world-to-view, R27 s2); the eyes are an IPD apart.
+int eyeOfGfxCamera(uint8_t* gfx) {
+    if (!gfx) return 0;
+    double w2v[12], pos[3];
+    memcpy(w2v, gfx + kGfxW2V, sizeof w2v);
+    core::viewPosition(w2v, pos);
+    core::Pose e[2];
+    if (!worldEye(1, e[0]) || !worldEye(2, e[1])) return 0;
+    double d[2];
+    for (int i = 0; i < 2; ++i) {
+        const double dx = pos[0] - e[i].p.x, dy = pos[1] - e[i].p.y, dz = pos[2] - e[i].p.z;
+        d[i] = dx * dx + dy * dy + dz * dz;
+    }
+    const double units = worldScale();  // engine units per metre
+    const double nearest = std::min(d[0], d[1]);
+    if (!std::isfinite(nearest) || nearest > 0.2 * 0.2 * units * units) return 0;  // not an eye view (scope, mirror, menu)
+    return d[0] <= d[1] ? 1 : 2;
+}
+
 void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
     if (g_extraBias) *g_extraBias = 0.0f;  // post-processing and what follows in the view are unbiased
     void* ret = __builtin_return_address(0);  // MinHook enters by a jmp: the engine caller's return address
@@ -1473,6 +1511,28 @@ void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
         if (want && player_vr::localVrd()) slot = eye;
     } else if (eye == -1 && !t_ppDepth && flatEnabled() && flatPp(ret, dst, flags, want))
         slot = 0;
+    // No upscaler for this eye: the canvas barrier still draws the ammo counters (R32 s4). Single pass reports device eye
+    // 0 here; the eye is then the one whose drawport is being post-processed.
+    int counterEye = 0;
+    if (slot < 0 && g_counters && cb && !t_ppDepth && (flags & 1) == 0 && LONG(flags) == g_ppFlags && player_vr::localVrd()) {
+        counterEye = (eye == 1 || eye == 2) ? eye : vrdev::eyeOfDrawport(dst);
+        if (counterEye != 1 && counterEye != 2 && eyeOfGfxCamera(static_cast<uint8_t*>(gfx))) {
+            // Single pass: one camera for both eyes' views (single prepare), post-processed one after the other in the
+            // frame; the order is the engine's eye loop (option ammo_counter_sp_first, default eye 2 first).
+            // The eye is decided at the canvas barrier: about 18 dispatches per frame, two of which (one per eye) read
+            // the canvas (lab, R32 s4).
+            counterEye = -1;
+            t_spIndex = int(InterlockedIncrement(&g_spPp) - 1);
+            if (g_spTrace > 0) VRLOG("upint: sp trace: dispatch %d dst %p flags 0x%x cb %p", t_spIndex, dst, flags, static_cast<void*>(cb));
+        }
+    }
+    if (g_counters && (flags & 1) == 0 && LONG(flags) == g_ppFlags && !t_ppDepth && player_vr::localVrd()) {
+        static int logged;
+        if (logged < 6)
+            VRLOG("upint: counter pp: device eye %d, drawport %p (eye %d), slot %d, cb %p, vrd %p -> counter eye %d", eye, dst, vrdev::eyeOfDrawport(dst),
+                  slot, static_cast<void*>(cb), player_vr::localVrd(), counterEye),
+                ++logged;
+    }
     if (slot >= 0 && phaseB()) {
         ppPhaseB(gfx, dst, flags, p4, slot, cb);
         return;
@@ -1480,8 +1540,12 @@ void hookedPp(void* gfx, void* dst, uint32_t flags, void* p4) {
     ++t_ppDepth;
     t_ppFlags = flags;
     t_ppCb = cb;
-    t_pendingSlot = slot >= 0 ? slot + 1 : 0;
+    t_pendingSlot = slot >= 0 ? slot + 1 : (counterEye == 1 || counterEye == 2) ? counterEye + 1 : counterEye == -1 ? 1 + 1 : 0;
+    t_spPending = counterEye == -1;
+    t_counterOnly = slot < 0 && t_pendingSlot;
     realPp(gfx, dst, flags, p4);
+    t_counterOnly = t_spPending = false;
+    t_spIndex = -1;
     if (t_pendingSlot) {
         static volatile LONG logged;
         if (InterlockedIncrement(&logged) <= 3) VRLOG("upint: %s: no canvas barrier seen in post-processing", slotName(t_pendingSlot - 1));
@@ -1677,6 +1741,8 @@ void patchImage(VkImageCreateInfo& ci) {
     // Desktop menu mode can enter phase B at any time without the canvas being re-created (it stays at the backbuffer size).
     else if (ci.format == VK_FORMAT_R16G16B16A16_SFLOAT && ci.samples == VK_SAMPLE_COUNT_1_BIT && (phaseB() || (up::menuMode() && g_phaseBReady)))
         ci.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // The ammo counters write the canvas from a compute shader (R32 s4).
+    if (g_counters && ci.format == VK_FORMAT_R16G16B16A16_SFLOAT && ci.samples == VK_SAMPLE_COUNT_1_BIT) ci.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
 }
 
 void onImageCreated(VkImage image, const VkImageCreateInfo& ci) {
@@ -1789,17 +1855,168 @@ void onEndPass(VkCommandBuffer cb) {
     g_openPass.erase(cb);
 }
 
+// ---- On-weapon ammo counters in the eyes' scenes (docs/re/R32_ammo_counters.md s4) ----
+bool ensureCounter() {
+    if (g_res.counterSet) return true;
+    if (g_res.counterFailed || !g_res.ready) return false;
+    bool ok = true;
+    if (!g_counterPipe) {
+        VkShaderModuleCreateInfo sm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+        sm.codeSize = sizeof(kCounterSpv);
+        sm.pCode = kCounterSpv;
+        VkShaderModule mod;
+        ok = vk.createShader(vk.dev, &sm, nullptr, &mod) == VK_SUCCESS;
+        if (ok) {
+            VkComputePipelineCreateInfo cp{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+            cp.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, mod, "main", nullptr};
+            cp.layout = g_pl;
+            ok = vk.createCompute(vk.dev, VK_NULL_HANDLE, 1, &cp, nullptr, &g_counterPipe) == VK_SUCCESS;
+            vk.destroyShader(vk.dev, mod, nullptr);
+        }
+    }
+    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    ai.descriptorPool = g_pool;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &g_dsl;
+    ok = ok && g_color.format == VK_FORMAT_R16G16B16A16_SFLOAT && vk.allocSets(vk.dev, &ai, &g_res.counterSet) == VK_SUCCESS;
+    if (ok) {
+        VkDescriptorImageInfo di{g_sampler, g_res.depthView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkDescriptorImageInfo ci{VK_NULL_HANDLE, g_res.colorView, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet w[2] = {};
+        w[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, g_res.counterSet, 0, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &di};
+        w[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, g_res.counterSet, 1, 0, 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &ci};
+        vk.updateSets(vk.dev, 2, w, 0, nullptr);
+    }
+    g_res.counterFailed = !ok;
+    VRLOG("upint: ammo counters in the scene %s (canvas format %d)", ok ? "ready" : "FAILED - quad layers instead", int(g_color.format));
+    return ok;
+}
+
+// Eye `slot` (1/2) after its scene (and the upscaler, if one ran), before post-processing: the canvas is in
+// COLOR_ATTACHMENT_OPTIMAL and the depth in DEPTH_STENCIL_ATTACHMENT_OPTIMAL, and are left that way.
+void drawCounters(VkCommandBuffer cb, int slot) {
+    if (!g_counters || (slot != 1 && slot != 2) || !g_proj[slot].valid) return;
+    ammo::Hand hands[2] = {ammo::hand(0), ammo::hand(1)};
+    if (!hands[0].visible && !hands[1].visible) return;
+    core::Pose cur;
+    const bool res = ensureResources(), pipe = res && ensureCounter(), eyePose = pipe && worldEye(slot, cur);
+    if (!eyePose) {
+        static int logged;
+        if (logged++ < 4) VRLOG("upint: %s ammo counter not drawn: resources %d, pipeline %d, eye pose %d", slotName(slot), int(res), int(pipe), int(eyePose));
+        return;
+    }
+    const PhaseB& pb = t_phaseB;
+    const bool scaled = pb.slot == slot && pb.ow;
+    const uint32_t OW = scaled ? pb.ow : g_res.w, OH = scaled ? pb.oh : g_res.h;
+    const float dsx = scaled ? float(pb.rw) / float(pb.ow) : 1.0f, dsy = scaled ? float(pb.rh) / float(pb.oh) : 1.0f;
+    const core::Tangents& t = g_proj[slot].tan;
+    const float n = g_proj[slot].n;
+    const core::Quat inv = core::inverse(cur.q);
+    struct {
+        float tan[4], info[4], c[4], r[4], u[4], rect[4], lit[4], size[4];
+    } pc[2]{};
+    int count = 0;
+    const double secs = double(GetTickCount64()) / 1000.0;
+    for (int h = 0; h < 2; ++h) {
+        const ammo::Hand& a = hands[h];
+        if (!a.visible) continue;
+        const core::Vec3 c = core::rotate(inv, a.worldC - cur.p), r = core::rotate(inv, a.worldR), u = core::rotate(inv, a.worldU);
+        // the quad's pixel rectangle from its corners (any corner at or behind the near plane: the whole image)
+        float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+        bool whole = false;
+        for (int k = 0; k < 4; ++k) {
+            const core::Vec3 q = c + r * ((k & 1) ? 1.0f : -1.0f) + u * ((k & 2) ? 1.0f : -1.0f);
+            if (q.z > -n) {
+                whole = true;
+                break;
+            }
+            const float px = (q.x / -q.z - t.l) / (t.r - t.l) * OW, py = (q.y / -q.z - t.u) / (t.d - t.u) * OH;
+            x0 = std::min(x0, px), y0 = std::min(y0, py), x1 = std::max(x1, px), y1 = std::max(y1, py);
+        }
+        if (whole) x0 = y0 = 0, x1 = float(OW), y1 = float(OH);
+        x0 = std::max(0.0f, std::floor(x0) - 1), y0 = std::max(0.0f, std::floor(y0) - 1);
+        x1 = std::min(float(OW), std::ceil(x1) + 1), y1 = std::min(float(OH), std::ceil(y1) + 1);
+        if (x1 <= x0 || y1 <= y0) continue;
+        int d[3];
+        core::ammo::digits(a.count, d);
+        const core::ammo::Rgba col = core::ammo::colour(a.count, a.max, secs);
+        auto lin = [](uint8_t v) { const float f = v / 255.0f; return f <= 0.04045f ? f / 12.92f : std::pow((f + 0.055f) / 1.055f, 2.4f); };
+        auto& p = pc[count++];
+        p.tan[0] = t.l, p.tan[1] = t.r, p.tan[2] = t.u, p.tan[3] = t.d;
+        p.info[0] = n, p.info[1] = g_proj[slot].f, p.info[2] = g_depthSplit.load(std::memory_order_relaxed);
+        p.info[3] = float((d[0] + 1) * 121 + (d[1] + 1) * 11 + (d[2] + 1));
+        p.c[0] = c.x, p.c[1] = c.y, p.c[2] = c.z, p.c[3] = 0.85f;
+        p.r[0] = r.x, p.r[1] = r.y, p.r[2] = r.z;
+        p.u[0] = u.x, p.u[1] = u.y, p.u[2] = u.z;
+        p.rect[0] = x0, p.rect[1] = y0, p.rect[2] = x1 - x0, p.rect[3] = y1 - y0;
+        p.lit[0] = lin(col.r) * g_counterGlow, p.lit[1] = lin(col.g) * g_counterGlow, p.lit[2] = lin(col.b) * g_counterGlow, p.lit[3] = col.a / 255.0f;
+        p.size[0] = float(OW), p.size[1] = float(OH), p.size[2] = dsx, p.size[3] = dsy;
+    }
+    if (!count) return;
+    VkImageMemoryBarrier b[2];
+    imageBarrier(b[0], g_res.color, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    imageBarrier(b[1], g_res.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+    vk.barrier(cb,
+               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                   VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, b);
+    vk.bindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_counterPipe);
+    vk.bindSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, g_pl, 0, 1, &g_res.counterSet, 0, nullptr);
+    for (int i = 0; i < count; ++i) {
+        if (i) {  // the second hand's quad may overlap the first's pixels
+            imageBarrier(b[0], g_res.color, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                         VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, b);
+        }
+        vk.push(cb, g_pl, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof pc[i], &pc[i]);
+        vk.dispatch(cb, (uint32_t(pc[i].rect[2]) + 7) / 8, (uint32_t(pc[i].rect[3]) + 7) / 8, 1);
+    }
+    imageBarrier(b[0], g_res.color, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                 VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT);
+    imageBarrier(b[1], g_res.depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_ACCESS_SHADER_READ_BIT,
+                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    vk.barrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+               VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                   VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+               0, 0, nullptr, 0, nullptr, 2, b);
+    ammo::noteSceneDraw();
+    static volatile LONG logged[3];
+    if (InterlockedIncrement(&logged[slot]) <= 3)
+        VRLOG("upint: %s ammo counter(s) drawn in the scene: %d, first rect %.0f,%.0f %.0fx%.0f of %ux%u%s", slotName(slot), count, pc[0].rect[0],
+              pc[0].rect[1], pc[0].rect[2], pc[0].rect[3], OW, OH, scaled ? " (phase B)" : "");
+}
+
 void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkImageLayout) {
     if (!t_ppDepth || image != g_color.image || cb != t_ppCb) return;
     if (t_pendingSlot) {
-        const int slot = t_pendingSlot - 1;
+        int slot = t_pendingSlot - 1;
         t_pendingSlot = 0;
         bool open;
         {
             std::lock_guard<std::mutex> l(g_passLock);
             open = g_openPass.count(cb) != 0;
         }
-        if (from == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !open) evaluateEye(cb, slot);
+        const bool counterOnly = t_counterOnly;
+        t_counterOnly = false;
+        if (t_spPending) {  // single pass: the frame's first canvas-reading dispatch is one eye, the second the other
+            t_spPending = false;
+            const LONG n = InterlockedIncrement(&g_spCanvas) - 1;
+            if (g_spTrace > 0) VRLOG("upint: sp trace: dispatch %d reads the canvas (#%ld this frame, layout %d)", t_spIndex, n, int(from));
+            if (n > 1) return;
+            slot = (n == 0) == (g_spFirst == 1) ? 1 : 2;
+        }
+        if (counterOnly) {
+            static volatile LONG seen[3];
+            if (InterlockedIncrement(&seen[slot]) <= 2)
+                VRLOG("upint: %s counter barrier: canvas from layout %d, pass open %d", slotName(slot), int(from), int(open));
+        }
+        if (from == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL && !open) {
+            if (!counterOnly) evaluateEye(cb, slot);
+            drawCounters(cb, slot);
+        }
         else {
             static volatile LONG logged;
             if (InterlockedIncrement(&logged) <= 3)
@@ -1859,6 +2076,9 @@ void setVrPercent(int pct) {
 }
 int vrPercent() { return g_vrPct.load(); }
 void onVrFrameBegin() {
+    InterlockedExchange(&g_spPp, 0);
+    InterlockedExchange(&g_spCanvas, 0);
+    if (g_spTrace > 0 && player_vr::localVrd()) --g_spTrace;
     if (g_vrMenu) applyVrRequest();
     foliage::update(g_evaluate && up::active() != up::Kind::Off);
 }
@@ -1875,6 +2095,10 @@ bool installEyeHook() {
 bool install() {
     g_evaluate = up::wanted();
     if (!g_evaluate) return false;
+    g_counters = se4::g_vrEnabled && se4::options::get("ammo_counter", 1) && se4::options::get("ammo_counter_scene", 1);
+    g_counterGlow = std::clamp(se4::options::get("ammo_counter_glow", 400), 10, 5000) / 100.0f;
+    g_spFirst = se4::options::get("ammo_counter_sp_first", 2) == 1 ? 1 : 2;
+    g_spTrace = se4::options::get("ammo_counter_sp_trace", 0);
     g_jitterOn = se4::options::get("upscale_jitter", 1) != 0;
     g_evaluateOn = se4::options::get("upscale_evaluate", 1) != 0;
     g_lodBias = se4::options::get("upscale_lod_bias", -100) / 100.0f;
