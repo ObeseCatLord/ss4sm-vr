@@ -28,7 +28,7 @@ jobs:
           x86_64-w64-mingw32-g++ -v 2>&1 | grep 'Thread model'
           glslc --version | head -1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Third-party SDKs (pinned, headers and runtime DLLs only)
         run: |
@@ -74,7 +74,7 @@ jobs:
              "$D/ffx/PrebuiltSignedDLL/amd_fidelityfx_vk.dll" "$P/Bin/x64/ss4smvr/"
           : > "$P/Bin/x64/ss4smvr/enable_vr"   # VR opt-in (delete for flat play with the mod; see README)
           cp README.md LICENSE NOTICE.md "$P/"; cp licenses/* "$P/licenses/"
-          (cd "$P" && find . -type f -exec sha256sum {} + | sort -k2 > SHA256SUMS.txt)
+          (cd "$P" && find . -type f -exec sha256sum {} + | sort -k2 > ../SHA256SUMS.tmp && mv ../SHA256SUMS.tmp SHA256SUMS.txt)
           (cd pkg && zip -qr "ss4sm-vr-$VER.zip" "ss4sm-vr-$VER")
           # CI build folder for tools/install.py --build (it takes the SDK DLLs from there)
           mkdir -p pkg/build && cp build-win/msimg32.dll build-win/ss4smvr.dll "$D/dlss/lib/Windows_x86_64/rel/nvngx_dlss.dll" \
@@ -83,13 +83,13 @@ jobs:
           echo "VER=$VER" >> "$GITHUB_ENV"
           cat "$P/SHA256SUMS.txt"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ss4sm-vr-${{ env.VER }}
           path: pkg/ss4sm-vr-${{ env.VER }}
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: build-win-${{ env.VER }}
           path: pkg/build
@@ -97,7 +97,7 @@ jobs:
 
       - name: Release (tags only)
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: pkg/ss4sm-vr-${{ env.VER }}.zip
           draft: true
