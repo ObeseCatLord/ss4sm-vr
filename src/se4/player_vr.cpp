@@ -413,8 +413,14 @@ void* vrdOf(const void* entity) {
     if (!entity || !g_vrdOff) return nullptr;
     void* vrd = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(entity) + g_vrdOff);
     if (!vrd) return nullptr;
-    if (vrd == g_localVrd) return *static_cast<void**>(vrd) == entity ? vrd : nullptr;
-    return readableMem(vrd, 8) && *static_cast<void**>(vrd) == entity ? vrd : nullptr;
+    const bool ok = (vrd == g_localVrd || readableMem(vrd, 8)) && *static_cast<void**>(vrd) == entity;
+    if (!ok) {
+        static int logged;
+        if (logged++ < 6)
+            VRLOG("player_vr: entity %p VR data field %p rejected (readable %d, back-pointer %p)", entity, vrd, int(readableMem(vrd, 8)),
+                  readableMem(vrd, 8) ? *static_cast<void**>(vrd) : nullptr);
+    }
+    return ok ? vrd : nullptr;
 }
 void* localVrd() {
     void* v = g_localVrd;

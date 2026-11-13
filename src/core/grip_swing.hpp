@@ -24,7 +24,7 @@ inline bool atForegrip(const Pose& mainHand, const Vec3& offHand, float snap, fl
 }  // namespace core::grip
 
 namespace core::swing {
-constexpr float kMaxSpeed = 20.0f;  // m/s: faster is a tracking jump or a network step, not a swing
+constexpr float kMaxSpeed = 40.0f;  // m/s: faster is a tracking jump or a network step, not a swing (a knife tip 45 cm out can pass 20)
 
 // Head-relative speed of a point (m/s): `rel` = point minus head now, `prevRel` the same `dt` seconds ago (engine units).
 // Walking, riding or a snap turn moves the head with the hand and does not count.

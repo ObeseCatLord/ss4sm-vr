@@ -33,7 +33,8 @@ int main() {
     assert(std::fabs(swing::relativeSpeed({0, 0, 0}, {0.6f, 0, 0}, 0.1, 2.0f) - 3.0f) < 1e-4f);
     assert(swing::relativeSpeed({0, 0, 0}, {1, 0, 0}, 0.0, 1.0f) == 0.0f);  // no interval, no speed
     assert(swing::counts(3.0f, 2.0f, 0.02) && !swing::counts(1.0f, 2.0f, 0.02));
-    assert(!swing::counts(25.0f, 2.0f, 0.02));  // a tracking jump
+    assert(swing::counts(35.0f, 2.0f, 0.02));   // a fast flick of a knife tip
+    assert(!swing::counts(60.0f, 2.0f, 0.02));  // a tracking jump
     assert(!swing::counts(3.0f, 2.0f, 0.3));    // too long an interval to be one motion
     return 0;
 }
