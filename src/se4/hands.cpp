@@ -1,6 +1,7 @@
 #include "se4/ammo_counter.hpp"
 #include "se4/hands.hpp"
 #include "core/math.hpp"
+#include "core/grip_swing.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/names.hpp"
@@ -43,8 +44,6 @@ constexpr size_t kFlags = 0x168;            // en_ulWeaponFlags
 constexpr uint32_t kGripped = 0x20;         // WF_GRIPPED_WITH_TWO_HANDS
 constexpr uint32_t kCheckedInitialFire = 0x800;
 constexpr size_t kTwoHanded = 0x1b4;        // wp_bTwoHanded
-constexpr float kForegripAhead = 0.25f;     // m: the support hand's place ahead of the main hand along the barrel
-constexpr float kForegripReach = 0.15f;     // m: how near it the off hand must be to grip
 constexpr size_t kSnapDistance = 0x214;     // wp_fHandSnapMinDistance (< 0: the player's VR params default)
 constexpr float kDefaultSnap = 0.2f;        // stand-in for CPlayerVRParams+0xcc (unreached)
 
@@ -211,7 +210,7 @@ bool remoteTwoHand(uint8_t* weapon, void* arg) {
     const auto& b = se4::build();
     const unsigned vrdOff = player_vr::vrdOffset();
     uint8_t* owner = vrdOff ? handleEntity(at<int32_t>(weapon, b.off(se4::gen::CWeaponEntity_en_henOwner))) : nullptr;
-    void* vrd = owner ? at<void*>(owner, vrdOff) : nullptr;
+    void* vrd = player_vr::vrdOf(owner);
     uint8_t* params = at<uint8_t*>(weapon, kParams);
     if (!vrd || vrd == player_vr::localVrd() || !params || !at<int32_t>(weapon, b.off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) ||
         !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire))
@@ -230,13 +229,8 @@ bool remoteTwoHand(uint8_t* weapon, void* arg) {
     if (!(main7[0] || main7[1] || main7[2] || main7[3]) || !(off7[0] || off7[1] || off7[2] || off7[3])) return false;
     float wsc = 1.0f;
     if (auto* sc = b.at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) wsc = *sc;
-    const core::Vec3 gripP = core::Vec3{main7[4], main7[5], main7[6]} +
-                             core::rotate(core::normalize({main7[0], main7[1], main7[2], main7[3]}), {0, 0, -kForegripAhead / wsc});
-    const core::Vec3 d = gripP - core::Vec3{off7[4], off7[5], off7[6]};
-    float snap = at<float>(params, kSnapDistance);
-    if (!(snap >= 0.0f && snap < 2.0f)) snap = kDefaultSnap;
-    snap = std::fmax(snap, kForegripReach / wsc);
-    const bool engaged = squeeze && core::dot(d, d) <= snap * snap;
+    const bool engaged = squeeze && core::grip::atForegrip({{main7[0], main7[1], main7[2], main7[3]}, {main7[4], main7[5], main7[6]}},
+                                                           {off7[4], off7[5], off7[6]}, at<float>(params, kSnapDistance), kDefaultSnap, 1.0f / wsc);
     uint8_t& bits = at<uint8_t>(owner, g_fireBits);
     const uint8_t mask = 2;  // a right-hand weapon: the left hand's fire bit (R15 s4.2)
     const uint8_t saved = bits;
@@ -320,19 +314,16 @@ void hookedStep(uint8_t* weapon, void* arg) {
     // weapons); the native two-hand aim only needs the two hands.
     float wsc = 1.0f;
     if (auto* sc = se4::build().at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) wsc = *sc;
-    const core::Vec3 gripP = core::Vec3{main7[4], main7[5], main7[6]} +
-                             core::rotate(core::normalize({main7[0], main7[1], main7[2], main7[3]}), {0, 0, -kForegripAhead / wsc});
     (void)grip7;
-    const core::Vec3 d = gripP - core::Vec3{off7[4], off7[5], off7[6]};
-    float snap = at<float>(params, kSnapDistance);
-    if (!(snap >= 0.0f && snap < 2.0f)) snap = kDefaultSnap;
-    snap = std::fmax(snap, kForegripReach / wsc);
-    o.inReach = core::dot(d, d) <= snap * snap;
+    const core::Pose mainPose{{main7[0], main7[1], main7[2], main7[3]}, {main7[4], main7[5], main7[6]}};
+    const core::Vec3 offP{off7[4], off7[5], off7[6]};
+    o.inReach = core::grip::atForegrip(mainPose, offP, at<float>(params, kSnapDistance), kDefaultSnap, 1.0f / wsc);
     {
         static ULONGLONG last;
         if (xr::input().hand(offXr).squeeze > 0.5f && GetTickCount64() - last > 1000) {
             last = GetTickCount64();
-            VRLOG("hands:   off hand %.3f from the foregrip (snap %.3f), in reach %d", std::sqrt(core::dot(d, d)), snap, int(o.inReach));
+            const core::Vec3 d = core::grip::foregrip(mainPose, 1.0f / wsc) - offP;
+            VRLOG("hands:   off hand %.3f from the foregrip, in reach %d", std::sqrt(core::dot(d, d)), int(o.inReach));
         }
     }
 

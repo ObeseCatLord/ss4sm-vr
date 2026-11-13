@@ -123,7 +123,29 @@ bool readState(core::MenuState& out) {
 
 // The mod's own file next to the payload (written through a temporary file, then renamed over the old one). `what`
 // names the change for the log. Menu thread.
+void writeState(const char* what);
+// A slider drag changes the value every step: the first change is written at once, changes within 0.3 s of a write
+// are written together by one timer shortly after the last.
+volatile ULONGLONG g_lastSave;
+volatile LONG g_savePending;
+char g_pendingWhat[64];
+VOID CALLBACK saveTimer(PVOID, BOOLEAN) {
+    InterlockedExchange(&g_savePending, 0);
+    writeState(g_pendingWhat);
+}
 void saveState(const char* what) {
+    const ULONGLONG now = GetTickCount64();
+    if (now - g_lastSave >= 300 && !g_savePending) return writeState(what);
+    snprintf(g_pendingWhat, sizeof g_pendingWhat, "%s", what);
+    HANDLE t;
+    if (!InterlockedExchange(&g_savePending, 1) &&
+        !CreateTimerQueueTimer(&t, nullptr, saveTimer, nullptr, 400, 0, WT_EXECUTEONLYONCE)) {
+        InterlockedExchange(&g_savePending, 0);
+        writeState(what);
+    }
+}
+void writeState(const char* what) {
+    g_lastSave = GetTickCount64();
     char buf[1024];
     AcquireSRWLockExclusive(&g_stateLock);
     const int n = core::formatMenuState(g_state, buf, sizeof buf);

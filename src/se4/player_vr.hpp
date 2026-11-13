@@ -30,4 +30,7 @@ void headWorld(void* vrd, float out[7]);
 void useHand(int hand);
 // The local player's CPlayerVRData (last vrd_init with the local flag set), or nullptr.
 void* localVrd();
+// The VR data of a player entity, or null: the field is read only when it points back at the entity (vrd+0 = player),
+// so a non-player owner (an enemy's weapon) or a stale value never passes.
+void* vrdOf(const void* entity);
 }  // namespace player_vr

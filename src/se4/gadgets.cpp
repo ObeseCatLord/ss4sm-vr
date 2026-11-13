@@ -193,9 +193,8 @@ struct TargetOf {
     ULONGLONG seen = 0;
 } g_targets[8];
 bool vrOwned(uint8_t* holder) {
-    const unsigned vrdOff = player_vr::vrdOffset();
-    uint8_t* owner = holder && vrdOff ? handleEntity(at<int32_t>(holder, se4::build().off(se4::gen::CWeaponEntity_en_henOwner))) : nullptr;
-    return owner && at<void*>(owner, vrdOff);
+    uint8_t* owner = holder ? handleEntity(at<int32_t>(holder, se4::build().off(se4::gen::CWeaponEntity_en_henOwner))) : nullptr;
+    return player_vr::vrdOf(owner) != nullptr;
 }
 void noteTarget(uint8_t* holder, uint8_t* mode) {
     const ULONGLONG now = GetTickCount64();
@@ -225,7 +224,7 @@ float* hookedView(uint8_t* player, float* out, void* arg, int mode) {
     float* r = realView(player, out, arg, mode);
     const unsigned vrdOff = player_vr::vrdOffset();
     if (!t_targeting || mode != 0 || !r || !vrdOff) return r;
-    void* vrd = at<void*>(player, vrdOff);  // any VR player: a server steers remote VR players' throws by their hands
+    void* vrd = player_vr::vrdOf(player);  // any VR player: a server steers remote VR players' throws by their hands
     uint8_t* holder = at<uint8_t*>(t_targeting, kModeWeapon);
     if (!vrd || !holder) return r;
     const int gadgetRole = rightHanded(holder) ? 0 : 1;  // engine role 0 right, 1 left

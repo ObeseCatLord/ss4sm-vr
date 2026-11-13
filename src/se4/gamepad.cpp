@@ -1,5 +1,6 @@
 #include "se4/gamepad.hpp"
 #include "se4/log.hpp"
+#include "se4/options.hpp"
 #include "se4/procaddr.hpp"
 #include "xr/input.hpp"
 #include "xr/runtime.hpp"
@@ -176,9 +177,11 @@ void publishFromXr() {
     p.bLeftTrigger = trig(m.lt);
     // While driving, the grips grab the wheel instead of using a gadget.
     p.wButtons = vehicles::driving() ? WORD(m.buttons & ~XINPUT_GAMEPAD_Y) : m.buttons;
+    static const bool inputLog = se4::options::get("input_log", 0) != 0;  // lab: every pad button change
+    bool buttonsChanged = false;
     AcquireSRWLockExclusive(&g_lock);
     if (memcmp(&p, &g_pad, sizeof p)) {
-        if (p.wButtons != g_pad.wButtons) VRLOG("gamepad: buttons %04x", p.wButtons);
+        buttonsChanged = p.wButtons != g_pad.wButtons;
         g_pad = p;
         ++g_packet;
     }
@@ -186,5 +189,6 @@ void publishFromXr() {
     if (!fed) VRLOG("gamepad: fed from XR controllers");
     fed = true;
     ReleaseSRWLockExclusive(&g_lock);
+    if (buttonsChanged && inputLog) VRLOG("gamepad: buttons %04x", p.wButtons);
 }
 }  // namespace gamepad

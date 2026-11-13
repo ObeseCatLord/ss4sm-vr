@@ -728,8 +728,13 @@ void onDevice(VkInstance inst, PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDevicePr
     if (gp2) gp2(pd, &p2);
     g_texel = std::clamp(16u, fp.minFragmentShadingRateAttachmentTexelSize.width, std::max(fp.maxFragmentShadingRateAttachmentTexelSize.width, 1u));
     if (fp.minFragmentShadingRateAttachmentTexelSize.width != fp.minFragmentShadingRateAttachmentTexelSize.height) g_texel = 16;
-    g_combine = fp.fragmentShadingRateNonTrivialCombinerOps ? VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_KHR
-                                                            : VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR;
+    g_combine = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_KHR;
+    if (!fp.fragmentShadingRateNonTrivialCombinerOps) {
+        // Without MAX the attachment could only REPLACE the engine's own per-draw rates (its VRS options): leave them be.
+        VRLOG("fov: the GPU has no non-trivial shading-rate combiners - foveation off (the engine's own VRS is kept)");
+        g_active = false;
+        return;
+    }
     auto rates = reinterpret_cast<PFN_vkGetPhysicalDeviceFragmentShadingRatesKHR>(gipa(inst, "vkGetPhysicalDeviceFragmentShadingRatesKHR"));
     if (rates) {
         uint32_t n = 0;

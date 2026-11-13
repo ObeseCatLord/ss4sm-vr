@@ -50,6 +50,8 @@ public:
     bool createSession(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, uint32_t queueFamily, uint32_t queueIndex);
     void pollEvents();
     bool running() const { return running_; }
+    // True once after the session left the FOCUSED state (dashboard, another app took input).
+    bool takeFocusLost() { return focusLost_ ? (focusLost_ = false, true) : false; }
 
     bool createSwapchain(Swapchain& sc, int64_t preferredFormat, uint32_t w, uint32_t h, uint32_t layers, XrSwapchainUsageFlags usage);
     int64_t pickColorFormat(const int64_t* preferred, size_t n) const;
@@ -77,6 +79,7 @@ private:
     XrSpace local_ = XR_NULL_HANDLE, view_ = XR_NULL_HANDLE, stage_ = XR_NULL_HANDLE;
     Views views_;
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
+    bool focusLost_ = false;
     bool running_ = false;
     std::vector<std::string> enabled_;
     std::string systemName_;

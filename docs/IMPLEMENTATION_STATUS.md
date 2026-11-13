@@ -562,3 +562,8 @@
   - **Lab (SS4 and SM):** button and screen shown; Discrete, Ammo Counters Off and Default → Yes all apply and save;
     snap is restored after a restart. VR suites: SS4 21/21, SM 21/21.
   - **Bug fixed in the lab:** retitling the screen rebuilt its layout and dropped the rows.
+- **Code review (2026-11-12, docs/REVIEW_2026-11-12.md):**
+  - A high-effort Fable review of all of `src/`; its 24 findings, the low ones, the performance ones and the
+    suggestions are fixed or answered there.
+  - Lab: VR suites SS4 22/22 and SM 22/22 (new: native turning), SS4 multiplayer with turning, handshakes and
+    keepalives.

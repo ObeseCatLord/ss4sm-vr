@@ -409,6 +409,13 @@ bool readableMem(const void* p, size_t n) {
         return false;
     return static_cast<const uint8_t*>(p) + n <= static_cast<const uint8_t*>(mbi.BaseAddress) + mbi.RegionSize;
 }
+void* vrdOf(const void* entity) {
+    if (!entity || !g_vrdOff) return nullptr;
+    void* vrd = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(entity) + g_vrdOff);
+    if (!vrd) return nullptr;
+    if (vrd == g_localVrd) return *static_cast<void**>(vrd) == entity ? vrd : nullptr;
+    return readableMem(vrd, 8) && *static_cast<void**>(vrd) == entity ? vrd : nullptr;
+}
 void* localVrd() {
     void* v = g_localVrd;
     if (!v) return nullptr;

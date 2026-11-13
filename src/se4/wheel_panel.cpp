@@ -125,8 +125,15 @@ void runSpot(uint8_t* player, int spot, int hand) {
 
 }  // namespace
 
+volatile LONG g_menuRequest;
+void requestMenu() { InterlockedExchange(&g_menuRequest, 1); }
+
 void onTick(uint8_t* player) {
     if (!g_act.toHandle) return;
+    if (InterlockedExchange(&g_menuRequest, 0) && g_pending < 0) {
+        VRLOG("wheel_panel: headset focus lost - opening the menu");
+        runSpot(player, core::controls::SpotMenu, 1);
+    }
     if (const int a = gamepad::takeSpotAction(); a >= 0) {
         if (g_wheelSeen) g_pending = a, g_pendingAt = GetTickCount64(), VRLOG("wheel_panel: %s spot queued", core::controls::spotName(a & 0xf));
         g_wheelSeen = false;

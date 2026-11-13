@@ -92,6 +92,12 @@ Checks, in order (log: `<game>/Bin/x64/ss4smvr/ss4smvr.log`):
     eyepiece position (`scope_eye_up_cm`, `scope_eye_back_cm`) and size (`scope_size_cm`) that feel right.
 7h. Menus: point at a menu item with the right controller. It highlights, and the trigger clicks it. The left
     trigger moves the pointer to the left hand.
+7e4. Review fixes (2026-11-12, docs/REVIEW_2026-11-12.md):
+    - Native turning is now the default in single player too, so the VR Controls rows (method, stick, speed, comfort)
+      apply everywhere. Speeds above 258 deg/s now work.
+    - Opening the SteamVR dashboard (or anything that takes the headset's focus) opens the game's menu
+      (`pause_on_focus_loss=0` turns it off).
+    - Ride a vehicle and a creature if the level has one; report any crash.
 8. Optional A/B (file `<game>/Bin/x64/ss4smvr/options.txt`, one `key=value` per line): `native_vr_action=1` is the
    engine's own VR mode. It is always on as a multiplayer client.
    - Each player action sends the head and both hands.

@@ -3,6 +3,7 @@
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "se4/patch.hpp"
+#include "se4/player_vr.hpp"
 #include <windows.h>
 #include <climits>
 #include <cmath>
@@ -64,7 +65,7 @@ bool install() {
     uint8_t* p3 = b.at<uint8_t>(se4::gen::vr_rot_stick_r_load);
     uint8_t* p4 = b.at<uint8_t>(se4::gen::vr_comfort_mode_read);
     if (!p1 || !p2 || !p3) return VRLOG("turn: build lacks the turn sites - no native turning"), false;
-    g_turn = reinterpret_cast<TurnData*>(se4::patch::allocNear(p3, sizeof(TurnData)));
+    g_turn = reinterpret_cast<TurnData*>(se4::patch::allocNearData(p3, sizeof(TurnData)));
     if (!g_turn) return VRLOG("turn: no memory near the image"), false;
     g_snap = se4::options::has("snap_turn") ? se4::options::get("snap_turn", 0) != 0 : g_startMethod == 2;
     g_speed = float(se4::options::has("turn_speed") ? se4::options::get("turn_speed", 150) : g_startSpeed > 0 ? g_startSpeed : 150);
@@ -118,6 +119,11 @@ bool vignette() { return g_vignette; }
 
 void feed(float leftX, float rightX, bool on) {
     if (!g_turn) return;
+    static ULONGLONG lastLog;
+    if (g_turn->axis != 0.0f && GetTickCount64() - lastLog > 1000) {  // lab: native turning in use (yaw = vrd anchor)
+        lastLog = GetTickCount64();
+        VRLOG("turn: axis %.2f yaw %.3f (%s)", g_turn->axis, yaw(player_vr::localVrd()), g_snap ? "snap" : "smooth");
+    }
     // The turning stick (Rotation Controller): right, left, whichever is pushed further, or none.
     const float x = g_hand == 2 ? rightX : g_hand == 1 ? leftX : g_hand == 3 ? (std::fabs(leftX) > std::fabs(rightX) ? leftX : rightX) : 0.0f;
     if (!on || !(std::fabs(x) > 0.15f)) {  // the mod's deadzone; 0 lets the engine's |x| <= 0.001 early-out apply

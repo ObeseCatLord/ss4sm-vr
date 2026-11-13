@@ -10,6 +10,7 @@
 // pose itself). Option melee_physical (default 1).
 #include "se4/melee.hpp"
 #include "core/math.hpp"
+#include "core/grip_swing.hpp"
 #include "se4/build.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
@@ -69,7 +70,7 @@ constexpr float kBladeStart = 0.04f, kBladeEnd = 0.45f;  // metres along the han
 constexpr int kBladePoints = 5;
 constexpr double kTargetCooldown = 0.35;                  // seconds before the same target can be hit again
 
-constexpr float kMaxSwingSpeed = 20.0f;  // m/s: faster is a tracking jump or a network step, not a swing
+constexpr float kMaxSwingSpeed = core::swing::kMaxSpeed;
 struct Track {
     uint8_t* weapon = nullptr;
     core::Vec3 pt[kBladePoints]{};
@@ -107,7 +108,7 @@ Track& track(uint8_t* weapon, LARGE_INTEGER now) {
 }
 
 uint8_t* ownerOf(uint8_t* weapon) { return static_cast<uint8_t*>(handleEntity(at<int32_t>(weapon, 0x98))); }
-void* vrdOf(uint8_t* player) { return player ? at<void*>(player, player_vr::vrdOffset()) : nullptr; }
+void* vrdOf(uint8_t* player) { return player_vr::vrdOf(player); }  // null for a non-player owner (enemy weapons)
 
 double seconds(LARGE_INTEGER a, LARGE_INTEGER b) { return double(b.QuadPart - a.QuadPart) / double(g_freq.QuadPart); }
 
@@ -181,10 +182,10 @@ void sweep(uint8_t* weapon, void* stepArg, bool generic) {
     const core::Vec3 prevTip = t.pt[kBladePoints - 1];
     core::Vec3 dv = tip - prevTip;
     // The gate: head-relative tip speed (locomotion alone is no swing); the world-space segments are what is cast.
-    const core::Vec3 dRel = (haveHead && t.relValid) ? tipRel - t.tipRel : dv;
-    float speed = std::sqrt(core::dot(dRel, dRel)) / float(dt) / scale;  // metres per second
+    const float speed = (haveHead && t.relValid) ? core::swing::relativeSpeed(t.tipRel, tipRel, dt, scale)
+                                                 : core::swing::relativeSpeed(prevTip, tip, dt, scale);  // metres per second
     const float minSpeed = g_minSpeed && *g_minSpeed > 0.1f ? *g_minSpeed : 2.0f;
-    if (speed >= minSpeed && speed <= kMaxSwingSpeed && dt < 0.25 && core::dot(dv, dv) > 1e-12f) {
+    if (core::swing::counts(speed, minSpeed, dt) && core::dot(dv, dv) > 1e-12f) {
         void* ref = nullptr;
         uint8_t** pp = weaponParams(weapon, &ref);
         uint8_t* params = pp ? *pp : nullptr;
@@ -513,7 +514,7 @@ bool patchPromptGlyph() {
     memcpy(&rel, site + 0x12, 4);
     const char* glyph = reinterpret_cast<const char*>(site + 0x16 + rel);
     if (strcmp(glyph, "{plcmdUse}")) return false;
-    auto* empty = reinterpret_cast<char*>(se4::patch::allocNear(site, 8));
+    auto* empty = reinterpret_cast<char*>(se4::patch::allocNearData(site, 8));
     if (!empty) return false;
     empty[0] = 0;
     const intptr_t d = reinterpret_cast<intptr_t>(empty) - reinterpret_cast<intptr_t>(site + 0x16);

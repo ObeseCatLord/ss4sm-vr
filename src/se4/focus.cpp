@@ -56,13 +56,23 @@ bool install() {
 
 void enable(HWND wnd) {
     if (!wnd || g_on) return;
-    g_wnd = wnd;
-    g_prevProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(wnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(proc)));
+    if (wnd != g_wnd || !g_prevProc) {  // the window procedure is wrapped once per window; disable() leaves it passing through
+        g_wnd = wnd;
+        g_prevProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(wnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(proc)));
+    }
     g_on = true;
     // Tell the engine it is active now, in case it was deactivated before VR started.
     PostMessageW(wnd, WM_ACTIVATEAPP, TRUE, 0);
     PostMessageW(wnd, WM_ACTIVATE, WA_ACTIVE, 0);
     PostMessageW(wnd, WM_SETFOCUS, 0, 0);
     VRLOG("focus: game window %p kept active while VR runs", static_cast<void*>(wnd));
+}
+
+// No XR session (the headset is not showing the game): the window loses focus normally again, so keys typed into
+// other applications are not read as the game's.
+void disable() {
+    if (!g_on) return;
+    g_on = false;
+    VRLOG("focus: game window focus no longer kept (no XR session)");
 }
 }  // namespace focus

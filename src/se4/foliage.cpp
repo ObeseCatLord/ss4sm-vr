@@ -48,18 +48,25 @@ bool install() {
         disp[n] = p + 2, ends[n] = len - 2, ++n;
     }
     if (n < 6) return VRLOG("foliage: %d reads of sha_iAllowTreeSwaying (expected 6) - sway stays the game's", n), false;
-    g_value = reinterpret_cast<int32_t*>(se4::patch::allocNear(disp[0], sizeof(int32_t)));
+    g_value = reinterpret_cast<int32_t*>(se4::patch::allocNearData(disp[0], sizeof(int32_t)));
     if (!g_value) return VRLOG("foliage: no memory near the image"), false;
     *g_value = *g_cvar;
-    int done = 0;
+    // All or nothing: some reads redirected and others not would split the game's sway state.
+    uint8_t old[kMax][4], now[kMax][4];
     for (int i = 0; i < n; ++i) {
         const intptr_t d = reinterpret_cast<intptr_t>(g_value) - reinterpret_cast<intptr_t>(disp[i] + ends[i]);
-        if (d != int32_t(d)) continue;
+        if (d != int32_t(d)) return VRLOG("foliage: a read is out of reach of the redirected value - sway stays the game's"), false;
         const int32_t nd = int32_t(d);
-        uint8_t old[4], now[4];
-        memcpy(old, disp[i], 4);
-        memcpy(now, &nd, 4);
-        done += se4::patch::writeCode(disp[i], old, now, 4);
+        memcpy(old[i], disp[i], 4);
+        memcpy(now[i], &nd, 4);
+    }
+    int done = 0;
+    for (; done < n; ++done)
+        if (!se4::patch::writeCode(disp[done], old[done], now[done], 4)) break;
+    if (done != n) {
+        for (int i = 0; i < done; ++i) se4::patch::writeCode(disp[i], now[i], old[i], 4);  // undo
+        g_value = nullptr;
+        return VRLOG("foliage: read %d could not be patched - none redirected, sway stays the game's", done), false;
     }
     g_labGame = std::clamp(se4::options::get("lab_foliage_sway", -1), -1, 2);
     const int opt = std::clamp(se4::options::get("upscale_foliage_sway", -1), -1, 2);

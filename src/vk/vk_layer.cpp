@@ -6,6 +6,7 @@
 // - Queue functions on the XR graphics queue are serialised with the runtime (vk/queue_lock).
 // - Milestone "mirror": each presented game image is blitted into a world-locked quad layer.
 #include "vk/vk_layer.hpp"
+#include "se4/wheel_panel.hpp"
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
 #include "se4/procaddr.hpp"
@@ -102,7 +103,14 @@ struct Mirror {
     bool placed = false;
 } m;
 
-#define DFN(name) reinterpret_cast<PFN_##name>(realGDPA(g.device, #name))
+// Resolved once per call site (and again only if the device changes): present calls about 15 of these per frame.
+#define DFN(name)                                                                              \
+    ([]() -> PFN_##name {                                                                      \
+        static PFN_##name fn;                                                                  \
+        static VkDevice dev;                                                                   \
+        if (!fn || dev != g.device) fn = reinterpret_cast<PFN_##name>(realGDPA(g.device, #name)), dev = g.device; \
+        return fn;                                                                             \
+    }())
 
 
 // Re-entrancy guard: the runtime calls vkCreateInstance/vkCreateDevice itself while we are inside
@@ -301,7 +309,8 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateDevice(VkPhysicalDevice pd, const VkDev
     g.xrDevice = true;
 
     setupDevice(pd, family);
-    if (!rt.createSession(g.instance, g.physical, g.device, family, 0)) VRLOG("vk: XR session unavailable - flat");
+    if (!rt.createSession(g.instance, g.physical, g.device, family, 0))
+        VRLOG("vk: XR session unavailable - nothing reaches the headset (start the OpenXR runtime, then restart the game)");
     else se4::applyVrFramePacing();
     return r;
 }
@@ -337,6 +346,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateSwapchain(VkDevice d, const VkSwapchain
         SwapchainInfo info{c.imageFormat, c.imageExtent, std::vector<VkImage>(n)};
         realGetSwapchainImages(d, *out, &n, info.images.data());
         std::lock_guard<std::mutex> l(g_swapLock);
+        if (c.oldSwapchain) g_swapchains.erase(c.oldSwapchain);  // retired by this one (the game destroys it next)
         g_swapchains[*out] = std::move(info);
         VRLOG("vk: game swapchain %ux%u format %d, %u images", c.imageExtent.width, c.imageExtent.height, int(c.imageFormat), n);
     }
@@ -623,6 +633,8 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         return realQueuePresent(q, pi);
     }
     rt.pollEvents();
+    static const bool pauseOnFocus = se4::options::get("pause_on_focus_loss", 1) != 0;
+    if (rt.takeFocusLost() && pauseOnFocus && !vrdev::menuActive()) wheel_panel::requestMenu();
     SwapchainInfo sw;
     {
         std::lock_guard<std::mutex> l(g_swapLock);
@@ -630,6 +642,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         if (it != g_swapchains.end()) sw = it->second;
     }
     if (!rt.running() || sw.images.empty() || m.failed || q != g.xrQueue) {
+        if (!rt.running()) focus::disable();
         if (!rt.running() && xr::input().ready()) {  // no frames, no input: release whatever was held
             if (!g_inputReleased) g_inputReleased = true, xr::input().neutral(), gamepad::publishFromXr(), vrdev::updateFromInput();
         }

@@ -61,6 +61,10 @@ stage_core() {
     "$(grep -aq 'one crosshair per weapon' "$MODLOG" && grep -aq 'spots beside the wheel' "$MODLOG" && grep -aq 'prompts: button prompts' "$MODLOG" && grep -aq 'artifact: Sirian artifact crush active' "$MODLOG" && grep -aq 'flat HUD inset' "$MODLOG" && grep -aq 'hand panel text drawn per eye' "$MODLOG" && echo 1 || echo 0)"
   check "no FAILED hooks" "$(grep -aq 'FAILED' "$MODLOG" && echo 0 || echo 1)" "$(grep -a 'FAILED' "$MODLOG" | head -2 | tr -d '\r')"
   cap core-view
+  # Native turning (the default, VR Controls rows): the right stick held 2.5 s turns the anchor yaw (1 Hz log)
+  mark; $ID $H $LH $R0 rstick=1,0 >/dev/null; sleep 2.5; $ID $H $LH $R0 >/dev/null; sleep 1.2
+  Y=$(since | grep -o 'turn: axis [-0-9.]* yaw [-0-9.]*' | awk '{print $5}')
+  check "native turning: right stick turns (yaw $(echo $Y | tr '\n' ' '))" "$(echo "$Y" | awk 'NR==1{a=$1} {b=$1} END{d=b-a; if(d<0)d=-d; print (NR>=2 && d>0.5)?1:0}')"
   # Netricsa spot, tab switch with the grip, close with B
   mark; wheel_to -0.15 0.08; check "wheel spot: Netricsa" "$(has 'Netricsa spot run')"; cap netricsa
   press rgrip=1; sleep 1; press rb=1; sleep 2; cap netricsa-closed

@@ -1,4 +1,5 @@
 #include "vk/gpu_timing.hpp"
+#include "vk/queue_lock.hpp"
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include <windows.h>
@@ -119,8 +120,10 @@ VkResult submit(PFN_vkQueueSubmit real, VkQueue q, uint32_t n, const VkSubmitInf
         if (!wrappable(s[i].pNext)) return real(q, n, s, f);
     const int i = take();
     if (i < 0) return real(q, n, s, f);
-    std::vector<VkSubmitInfo> infos(s, s + n);
-    std::vector<VkCommandBuffer> first, last;
+    // Reused buffers (submits are serialised by the queue lock): no heap allocation per submit once they have grown.
+    static std::vector<VkSubmitInfo> infos;
+    static std::vector<VkCommandBuffer> first, last;
+    infos.assign(s, s + n), first.clear(), last.clear();
     first.push_back(g.begin[i]);
     first.insert(first.end(), s[0].pCommandBuffers, s[0].pCommandBuffers + s[0].commandBufferCount);
     if (n == 1) {
@@ -149,8 +152,9 @@ VkResult submit2(PFN_vkQueueSubmit2 real, VkQueue q, uint32_t n, const VkSubmitI
         c.commandBuffer = cb;
         return c;
     };
-    std::vector<VkSubmitInfo2> infos(s, s + n);
-    std::vector<VkCommandBufferSubmitInfo> first, last;
+    static std::vector<VkSubmitInfo2> infos;
+    static std::vector<VkCommandBufferSubmitInfo> first, last;
+    infos.assign(s, s + n), first.clear(), last.clear();
     first.push_back(cbi(g.begin[i]));
     first.insert(first.end(), s[0].pCommandBufferInfos, s[0].pCommandBufferInfos + s[0].commandBufferInfoCount);
     if (n == 1) {
@@ -181,6 +185,7 @@ void presentExit() {
 
 void log(unsigned frames) {
     if (!g.on || !frames) return;
+    vkq::Guard lock;  // the submit path updates these under the queue lock
     // Pairs finished but not yet reused are harvested now so the window is complete up to a frame or two.
     for (uint32_t i = 0; i < kPairs; ++i)
         if (g.pending[i] && harvest(i)) g.pending[i] = false;

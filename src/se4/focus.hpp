@@ -7,4 +7,5 @@
 namespace focus {
 bool install();            // at attach: hooks GetForegroundWindow/GetActiveWindow/GetFocus (MinHook)
 void enable(HWND gameWnd);  // when the XR session starts: subclass the window and start overriding
+void disable();             // no XR session: normal focus again (the window procedure stays, passing through)
 }

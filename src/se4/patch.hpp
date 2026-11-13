@@ -7,6 +7,8 @@
 namespace se4::patch {
 // Executable memory within +-2 GB of `target` (for rel32 calls/jumps from the image), or nullptr.
 uint8_t* allocNear(void* target, size_t size);
+// The same for data only (read-write, never executable): values a redirected read points at.
+uint8_t* allocNearData(void* target, size_t size);
 // A near stub that jumps to `fn` (absolute), so rel32 call sites can reach code anywhere.
 uint8_t* nearJump(void* imageAddress, void* fn);
 // Calls (E8 rel32) within [fn, fn+len) whose target begins with the bytes of `mov eax,1; ret`.

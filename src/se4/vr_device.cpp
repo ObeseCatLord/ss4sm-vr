@@ -485,19 +485,23 @@ void hookedMouse(void* viewport, int* pos, int msg, int* size) {
 struct Pointer {
     int hand = 1;
     bool trig[2]{}, back = false, wasMenu = false;
+    bool down = false;  // the mouse button is down (sent over the panel)
+    int pos[2] = {2048, 2048};  // the last position over the panel
 } g_ptr;
 volatile LONG g_menuActive;  // a menu screen is on top (render thread -> controller mapping)
 bool g_pointerOn = true;
 
 void menuPointer(void* pi) {
-    if (!g_pointerOn || !realMouse || !pi) return;
+    if (!pi) return;
     auto* p = static_cast<uint8_t*>(pi);
     auto* mgr = *reinterpret_cast<uint8_t**>(p + 0xb8);
     void* top = mgr ? *reinterpret_cast<void**>(mgr + 0x28) : nullptr;
     auto* viewer = *reinterpret_cast<uint8_t**>(p + 0x360);
-    InterlockedExchange(&g_menuActive, top ? 1 : 0);
+    InterlockedExchange(&g_menuActive, top ? 1 : 0);  // the menu layout and the turn gate need this even without a pointer
+    if (!g_pointerOn || !realMouse) return;
     if (!top || !viewer) {
         g_ptr.wasMenu = false;
+        g_ptr.down = false;
         return;
     }
     const float* f = reinterpret_cast<const float*>(viewer + 0x54);
@@ -519,6 +523,7 @@ void menuPointer(void* pi) {
         return;
     }
     core::Pose aim = toPose(hs.aim);
+    aim.p.y += g_seatOffset.load();  // the quad lives in the (seat-shifted) device space, as the head does
     aim.p = aim.p * (1.0f / worldScale());
     const core::Pose toQuad = core::inverse(quad);
     const core::Vec3 o = toQuad.p + core::rotate(toQuad.q, aim.p);
@@ -542,11 +547,15 @@ void menuPointer(void* pi) {
                   quad.p.x, quad.p.y, quad.p.z);
         }
     }
+    const bool t = trig[g_ptr.hand];
+    int size[2] = {4096, 4096};
     if (hit) {
-        int pos[2] = {int(u * 4096.0f), int(v * 4096.0f)}, size[2] = {4096, 4096};
-        realMouse(pi, pos, 1, size);
-        const bool t = trig[g_ptr.hand];
-        if (t != g_ptr.trig[g_ptr.hand]) realMouse(pi, pos, t ? 4 : 3, size);
+        g_ptr.pos[0] = int(u * 4096.0f), g_ptr.pos[1] = int(v * 4096.0f);
+        realMouse(pi, g_ptr.pos, 1, size);
+        if (t != g_ptr.trig[g_ptr.hand]) realMouse(pi, g_ptr.pos, t ? 4 : 3, size), g_ptr.down = t;
+    } else if (g_ptr.down && !t) {
+        realMouse(pi, g_ptr.pos, 3, size);  // released off the panel: the button goes up where it was last pressed over it
+        g_ptr.down = false;
     }
     g_ptr.trig[0] = trig[0], g_ptr.trig[1] = trig[1], g_ptr.back = back;
 }

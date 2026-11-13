@@ -53,8 +53,27 @@ DWORD g_hdrThread;
 // It is not bound to the calling thread, so it is read from there and checked for the loader's dispatch magic.
 constexpr size_t kGfxCommandBuffer = 0x1ea8;
 constexpr uintptr_t kLoaderMagic = 0x01CDC0DE;
-std::mutex g_passLock;
-std::unordered_set<VkCommandBuffer> g_openPass;  // command buffers inside a render pass
+// Command buffers inside a render pass, per recording thread (a command buffer is recorded by one thread at a time, and
+// it is queried on that thread): no lock and no allocation per pass.
+struct OpenPasses {
+    VkCommandBuffer cb[8]{};
+    int n = 0;
+    void add(VkCommandBuffer c) {
+        if (has(c)) return;
+        if (n < 8) cb[n++] = c;
+        else cb[7] = c;
+    }
+    void remove(VkCommandBuffer c) {
+        for (int i = 0; i < n; ++i)
+            if (cb[i] == c) cb[i] = cb[--n];
+    }
+    bool has(VkCommandBuffer c) const {
+        for (int i = 0; i < n; ++i)
+            if (cb[i] == c) return true;
+        return false;
+    }
+};
+thread_local OpenPasses t_openPass;
 thread_local int t_ppDepth;  // inside realPp
 thread_local uint32_t t_ppFlags;
 thread_local VkCommandBuffer t_ppCb;
@@ -656,7 +675,7 @@ void evaluateEye(VkCommandBuffer cb, int slot) {
     EyeHistory& h = g_hist[e];
     bool reset = !h.valid || h.frame + 1 != g_frame;
     if (flat && (h.ret != g_flat.ret || h.w != W || h.h != H)) reset = true;  // player <-> camera entity, box change
-    const float ws = flat ? 1.0f : worldScale();  // engine units per metre
+    const float ws = flat ? 1.0f : worldScale();  // metres per engine unit
     core::Pose c2p{};
     if (posed && !reset) {
         if (flat) reset = !core::currentToPreviousW2V(h.w2v, h.pos, g_flatCam.w2v, g_flatCam.pos, c2p);
@@ -1497,9 +1516,9 @@ int eyeOfGfxCamera(uint8_t* gfx) {
         const double dx = pos[0] - e[i].p.x, dy = pos[1] - e[i].p.y, dz = pos[2] - e[i].p.z;
         d[i] = dx * dx + dy * dy + dz * dz;
     }
-    const double units = worldScale();  // engine units per metre
+    const double ws = worldScale();  // metres per engine unit (vr_device: units = metres / ws)
     const double nearest = std::min(d[0], d[1]);
-    if (!std::isfinite(nearest) || nearest > 0.2 * 0.2 * units * units) return 0;  // not an eye view (scope, mirror, menu)
+    if (!std::isfinite(nearest) || nearest > (0.2 / ws) * (0.2 / ws)) return 0;  // farther than 0.2 m: not an eye view (scope, mirror, menu)
     return d[0] <= d[1] ? 1 : 2;
 }
 
@@ -1853,14 +1872,8 @@ void traceBeginPass(VkCommandBuffer cb, const VkRenderPassBeginInfo* bi) {
           r.hdr, int(color), int(bi->renderArea.extent.width), int(bi->renderArea.extent.height), bi->renderArea.offset.x, bi->renderArea.offset.y);
 }
 
-void onBeginPass(VkCommandBuffer cb) {
-    std::lock_guard<std::mutex> l(g_passLock);
-    g_openPass.insert(cb);
-}
-void onEndPass(VkCommandBuffer cb) {
-    std::lock_guard<std::mutex> l(g_passLock);
-    g_openPass.erase(cb);
-}
+void onBeginPass(VkCommandBuffer cb) { t_openPass.add(cb); }
+void onEndPass(VkCommandBuffer cb) { t_openPass.remove(cb); }
 
 // ---- On-weapon ammo counters in the eyes' scenes (docs/re/R32_ammo_counters.md s4) ----
 bool ensureCounter() {
@@ -2001,11 +2014,7 @@ void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkIma
     if (t_pendingSlot) {
         int slot = t_pendingSlot - 1;
         t_pendingSlot = 0;
-        bool open;
-        {
-            std::lock_guard<std::mutex> l(g_passLock);
-            open = g_openPass.count(cb) != 0;
-        }
+        const bool open = t_openPass.has(cb);
         const bool counterOnly = t_counterOnly;
         t_counterOnly = false;
         if (t_spPending) {  // single pass: the frame's first canvas-reading dispatch is one eye, the second the other
@@ -2042,10 +2051,7 @@ void onImageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkIma
     VRLOG("upint: post-processing dispatch with flags 0x%x reads the canvas", t_ppFlags);
 }
 
-void onBeginCommandBuffer(VkCommandBuffer cb) {
-    std::lock_guard<std::mutex> l(g_passLock);
-    g_openPass.erase(cb);
-}
+void onBeginCommandBuffer(VkCommandBuffer cb) { t_openPass.remove(cb); }
 
 core::Fov jitterProjection(int eye, const core::Fov& fov, float n, float f, int64_t frameTime, void* caller) {
     if (eye != 1 && eye != 2) return fov;

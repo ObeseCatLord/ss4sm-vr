@@ -1,7 +1,10 @@
 // ss4smvr.dll entry: verifies the build, then intercepts the game's Vulkan entry points.
 //
-// Attach runs inside the proxy's DllMain (loader lock, process start). Keep it to the build check and
-// one MinHook hook. Never create threads here: on Wine that stalls game startup (bisected 2026-10-23).
+// Attach runs inside the proxy's DllMain (loader lock, process start: msimg32 is a static import, so this is before the
+// game's own code runs). It reads its files, checks the build (.text CRC) and creates every hook here, because the hooks
+// must be in place before the engine initialises; MinHook only suspends and patches, and nothing here waits on another
+// thread. Never create threads here: on Wine that stalls game startup
+// (bisected 2026-10-23). The XR runtime, Vulkan and the observer start later, on game threads (onGameVulkan).
 #include "se4/ammo_counter.hpp"
 #include "se4/build.hpp"
 #include "se4/cvars.hpp"
@@ -103,7 +106,8 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         // Flat play: no hooks, unless this desktop player opts into guards for VR peers in multiplayer.
         // The server is the authority for melee damage, so it sweeps remote VR players' blades from their replicated hands.
         // Remote VR players' bodies (arms and fingers) are posed here too (body_ik).
-        if (se4::options::get("mp_guards", 0) && player_vr::install(false))
+        // Guards by default for a modded desktop player: a VR peer's replicated VR data would crash an unguarded game.
+        if (se4::options::get("mp_guards", 1) && player_vr::install(false))
             net::install(), melee::install(), body::install(), gadgets::installAuthority(), hands::install(false);
         // An upscaler in desktop play (option upscaler, or desktop_upscaler for the Rescaling Filter menu entries): the
         // Vulkan layer and the upscaler on the flat main view. The menu hooks follow once the backends are known.

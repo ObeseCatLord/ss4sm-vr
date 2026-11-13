@@ -49,8 +49,10 @@ void logf(const char* fmt, ...) {
     buf[n++] = '\n';
     EnterCriticalSection(&g_lock);
     DWORD w;
-    WriteFile(g_file, buf, DWORD(n), &w, nullptr);
-    FlushFileBuffers(g_file);
+    WriteFile(g_file, buf, DWORD(n), &w, nullptr);  // in the OS's hands: survives a crash of the game
+    // To disk at most every 2 s (a whole-system hang, e.g. a GPU fault): a flush per line stalled the frame.
+    static ULONGLONG lastFlush;
+    if (const ULONGLONG ms = GetTickCount64(); ms - lastFlush > 2000) FlushFileBuffers(g_file), lastFlush = ms;
     LeaveCriticalSection(&g_lock);
 }
 }  // namespace se4

@@ -77,7 +77,7 @@ struct Handler {
     bool restValid;
     core::Quat rest[2][15];      // finger rest rotations (skeleton)
 };
-Handler g_handlers[8];
+Handler g_handlers[32];  // one per weapon model instance seen recently (holstered instances may stay registered)
 SRWLOCK g_lock = SRWLOCK_INIT;
 
 Handler* find(uint8_t* weapon) {
@@ -238,11 +238,20 @@ void* hookedPlacement(uint8_t* weapon, const float* in, float* out) {
     const bool raised = hands::raiseTwoHanded(weapon, params, savedFlag, savedSnap);
     void* r = realPlacement(weapon, in, out);
     if (raised) hands::restoreTwoHanded(params, savedFlag, savedSnap);
-    if (Handler* h = weapon ? find(weapon) : nullptr; h && out) {
-        InterlockedIncrement(&h->seq);
-        memcpy(h->root, out, sizeof h->root);
-        h->rootValid = true;
-        InterlockedIncrement(&h->seq);
+    // One writer at a time keeps the seqlock valid (onWeaponStep writes under g_lock too). Try only: a step that holds
+    // the lock right now keeps the previous root for this frame, and a nested call can never deadlock.
+    Handler* h = nullptr;
+    if (weapon && out && TryAcquireSRWLockExclusive(&g_lock)) {
+        h = find(weapon);
+        if (h) {
+            InterlockedIncrement(&h->seq);
+            memcpy(h->root, out, sizeof h->root);
+            h->rootValid = true;
+            InterlockedIncrement(&h->seq);
+        }
+        ReleaseSRWLockExclusive(&g_lock);
+    }
+    if (h) {
         static bool logged;
         if (!logged) {
             logged = true;

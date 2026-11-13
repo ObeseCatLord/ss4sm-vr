@@ -187,6 +187,7 @@ void Runtime::pollEvents() {
     while (xrPollEvent(instance_, &ev) == XR_SUCCESS) {
         if (ev.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             auto* s = reinterpret_cast<XrEventDataSessionStateChanged*>(&ev);
+            if (state_ == XR_SESSION_STATE_FOCUSED && s->state != XR_SESSION_STATE_FOCUSED) focusLost_ = true;
             state_ = s->state;
             VRLOG("xr: session state %d", int(state_));
             if (state_ == XR_SESSION_STATE_READY) {
@@ -200,6 +201,8 @@ void Runtime::pollEvents() {
                 running_ = false;
             } else if (state_ == XR_SESSION_STATE_EXITING || state_ == XR_SESSION_STATE_LOSS_PENDING) {
                 running_ = false;
+                VRLOG("xr: the runtime ended the session (%s) - the headset stays dark until the game restarts",
+                      state_ == XR_SESSION_STATE_EXITING ? "exiting" : "loss pending");
             }
         } else if (ev.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
             VRLOG("xr: instance loss pending");

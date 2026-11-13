@@ -12,6 +12,7 @@
 #include "core/vr_controls.hpp"
 #include <windows.h>
 #include <MinHook.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -115,6 +116,7 @@ core::Pose hudPanel(const core::Pose& head) {
         g_hudPose.p = head.p + core::rotate(g_hudPose.q, {0, 0, -g_distance / worldScale()});
         return g_hudPose;
     }
+    const ULONGLONG dt = lastStep ? std::min<ULONGLONG>(now - lastStep, 100) : 11;
     lastStep = now;
     if (!g_hudValid) g_hudTarget = want, g_hudPose.q = want, g_hudValid = true, g_hudEase = 0;
     const core::Vec3 a = core::rotate(g_hudTarget, {0, 0, -1}), b = core::rotate(want, {0, 0, -1});
@@ -122,7 +124,8 @@ core::Pose hudPanel(const core::Pose& head) {
     // Ease the shown rotation towards the target (normalised lerp, shortest way).
     core::Quat t = g_hudTarget, c = g_hudPose.q;
     if (c.x * t.x + c.y * t.y + c.z * t.z + c.w * t.w < 0) t = {-t.x, -t.y, -t.z, -t.w};
-    const float k = g_hudEase && now - g_hudEase < 1000 ? 0.15f : 1.0f;
+    // 15 % of the way per 11.1 ms (one 90 Hz frame), whatever the refresh rate.
+    const float k = g_hudEase && now - g_hudEase < 1000 ? 1.0f - std::pow(0.85f, float(dt) / 11.1f) : 1.0f;
     g_hudPose.q = core::normalize({c.x + (t.x - c.x) * k, c.y + (t.y - c.y) * k, c.z + (t.z - c.z) * k, c.w + (t.w - c.w) * k});
     g_hudPose.p = head.p + core::rotate(g_hudPose.q, {0, 0, -g_distance / worldScale()});
     return g_hudPose;

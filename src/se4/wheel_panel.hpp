@@ -21,6 +21,8 @@ bool wheelOpen(void* pi);
 bool panel(float out[7]);
 // Simulation thread (local VR player): run a spot the wheel was released on.
 void onTick(uint8_t* player);
+// Opens the game's menu (the Menu spot's native action) at the next simulation tick: the headset lost focus.
+void requestMenu();
 // HUD render, before the wheel element draws: no weapon highlighted while a spot is pointed at.
 void beforeWheelDraw(uint8_t* wheel);
 bool spotsAvailable();
