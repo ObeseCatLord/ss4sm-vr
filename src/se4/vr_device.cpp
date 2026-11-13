@@ -127,6 +127,9 @@ void eyeSize(int& w, int& h) {
         w = int(w * *ratio + 0.5f);
         h = int(h * *ratio + 0.5f);
     }
+    // Never past the runtime's largest image: a bigger projection swapchain cannot be created.
+    if (v.maxWidth && w > int(v.maxWidth)) w = int(v.maxWidth);
+    if (v.maxHeight && h > int(v.maxHeight)) h = int(v.maxHeight);
 }
 
 void* sEyeRT(Object*, void* gfx, int eye) {

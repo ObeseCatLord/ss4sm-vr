@@ -167,6 +167,7 @@ bool Runtime::createSession(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, 
         };
         views_.recommendedWidth = scaled(cv[0].recommendedImageRectWidth, cv[0].maxImageRectWidth);
         views_.recommendedHeight = scaled(cv[0].recommendedImageRectHeight, cv[0].maxImageRectHeight);
+        views_.maxWidth = cv[0].maxImageRectWidth, views_.maxHeight = cv[0].maxImageRectHeight;
         VRLOG("xr: eye size %ux%u (runtime recommends %ux%u, max %ux%u, render_scale %.0f%%)", views_.recommendedWidth,
               views_.recommendedHeight, cv[0].recommendedImageRectWidth, cv[0].recommendedImageRectHeight, cv[0].maxImageRectWidth,
               cv[0].maxImageRectHeight, scale * 100);
@@ -246,7 +247,11 @@ bool Runtime::acquire(Swapchain& sc, uint32_t& index) {
     if (!check(xrAcquireSwapchainImage(sc.handle, nullptr, &index), "xrAcquireSwapchainImage")) return false;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
     wi.timeout = 100000000;  // 100 ms
-    return check(xrWaitSwapchainImage(sc.handle, &wi), "xrWaitSwapchainImage");
+    // XR_TIMEOUT_EXPIRED is a success code but the image is not ready yet: the wait must be repeated (it stays acquired).
+    XrResult r = XR_TIMEOUT_EXPIRED;
+    for (int i = 0; i < 50 && r == XR_TIMEOUT_EXPIRED; ++i) r = xrWaitSwapchainImage(sc.handle, &wi);
+    if (r == XR_TIMEOUT_EXPIRED) VRLOG("xr: swapchain image still not ready after 5 s");
+    return r == XR_SUCCESS || (r != XR_TIMEOUT_EXPIRED && check(r, "xrWaitSwapchainImage"));
 }
 
 void Runtime::release(Swapchain& sc) {
@@ -290,14 +295,19 @@ void Runtime::updateViews(XrTime t) {
     XrViewState vs{XR_TYPE_VIEW_STATE};
     XrView v[2] = {{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
     uint32_t n = 0;
+    // A frame or two without a valid orientation (a tracking hiccup) keeps the last views: snapping the head to the
+    // identity pose for one frame is a visible jump. Longer than 0.5 s, the views are invalid.
+    auto lost = [&] {
+        if (!(views_.valid && t - views_.time < 500000000)) views_.valid = false;
+    };
     if (XR_FAILED(xrLocateViews(session_, &li, &vs, 2, &n, v)) || n != 2 ||
         !(vs.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT)) {
-        views_.valid = false;
+        lost();
         return;
     }
     XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
     if (XR_FAILED(xrLocateSpace(view_, playSpace(), t, &loc)) || !(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
-        views_.valid = false;
+        lost();
         return;
     }
     views_.inView[0] = v[0];

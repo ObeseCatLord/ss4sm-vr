@@ -43,8 +43,16 @@ struct Client {
     uint32_t sequence = 0;
 } g_client;
 volatile bool g_clientSession;
+bool g_sessionKnown;  // the symbols to tell a client session from a server one
 SRWLOCK g_lock = SRWLOCK_INIT;
 Peers g_peers;  // server side
+void* g_peersNetif;  // the server interface g_peers belongs to (reset when another one appears; under g_lock)
+// A new server interface: forget every peer of the previous session. Called with g_lock held.
+void peersFor(void* netif) {
+    if (netif == g_peersNetif) return;
+    g_peersNetif = netif;
+    g_peers = {};
+}
 struct Remote {
     int32_t playerIndex = -1;
     core::wire::PosePacket pose;
@@ -97,11 +105,15 @@ Hello myHello(void* localPlayer) {
 void storeRemote(const PoseMsg& m) {
     AcquireSRWLockExclusive(&g_lock);
     Remote* free = nullptr;
+    const ULONGLONG now = GetTickCount64();
     for (auto& r : g_remote) {
         if (r.playerIndex == m.playerIndex) free = &r;
-        else if (!free && (r.playerIndex < 0 || GetTickCount64() - r.at > 5000)) free = &r;
+        else if (!free && (r.playerIndex < 0 || now - r.at > 5000)) free = &r;
     }
-    if (free) free->playerIndex = m.playerIndex, free->pose = m.pose, free->at = GetTickCount64();
+    // Unreliable packets can arrive reordered: an older pose of the same player (recently heard) is dropped.
+    const bool older = free && free->playerIndex == m.playerIndex && now - free->at < 1000 &&
+                       int32_t(m.pose.sequence - free->pose.sequence) <= 0;
+    if (free && !older) free->playerIndex = m.playerIndex, free->pose = m.pose, free->at = now;
     ReleaseSRWLockExclusive(&g_lock);
 }
 
@@ -156,8 +168,14 @@ void __cdecl hookedProcess(void* ctx, void* netif, uint8_t* msg) {
         Hello hello;
         if (!read(data, size_t(n), hello)) return;
         AcquireSRWLockExclusive(&g_lock);
-        const Ack ack = g_peers.onHello(slot, hello, se4::build().table->build, se4::build().table->textCrc32);
+        peersFor(netif);
+        const bool known = g_peers.valid(slot) && g_peers.slot[slot].acked && g_peers.slot[slot].playerIndex == hello.playerIndex;
+        const Ack ack = g_peers.onHello(slot, hello, se4::build().table->build, se4::build().table->textCrc32, GetTickCount64());
         ReleaseSRWLockExclusive(&g_lock);
+        if (known) {  // a keepalive: the client already has its Ack
+            if (g_peers.valid(slot)) send(netif, kAckHash, true, &ack, sizeof ack, &slot);
+            return;
+        }
         // To that client only (no gate); a broadcast carries the player index for the client to match.
         if (g_peers.valid(slot)) send(netif, kAckHash, true, &ack, sizeof ack, &slot);
         else send(netif, kAckHash, true, &ack, sizeof ack, nullptr);
@@ -167,7 +185,8 @@ void __cdecl hookedProcess(void* ctx, void* netif, uint8_t* msg) {
         PoseMsg pose;
         if (!read(data, size_t(n), pose)) return;
         AcquireSRWLockExclusive(&g_lock);
-        const bool relay = g_peers.onPose(slot, pose);
+        peersFor(netif);
+        const bool relay = g_peers.onPose(slot, pose, GetTickCount64());
         bool to[Peers::kSlots] = {};
         if (relay)
             for (int s = 0; s < Peers::kSlots; ++s) to[s] = s != slot && g_peers.slot[s].acked;
@@ -197,7 +216,6 @@ void __cdecl hookedProcess(void* ctx, void* netif, uint8_t* msg) {
 }  // namespace
 
 bool install() {
-    if (!se4::options::get("mp_channel", 1)) return false;
     const auto& b = se4::build();
     nmCtor = reinterpret_cast<CtorFn>(b.at<void>(se4::gen::nm_script_rpc_ctor));
     nmDtor = reinterpret_cast<CtorFn>(b.at<void>(se4::gen::nm_script_rpc_dtor));
@@ -209,6 +227,9 @@ bool install() {
     piWorld = reinterpret_cast<WorldFn>(b.at<void>(se4::gen::pi_world));
     void* process = b.at<void>(se4::gen::nm_script_rpc_process);
     g_log = se4::options::get("mp_log", 0) != 0;
+    // The session kind (client or server) needs only these; a client must send ClientActionVR even without the channel.
+    g_sessionKnown = g_clientSend && g_serverBroadcast && entityPi && piWorld;
+    if (!se4::options::get("mp_channel", 1)) return VRLOG("net: VR channel off (mp_channel=0)"), false;
     if (!nmCtor || !nmDtor || !appendBytes || !g_clientSend || !g_serverBroadcast || !serverSendOne || !entityPi || !piWorld || !process ||
         !b.off(se4::gen::CPlayerActorPuppetEntity_en_iPlayerIndex))
         return VRLOG("net: build lacks the channel symbols - no VR channel"), false;
@@ -220,7 +241,7 @@ bool install() {
 }
 
 void tick(void* vrd, bool localVr) {
-    if (!realProcess || !vrd) return;
+    if (!g_sessionKnown || !vrd) return;
     void* player = *static_cast<void**>(vrd);
     void* netif = netifOf(player);
     if (!netif) return;
@@ -229,12 +250,24 @@ void tick(void* vrd, bool localVr) {
         g_client.netif = netif;
         g_clientSession = !isServer(netif);
         VRLOG("net: session as %s", g_clientSession ? "client" : "server (single player, host or dedicated)");
-        AcquireSRWLockExclusive(&g_lock);
-        g_peers = {};
-        ReleaseSRWLockExclusive(&g_lock);
+        if (isServer(netif)) {
+            AcquireSRWLockExclusive(&g_lock);
+            peersFor(netif);
+            ReleaseSRWLockExclusive(&g_lock);
+        }
     }
+    if (!realProcess) return;  // no channel: the session kind is all that is needed
     const ULONGLONG now = GetTickCount64();
     if (isServer(netif)) {
+        static ULONGLONG lastExpire;
+        if (now - lastExpire > 1000) {
+            lastExpire = now;
+            AcquireSRWLockExclusive(&g_lock);
+            peersFor(netif);
+            const int dropped = g_peers.expire(now);
+            ReleaseSRWLockExclusive(&g_lock);
+            if (dropped) VRLOG("net: %d silent peer(s) forgotten (no keepalive for %u s)", dropped, unsigned(kPeerTimeoutMs / 1000));
+        }
         if (!localVr && g_log) {  // lab: the server's view of a remote VR player's look (Euler H P B at player+0x22c0, R26 s2)
             static ULONGLONG lastLook;
             if (now - lastLook > 2000) {
@@ -257,6 +290,13 @@ void tick(void* vrd, bool localVr) {
         return;
     }
     // Client: Hello until acknowledged (every 2 s, 3 tries); a desktop peer says Hello from a remote VR player's tick.
+    // A VR player waits for its player index (the server matches poses to it).
+    if (localVr && playerIndexOf(player) < 0) return;
+    if (g_client.acked && now - g_client.lastHello > kKeepaliveMs) {  // keepalive: the server forgets silent peers
+        const Hello h = myHello(localVr ? player : nullptr);
+        send(netif, kHelloHash, true, &h, sizeof h, nullptr);
+        g_client.lastHello = now;
+    }
     if (!g_client.acked && !g_client.refused) {
         if (g_client.tries < 3 && now - g_client.lastHello > 2000) {
             const Hello h = myHello(localVr ? player : nullptr);

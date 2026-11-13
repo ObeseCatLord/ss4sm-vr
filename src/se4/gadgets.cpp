@@ -185,12 +185,41 @@ void hookedHolderUse(uint8_t* holder) {
 // first-person start offset lands at the gadget hand. The native arc, marker, target checks and the launch
 // quaternion/speed/time then all follow that hand.
 thread_local uint8_t* t_targeting;
+// Every VR player's gadget holder -> its targeting mode (last step): the launch activation re-runs the targeting and
+// must steer it by that player's hand too (a server steers remote VR players' throws). Simulation thread.
+struct TargetOf {
+    uint8_t* holder = nullptr;
+    uint8_t* mode = nullptr;
+    ULONGLONG seen = 0;
+} g_targets[8];
+bool vrOwned(uint8_t* holder) {
+    const unsigned vrdOff = player_vr::vrdOffset();
+    uint8_t* owner = holder && vrdOff ? handleEntity(at<int32_t>(holder, se4::build().off(se4::gen::CWeaponEntity_en_henOwner))) : nullptr;
+    return owner && at<void*>(owner, vrdOff);
+}
+void noteTarget(uint8_t* holder, uint8_t* mode) {
+    const ULONGLONG now = GetTickCount64();
+    TargetOf* slot = nullptr;
+    for (auto& t : g_targets)
+        if (t.holder == holder) slot = &t;
+    if (!slot)
+        for (auto& t : g_targets)
+            if (!slot || now - t.seen > now - slot->seen) slot = &t;  // the free or least recently seen entry
+    *slot = {holder, mode, now};
+}
+uint8_t* targetOf(uint8_t* holder) {
+    for (auto& t : g_targets)
+        if (t.holder == holder && GetTickCount64() - t.seen < 2000) return t.mode;
+    return nullptr;
+}
 void hookedTargeting(uint8_t* mode, void* arg) {
     uint8_t* const prev = t_targeting;
     t_targeting = mode;
     realTargeting(mode, arg);
     t_targeting = prev;
-    if (uint8_t* holder = at<uint8_t*>(mode, kModeWeapon); holder && holder == g_held.holder) g_targetHolder = holder, g_targetMode = mode;
+    uint8_t* holder = at<uint8_t*>(mode, kModeWeapon);
+    if (holder && vrOwned(holder)) noteTarget(holder, mode);
+    if (holder && holder == g_held.holder) g_targetHolder = holder, g_targetMode = mode;
 }
 float* hookedView(uint8_t* player, float* out, void* arg, int mode) {
     float* r = realView(player, out, arg, mode);
@@ -253,7 +282,8 @@ uintptr_t hookedActivate(uint8_t* mode) {
     // hand too, or it judges (and launches along) the head's target.
     uint8_t* holder = mode ? at<uint8_t*>(mode, kModeWeapon) : nullptr;
     uint8_t* const prev = t_targeting;
-    if (g_aimHand && holder && holder == g_targetHolder && g_targetMode) t_targeting = g_targetMode;
+    if (g_aimHand && holder)
+        if (uint8_t* tm = targetOf(holder)) t_targeting = tm;  // any VR player's holder (local or remote)
     const uintptr_t r = realActivate(mode);
     t_targeting = prev;
     if (!holder || !localOwner(holder)) return r;
@@ -355,6 +385,21 @@ void onTick(uint8_t* player) {
 
 int takeBuzz() { return int(InterlockedExchange(&g_buzz, 0)) - 1; }
 bool triggerTaken(int hand) { return (hand == 0 || hand == 1) && g_triggerTaken[hand] != 0; }
+
+bool installAuthority() {
+    // A desktop (mp_guards) server: no hands of its own, but it runs remote VR players' gadget targeting and launch.
+    if (!se4::options::get("gadget_hand_aim", 1) || !se4::options::get("gadget_aim_hand", 1)) return false;
+    const auto& b = se4::build();
+    handleEntity = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
+    if (!handleEntity || !b.off(se4::gen::CWeaponEntity_en_henOwner) || !b.off(se4::gen::CWeaponEntity_en_bRightHandWeapon) ||
+        !b.off(se4::gen::CAOETargetingWeaponModeParams_wmp_vTrajectoryStartOffsetFirstPerson))
+        return false;
+    g_aimHand = hook(se4::gen::aoe_targeting_step, hookedTargeting, &realTargeting, "targeting step") &&
+                hook(se4::gen::player_view, hookedView, &realView, "player view") &&
+                hook(se4::gen::gadget_launch_activate, hookedActivate, &realActivate, "launch activation");
+    VRLOG("gadgets: remote VR players' throws aimed by their hands here %d", int(g_aimHand));
+    return g_aimHand;
+}
 
 bool install() {
     if (!se4::options::get("gadget_hand_aim", 1)) return false;

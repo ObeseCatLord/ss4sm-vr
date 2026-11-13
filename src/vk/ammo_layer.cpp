@@ -139,13 +139,13 @@ void end() {
     g_acquired = false;
 }
 
-int layers(XrSpace space, XrCompositionLayerQuad out[2]) {
+int layers(XrSpace space, XrCompositionLayerQuad out[2], const XrPosef grips[2]) {
     int n = 0;
     for (int h = 0; h < 2 && g_filled; ++h) {
         const ammo::Hand& a = g_hands[h];
         const auto& in = xr::input().hand(h);
         if (!a.visible || !in.active) continue;
-        const XrPosef& g = in.grip;
+        const XrPosef& g = grips[h];  // the grip the shown frame's gun was drawn with
         const core::Quat gq{g.orientation.x, g.orientation.y, g.orientation.z, g.orientation.w};
         const core::Quat q = core::normalize(core::multiply(gq, a.gripToSpot));
         const core::Vec3 p = core::Vec3{g.position.x, g.position.y, g.position.z} + core::rotate(gq, a.gripOffset);

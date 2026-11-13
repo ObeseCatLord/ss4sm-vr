@@ -3,7 +3,8 @@
 // Messages ride the engine's script RPC message (CNMScriptRPC) under mod-private name hashes that are never interned,
 // so an unmodded peer only logs "cannot resolve function name" and nothing else happens; the transport itself is
 // src/se4/net.cpp.
-//   Hello  client -> server, reliable, until acknowledged (every 2 s, 3 tries): version, build, player index, caps.
+//   Hello  client -> server, reliable, until acknowledged (every 2 s, 3 tries): version, build, player index, caps; once
+//          acknowledged, again every kKeepaliveMs as a keepalive (the server forgets a slot not heard for kPeerTimeoutMs).
 //   Ack    server -> that client, reliable: accepted or the reason; VR data flows only after an accepted Ack.
 //   Pose   VR player -> server (unreliable, ~30 Hz); the server relays it to every other acknowledged client.
 // Little-endian, packed. A peer with another protocol version or build is answered with accepted = 0 (no kick).
@@ -22,6 +23,7 @@ constexpr uint32_t hash(const char* s) {
 constexpr uint32_t kHelloHash = hash("SSVR.Hello.1"), kAckHash = hash("SSVR.Ack.1"), kPoseHash = hash("SSVR.Pose.1");
 constexpr uint16_t kProto = 1;
 constexpr uint32_t kMagic = 0x52565353;  // "SSVR"
+constexpr uint64_t kKeepaliveMs = 5000, kPeerTimeoutMs = 15000;
 
 enum Caps : uint32_t { CapVr = 1, CapBodyIk = 2, CapMelee = 4 };
 enum Reason : uint8_t { Accepted = 0, BadProto = 1, BadBuild = 2, Malformed = 3 };
@@ -78,25 +80,39 @@ struct Peers {
         uint32_t caps = 0;
         uint32_t lastSequence = 0;
         bool anyPose = false;
+        uint64_t heard = 0;  // the time (ms) of its last Hello or Pose
     } slot[kSlots];
 
     bool valid(int s) const { return s >= 0 && s < kSlots; }
-    // Records a Hello from `s` and returns the Ack to send back to it.
-    Ack onHello(int s, const Hello& h, uint32_t serverBuild, uint32_t serverCrc) {
+    // Records a Hello from `s` and returns the Ack to send back to it. A keepalive Hello from the same accepted player
+    // keeps its pose sequence.
+    Ack onHello(int s, const Hello& h, uint32_t serverBuild, uint32_t serverCrc, uint64_t now = 0) {
         const Ack a = answer(h, serverBuild, serverCrc);
-        if (valid(s)) slot[s] = {a.accepted != 0, h.playerIndex, h.caps, 0, false};
+        if (valid(s)) {
+            Peer& p = slot[s];
+            const bool same = p.acked && a.accepted && p.playerIndex == h.playerIndex;
+            p = {a.accepted != 0, h.playerIndex, h.caps, same ? p.lastSequence : 0, same && p.anyPose, now};
+        }
         return a;
     }
     // A Pose from `s`: true when it should be relayed (acknowledged sender, its own player, newer than the last).
-    bool onPose(int s, const PoseMsg& m) {
+    bool onPose(int s, const PoseMsg& m, uint64_t now = 0) {
         if (!valid(s) || !slot[s].acked || m.playerIndex != slot[s].playerIndex || m.pose.magic != wire::kMagic) return false;
         Peer& p = slot[s];
         if (p.anyPose && int32_t(m.pose.sequence - p.lastSequence) <= 0) return false;
-        p.lastSequence = m.pose.sequence, p.anyPose = true;
+        p.lastSequence = m.pose.sequence, p.anyPose = true, p.heard = now;
         return true;
     }
     void drop(int s) {
         if (valid(s)) slot[s] = {};
+    }
+    // Forgets acknowledged slots not heard for `timeout` (a client that left: its slot may be reused by an unmodded one).
+    // Returns how many were dropped.
+    int expire(uint64_t now, uint64_t timeout = kPeerTimeoutMs) {
+        int n = 0;
+        for (auto& p : slot)
+            if (p.acked && now - p.heard > timeout) p = {}, ++n;
+        return n;
     }
 };
 

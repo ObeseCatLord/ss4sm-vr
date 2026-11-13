@@ -255,3 +255,6 @@ manual:menu_button_target  # R33: submenu button target screen (IDENT)
 manual:menu_button_align   # R33: submenu button alignment
 manual:screen_set_title    # R33: menu screen title
 manual:vrmenu_rot_method_read # R33: VR Controls screen read of vr_iRotationMethod (row enable) -> mod turn method
+manual:vr_rot_sens_read      # smooth-turn rate read of vr_fRotationSensitivity -> mod turn speed
+manual:cvar_save             # persistent-cvar save core: overridden values are restored around it
+manual:vehicle_isa_site      # R7: engine class check of en_henRide (decodes the CVehicleEntity class global and is-a fn)

@@ -11,6 +11,7 @@
 // speed curve.
 namespace turn {
 bool install();
+bool installed();  // every read redirect in place: the engine's VR rotation is driven by feed()
 // Per frame: both sticks' x (the Rotation Controller picks one); `on` = native turning applies now (native mode, no wheel
 // or menu holding the stick).
 void feed(float leftX, float rightX, bool on);

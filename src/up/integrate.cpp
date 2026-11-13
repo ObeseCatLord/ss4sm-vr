@@ -69,6 +69,7 @@ struct Captured {
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t w = 0, h = 0;
 } g_color, g_depth;
+uint32_t g_targetGeneration;  // bumped for every new HDR colour/depth target (onImageCreated)
 
 bool isDepth(VkFormat f) {
     return f == VK_FORMAT_D16_UNORM || f == VK_FORMAT_D32_SFLOAT || f == VK_FORMAT_D24_UNORM_S8_UINT ||
@@ -135,6 +136,7 @@ struct Resources {
     bool sharpFailed = false;
     VkDescriptorSet counterSet = VK_NULL_HANDLE;  // ammo counters (R32 s4): depth sampled, canvas as storage
     bool counterFailed = false;
+    uint32_t generation = 0;  // g_targetGeneration when these were made
 } g_res;
 
 // Created once per device.
@@ -281,6 +283,7 @@ bool createRcasPipeline() {
 // Called when the engine has re-created its HDR targets: the old canvas/depth are gone, so are any command buffers
 // that used our views of them.
 void releaseResources() {
+    if (g_res.set || g_res.output.image || g_res.motion.image || g_res.sharp.image) up::waitGpuIdle();  // earlier frames may use them
     if (g_res.set) vk.freeSets(vk.dev, g_pool, 1, &g_res.set);
     if (g_res.colorView) vk.destroyView(vk.dev, g_res.colorView, nullptr);
     if (g_res.depthView) vk.destroyView(vk.dev, g_res.depthView, nullptr);
@@ -294,7 +297,9 @@ void releaseResources() {
 }
 
 bool ensureResources() {
-    if (g_res.color == g_color.image && g_res.depth == g_depth.image && (g_res.ready || g_res.failed)) return g_res.ready;
+    if (g_res.color == g_color.image && g_res.depth == g_depth.image && g_res.generation == g_targetGeneration &&
+        (g_res.ready || g_res.failed))
+        return g_res.ready;
     if (!vk.dev || !g_color.image || !g_depth.image || g_color.w != g_depth.w || g_color.h != g_depth.h) return false;
     if (!g_pipe && !createPipeline()) {
         VRLOG("upint: motion pipeline creation failed");
@@ -302,7 +307,7 @@ bool ensureResources() {
         return false;
     }
     releaseResources();
-    g_res.color = g_color.image, g_res.depth = g_depth.image;
+    g_res.color = g_color.image, g_res.depth = g_depth.image, g_res.generation = g_targetGeneration;
     g_res.w = g_color.w, g_res.h = g_color.h;
     g_res.colorView = viewOf(g_color.image, g_color.format, VK_IMAGE_ASPECT_COLOR_BIT);
     g_res.depthView = viewOf(g_depth.image, g_depth.format, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -341,6 +346,7 @@ bool ensureResources() {
 bool ensureOutput(uint32_t w, uint32_t h) {
     if (!g_res.ready) return false;
     if (g_res.ow == w && g_res.oh == h) return g_res.output.image != VK_NULL_HANDLE;  // a failed size is not retried
+    up::waitGpuIdle();  // the previous frames' command buffers may still use the old output/sharpening images
     destroyOwn(g_res.output);
     if (g_res.sharpSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.sharpSet), g_res.sharpSet = VK_NULL_HANDLE;
     if (g_res.debugSet) vk.freeSets(vk.dev, g_pool, 1, &g_res.debugSet), g_res.debugSet = VK_NULL_HANDLE;
@@ -1750,8 +1756,9 @@ void onImageCreated(VkImage image, const VkImageCreateInfo& ci) {
     VRLOG("upint: HDR allocation created image %p %ux%u fmt %d usage %x", (void*)image, ci.extent.width, ci.extent.height,
           int(ci.format), ci.usage);
     Captured c{image, ci.format, ci.extent.width, ci.extent.height};
-    if (isDepth(ci.format)) g_depth = c;
-    else if (ci.format == VK_FORMAT_R16G16B16A16_SFLOAT || ci.format == VK_FORMAT_R32G32B32A32_SFLOAT) g_color = c;
+    // A new target, even if the driver hands back a reused VkImage handle: our views of the old one are stale.
+    if (isDepth(ci.format)) g_depth = c, ++g_targetGeneration;
+    else if (ci.format == VK_FORMAT_R16G16B16A16_SFLOAT || ci.format == VK_FORMAT_R32G32B32A32_SFLOAT) g_color = c, ++g_targetGeneration;
 }
 
 template <class A> bool patchAttachments(const A* in, uint32_t n, std::vector<A>& out) {

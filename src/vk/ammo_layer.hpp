@@ -14,5 +14,5 @@ int begin();
 void record(VkCommandBuffer cb, int slot);
 void end();
 // Fills up to two quad layers (play space) for the hands begin() reported; returns how many.
-int layers(XrSpace space, XrCompositionLayerQuad out[2]);
+int layers(XrSpace space, XrCompositionLayerQuad out[2], const XrPosef grips[2]);  // grips: the hands the shown frame was drawn with
 }  // namespace ammolayer

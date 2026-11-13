@@ -4,6 +4,7 @@
 // one MinHook hook. Never create threads here: on Wine that stalls game startup (bisected 2026-10-23).
 #include "se4/ammo_counter.hpp"
 #include "se4/build.hpp"
+#include "se4/cvars.hpp"
 #include "se4/log.hpp"
 #include "se4/procaddr.hpp"
 #include "se4/focus.hpp"
@@ -102,7 +103,8 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         // Flat play: no hooks, unless this desktop player opts into guards for VR peers in multiplayer.
         // The server is the authority for melee damage, so it sweeps remote VR players' blades from their replicated hands.
         // Remote VR players' bodies (arms and fingers) are posed here too (body_ik).
-        if (se4::options::get("mp_guards", 0) && player_vr::install(false)) net::install(), melee::install(), body::install();
+        if (se4::options::get("mp_guards", 0) && player_vr::install(false))
+            net::install(), melee::install(), body::install(), gadgets::installAuthority(), hands::install(false);
         // An upscaler in desktop play (option upscaler, or desktop_upscaler for the Rescaling Filter menu entries): the
         // Vulkan layer and the upscaler on the flat main view. The menu hooks follow once the backends are known.
         if (upint::flatWanted()) {
@@ -113,6 +115,7 @@ extern "C" __declspec(dllexport) void ss4smvr_attach(HMODULE) {
         }
         return;
     }
+    se4::installSaveGuard();  // before any VR cvar override: a settings save must never write the mod's values
     if (!(skip & 2)) se4::installProcAddressHook();
     if (!(skip & 4)) focus::install();
     if (!(skip & 8)) {

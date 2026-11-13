@@ -988,7 +988,9 @@ void onUpscalerReady() {
     if (!g_prepared || g_installed) return;
     const bool dlss = up::available(up::Kind::DLSS), fsr = up::available(up::Kind::FSR);
     const char* why = nullptr;
-    if (!dlss && !fsr) why = "no upscaler backend available";
+    // In VR the hooks also carry VR Controls, the foveation row and the VR render resolution, so they go in without an
+    // upscaler too (the entries list only the backends that are available).
+    if (!dlss && !fsr && !g_vr) why = "no upscaler backend available";
     else if (!g_vr && !upint::flatReady()) why = "the flat upscaler path is not ready";
     if (why) return VRLOG("menu: Rescaling Filter entries off: %s (the list stays stock)", why);
     g_choice = int(choiceOf(up::active()));

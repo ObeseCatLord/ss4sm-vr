@@ -222,7 +222,10 @@
   "menu_button_target": "0x1409106e0",
   "menu_button_align": "0x1409072e0",
   "screen_set_title": "0x140134200",
-  "vrmenu_rot_method_read": "0x1408efcaf"
+  "vrmenu_rot_method_read": "0x1408efcaf",
+  "vr_rot_sens_read": "0x14044eac8",
+  "cvar_save": "0x1410d7ee0",
+  "vehicle_isa_site": "0x14023d9b5"
  },
  "Sam4_Unrestricted": {
   "vr_device_global": "0x1422aad10",
@@ -437,7 +440,10 @@
   "menu_button_target": "0x140912e10",
   "menu_button_align": "0x140909a10",
   "screen_set_title": "0x140136b50",
-  "vrmenu_rot_method_read": "0x1408f23df"
+  "vrmenu_rot_method_read": "0x1408f23df",
+  "vr_rot_sens_read": "0x1404511f8",
+  "cvar_save": "0x1410daa70",
+  "vehicle_isa_site": "0x140240075"
  },
  "SamSM": {
   "vr_device_global": "0x142287ed0",
@@ -662,7 +668,10 @@
   "menu_button_target": "0x140910d80",
   "menu_button_align": "0x140907910",
   "screen_set_title": "0x140134bd0",
-  "vrmenu_rot_method_read": "0x1408f006f"
+  "vrmenu_rot_method_read": "0x1408f006f",
+  "vr_rot_sens_read": "0x14044ec0f",
+  "cvar_save": "0x1410d86f0",
+  "vehicle_isa_site": "0x14023d5d5"
  },
  "SamSM_Unrestricted": {
   "vr_device_global": "0x142286ed0",
@@ -877,6 +886,9 @@
   "menu_button_target": "0x1409134a0",
   "menu_button_align": "0x14090a030",
   "screen_set_title": "0x140137510",
-  "vrmenu_rot_method_read": "0x1408f278f"
+  "vrmenu_rot_method_read": "0x1408f278f",
+  "vr_rot_sens_read": "0x14045132f",
+  "cvar_save": "0x1410db270",
+  "vehicle_isa_site": "0x14023fc85"
  }
 }

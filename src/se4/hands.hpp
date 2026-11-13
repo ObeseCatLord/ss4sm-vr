@@ -9,7 +9,8 @@
 // While the off hand is in reach or gripping, its squeeze is kept out of the pad mapping (no gadget throw).
 // Option grip_squeeze (default 1). The weapon step hook also feeds src/se4/arms.cpp.
 namespace hands {
-bool install();
+// localVr false: a desktop (mp_guards) server, which applies remote VR players' two-handed grips only.
+bool install(bool localVr = true);
 // Present thread: true when this XR hand (0 left, 1 right) is gripping a weapon or within reach of a grip.
 bool squeezeTaken(int hand);
 // Weapon placement (src/se4/arms.cpp): while a weapon is gripped by the mod's two-hand rule, its params carry

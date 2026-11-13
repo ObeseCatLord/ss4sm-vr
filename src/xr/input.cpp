@@ -1,6 +1,7 @@
 #include "xr/input.hpp"
 #include "se4/log.hpp"
 #include "xr/runtime.hpp"
+#include <windows.h>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -203,7 +204,10 @@ void Input::sync(XrSession session, XrSpace space, XrTime time) {
     XrActionsSyncInfo si{XR_TYPE_ACTIONS_SYNC_INFO};
     si.countActiveActionSets = 1;
     si.activeActionSets = &active;
-    if (XR_FAILED(xrSyncActions(session, &si))) return;
+    if (XR_FAILED(xrSyncActions(session, &si))) {
+        neutral();  // e.g. XR_SESSION_NOT_FOCUSED: no input this frame, so nothing stays held
+        return;
+    }
     for (int h = 0; h < 2; ++h) {
         HandState& s = hands_[h];
         uint32_t before = s.buttons;
@@ -295,17 +299,39 @@ void Input::vibrate(XrSession session, int h, float amplitude, float seconds, fl
 }
 
 void Input::locateGaze(XrSpace viewSpace, XrTime time) {
-    gazeValid_ = false;
-    if (!gazeSpace_) return;
+    if (!gazeSpace_ || !viewSpace) return;
     XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
     XrEyeGazeSampleTimeEXT st{XR_TYPE_EYE_GAZE_SAMPLE_TIME_EXT};
     loc.next = &st;
-    if (XR_FAILED(xrLocateSpace(gazeSpace_, viewSpace, time, &loc))) return;
-    if (!(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) ||
-        !(loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT))
-        return;
-    gaze_ = loc.pose;
-    gazeValid_ = true;
+    const bool ok = XR_SUCCEEDED(xrLocateSpace(gazeSpace_, viewSpace, time, &loc)) &&
+                    (loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) &&
+                    (loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT);
+    static bool announced;
+    if (ok && !announced) announced = true, VRLOG("input: eye gaze tracked (foveation follows it)");
+    auto* l = reinterpret_cast<PSRWLOCK>(&gazeLock_);
+    AcquireSRWLockExclusive(l);
+    if (ok) gaze_ = loc.pose;
+    gazeValid_ = ok;
+    ReleaseSRWLockExclusive(l);
+}
+
+bool Input::gaze(XrPosef& inView) const {
+    auto* l = reinterpret_cast<PSRWLOCK>(&gazeLock_);
+    AcquireSRWLockShared(l);
+    const bool ok = gazeValid_;
+    if (ok) inView = gaze_;
+    ReleaseSRWLockShared(l);
+    return ok;
+}
+
+void Input::neutral() {
+    for (HandState& s : hands_) {
+        s.released = s.buttons;
+        s.pressed = 0;
+        s.buttons = 0;
+        s.trigger = s.squeeze = 0.0f;
+        s.stick = {0, 0};
+    }
 }
 
 const char* Input::profileName(XrInstance inst, int h) const {

@@ -46,6 +46,26 @@ int main() {
     m.pose = {}, m.pose.sequence = 14;
     assert(!peers.onPose(3, m));
 
+    // keepalive: a repeated Hello from the same player keeps the sequence; silence expires the slot
+    {
+        Peers k;
+        k.onHello(1, h, 616154, 0xf07c69b9, 1000);
+        PoseMsg q;
+        q.playerIndex = 2, q.pose.sequence = 50;
+        assert(k.onPose(1, q, 2000));
+        k.onHello(1, h, 616154, 0xf07c69b9, 6000);
+        assert(k.slot[1].acked && k.slot[1].anyPose && k.slot[1].lastSequence == 50);
+        assert(!k.onPose(1, q, 6100));  // still not newer
+        assert(k.expire(6000 + kPeerTimeoutMs) == 0 && k.slot[1].acked);
+        assert(k.expire(6001 + kPeerTimeoutMs) == 1 && !k.slot[1].acked);
+        Hello other2 = h;
+        other2.playerIndex = 7;
+        k.onHello(1, h, 616154, 0xf07c69b9, 1);
+        k.onPose(1, q, 2);
+        k.onHello(1, other2, 616154, 0xf07c69b9, 3);  // another player on the slot: a fresh sequence
+        assert(k.slot[1].playerIndex == 7 && !k.slot[1].anyPose);
+    }
+
     // reading checks the exact size
     Hello back;
     assert(read(&h, sizeof h, back) && back.playerIndex == 2 && !read(&h, sizeof h - 1, back) && !read(nullptr, sizeof h, back));

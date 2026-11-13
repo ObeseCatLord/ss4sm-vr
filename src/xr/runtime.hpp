@@ -26,6 +26,7 @@ struct Views {
     XrPosef head{};       // VIEW in the play space (STAGE: y = height above the floor)
     XrFovf fov[2]{};
     uint32_t recommendedWidth = 0, recommendedHeight = 0;
+    uint32_t maxWidth = 0, maxHeight = 0;  // the runtime's largest eye image (0: unknown)
 };
 
 class Runtime {

@@ -9,6 +9,10 @@ namespace se4 {
 // forces for VR are not what the engine finds at exit). Returns false when the build lacks the symbol.
 bool setIndex(gen::Sym s, int32_t value);
 void restoreOverrides();
+// Many of these cvars are saved with the user's settings (flags 0x10006 / 0x40006). Hooks the engine's cvar save
+// (cvar_save) so every save writes the user's own values: the originals are put back for the save and the mod's
+// overrides re-applied after it. Call once, before the first setIndex can be followed by a save.
+bool installSaveGuard();
 // VR frame pacing: the headset drives the frame rate, so engine FPS caps (including the
 // unfocused-window cap, default 20) are lifted while an XR session exists.
 void applyVrFramePacing();

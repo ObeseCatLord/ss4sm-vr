@@ -72,6 +72,7 @@ struct Track {
 } g_t;
 uint8_t* g_lastState;  // the state handled last (one hold per artifact)
 volatile LONG g_holding[2];
+volatile ULONGLONG g_stepTick;  // when the tracked state last stepped: a state that died without its end event lapses
 
 double now(uint8_t* entity) {
     uint64_t t = 0;
@@ -123,6 +124,14 @@ bool crushInput(int xrHand) {
 
 void __cdecl hookedStep(uint8_t* state, void* a2, void* a3, void* a4) {
     realStep(state, a2, a3, a4);
+    const ULONGLONG nowTick = GetTickCount64();
+    if (g_t.phase != Phase::Idle && state != g_t.state && nowTick - g_stepTick > 1000) {
+        // The tracked state stopped stepping (world teardown, no end event): forget it, release the hand.
+        VRLOG("artifact: the held artifact's state is gone - hand released");
+        InterlockedExchange(&g_holding[0], 0), InterlockedExchange(&g_holding[1], 0);
+        g_t = Track{};
+    }
+    if (g_t.phase == Phase::Idle || state == g_t.state) g_stepTick = nowTick;
     uint8_t* player = at<uint8_t*>(state, kOwner);
     const auto& b = se4::build();
     if (g_t.phase == Phase::Idle) {
@@ -190,7 +199,8 @@ template <class F> bool hook(void* fn, F* detour, F** real, const char* what) {
 }
 }  // namespace
 
-bool holding(int hand) { return (hand == 0 || hand == 1) && g_holding[hand] != 0; }
+// Lapses a second after the held state last stepped (no step at all after a level change, for instance).
+bool holding(int hand) { return (hand == 0 || hand == 1) && g_holding[hand] != 0 && GetTickCount64() - g_stepTick < 1000; }
 
 bool install() {
     if (!se4::options::get("artifact_crush", 1)) return VRLOG("artifact: crush disabled by option"), false;

@@ -69,9 +69,12 @@ constexpr float kBladeStart = 0.04f, kBladeEnd = 0.45f;  // metres along the han
 constexpr int kBladePoints = 5;
 constexpr double kTargetCooldown = 0.35;                  // seconds before the same target can be hit again
 
+constexpr float kMaxSwingSpeed = 20.0f;  // m/s: faster is a tracking jump or a network step, not a swing
 struct Track {
     uint8_t* weapon = nullptr;
     core::Vec3 pt[kBladePoints]{};
+    core::Vec3 tipRel{};  // the tip minus the head: the swing speed ignores walking, sprinting, riding and snap turns
+    bool relValid = false;
     LARGE_INTEGER t{};
     int32_t hit[8] = {};
     double hitTime[8] = {};
@@ -82,16 +85,25 @@ LARGE_INTEGER g_freq;
 
 template <class T> T& at(void* base, size_t off) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(base) + off); }
 
-Track& track(uint8_t* weapon) {
-    Track* free = nullptr;
-    for (auto& t : g_tracks) {
+// One entry per stepping melee weapon. An entry not stepped for a second is free (dropped or holstered weapons); when
+// all are busy the least recently stepped one is reused.
+Track& track(uint8_t* weapon, LARGE_INTEGER now) {
+    for (auto& t : g_tracks)
         if (t.weapon == weapon) return t;
-        if (!t.weapon && !free) free = &t;
+    Track* reuse = nullptr;
+    for (auto& t : g_tracks)  // a free or stale entry first
+        if (!t.weapon || now.QuadPart - t.t.QuadPart > g_freq.QuadPart) {
+            reuse = &t;
+            break;
+        }
+    if (!reuse) {  // else the least recently stepped
+        reuse = &g_tracks[0];
+        for (auto& t : g_tracks)
+            if (t.t.QuadPart < reuse->t.QuadPart) reuse = &t;
     }
-    Track& t = free ? *free : g_tracks[uintptr_t(weapon) % 16];
-    t = {};
-    t.weapon = weapon;
-    return t;
+    *reuse = {};
+    reuse->weapon = weapon;
+    return *reuse;
 }
 
 uint8_t* ownerOf(uint8_t* weapon) { return static_cast<uint8_t*>(handleEntity(at<int32_t>(weapon, 0x98))); }
@@ -153,18 +165,26 @@ void sweep(uint8_t* weapon, void* stepArg, bool generic) {
     const core::Vec3 tip = pt[kBladePoints - 1];
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    Track& t = track(weapon);
+    float head7[7] = {};
+    if (headWorld) headWorld(vrd, head7);
+    const bool haveHead = head7[4] || head7[5] || head7[6];
+    const core::Vec3 tipRel = tip - core::Vec3{head7[4], head7[5], head7[6]};
+    Track& t = track(weapon, now);
     if (!t.valid) {
-        memcpy(t.pt, pt, sizeof pt), t.t = now, t.valid = true;
+        memcpy(t.pt, pt, sizeof pt), t.t = now, t.valid = true, t.tipRel = tipRel, t.relValid = haveHead;
         return;
     }
     double dt = seconds(t.t, now);
     if (dt <= 1e-4) return;
+    // A remote player's hands arrive in network-sized steps: measure over at least 50 ms (the segments then span it).
+    if (vrd != player_vr::localVrd() && dt < 0.05) return;
     const core::Vec3 prevTip = t.pt[kBladePoints - 1];
     core::Vec3 dv = tip - prevTip;
-    float speed = std::sqrt(core::dot(dv, dv)) / float(dt) / scale;  // metres per second
+    // The gate: head-relative tip speed (locomotion alone is no swing); the world-space segments are what is cast.
+    const core::Vec3 dRel = (haveHead && t.relValid) ? tipRel - t.tipRel : dv;
+    float speed = std::sqrt(core::dot(dRel, dRel)) / float(dt) / scale;  // metres per second
     const float minSpeed = g_minSpeed && *g_minSpeed > 0.1f ? *g_minSpeed : 2.0f;
-    if (speed >= minSpeed && dt < 0.25) {
+    if (speed >= minSpeed && speed <= kMaxSwingSpeed && dt < 0.25 && core::dot(dv, dv) > 1e-12f) {
         void* ref = nullptr;
         uint8_t** pp = weaponParams(weapon, &ref);
         uint8_t* params = pp ? *pp : nullptr;
@@ -180,9 +200,7 @@ void sweep(uint8_t* weapon, void* stepArg, bool generic) {
             int n = 0;
             for (int i = 0; i < kBladePoints; ++i) from[n] = t.pt[i], to[n++] = pt[i];
             from[n] = pt[0], to[n++] = tip;
-            float head7[7] = {};
-            if (g_arc && headWorld) headWorld(vrd, head7);
-            if (g_arc && headWorld && (head7[4] || head7[5] || head7[6])) {
+            if (g_arc && haveHead) {
                 const core::Vec3 eye{head7[4], head7[5], head7[6]};
                 float reach = at<float>(params, k.reach);
                 if (!(reach > 0.3f && reach < 20.0f)) reach = 2.0f;  // metres, in world units below
@@ -223,7 +241,7 @@ void sweep(uint8_t* weapon, void* stepArg, bool generic) {
         }
         if (ref) refRelease(ref, &ref);
     }
-    memcpy(t.pt, pt, sizeof pt), t.t = now;
+    memcpy(t.pt, pt, sizeof pt), t.t = now, t.tipRel = tipRel, t.relValid = haveHead;
 }
 
 // Logs when a melee weapon starts stepping (after a second without), for the lab.
@@ -275,16 +293,30 @@ struct SwingTrack {
     bool valid = false;
     double lastKill = 0;
     bool armed = false;
+    bool tracked[2]{};
+    ULONGLONG seen = 0;  // last tick (GetTickCount64)
 };
 SwingTrack g_swings[8];
 
+// One entry per VR player; free when not ticked for a second, else the least recently ticked is reused.
 SwingTrack& swingTrack(void* vrd) {
+    const ULONGLONG now = GetTickCount64();
     for (auto& t : g_swings)
-        if (t.vrd == vrd) return t;
+        if (t.vrd == vrd) return t.seen = now, t;
+    SwingTrack* reuse = nullptr;
     for (auto& t : g_swings)
-        if (!t.vrd) return t = {}, t.vrd = vrd, t;
-    SwingTrack& t = g_swings[uintptr_t(vrd) / 64 % 8];
-    return t = {}, t.vrd = vrd, t;
+        if (!t.vrd || now - t.seen > 1000) {
+            reuse = &t;
+            break;
+        }
+    if (!reuse) {
+        reuse = &g_swings[0];
+        for (auto& t : g_swings)
+            if (t.seen < reuse->seen) reuse = &t;
+    }
+    *reuse = {};
+    reuse->vrd = vrd, reuse->seen = now;
+    return *reuse;
 }
 
 // The game's own melee kill, the enemy half only (R31 s5). The player's melee state (0x1405d0c00) runs
@@ -369,6 +401,7 @@ void onVrdTick(void** vrdp) {
     void* vrd = vrdp;
     SwingTrack& st = swingTrack(vrd);
     core::Vec3 hand[2], rel[2];
+    bool tracked[2];
     float head7[7] = {};
     if (headWorld) headWorld(vrd, head7);
     const core::Vec3 eye{head7[4], head7[5], head7[6]};
@@ -378,9 +411,15 @@ void onVrdTick(void** vrdp) {
         player_vr::controllerWorld(vrd, r, p7);
         hand[r] = {p7[4], p7[5], p7[6]};
         rel[r] = hand[r] - eye;
+        tracked[r] = p7[0] || p7[1] || p7[2] || p7[3];  // a zero quaternion: no placement (tracking lost)
     }
+    // A hand that was not tracked last time has no previous position to measure from: its return is no swing.
+    for (int r = 0; r < 2; ++r)
+        if (!tracked[r] || !st.tracked[r]) st.rel[r] = rel[r], st.hand[r] = hand[r];
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
+    // Remote players' hands arrive in network-sized steps: measure over at least 50 ms.
+    if (vrd != player_vr::localVrd() && st.valid && seconds(st.t, now) < 0.05) return;
     const bool armed = (at<uint32_t>(player, kNetFlags) & kMeleeAvailable) != 0;
     if (g_promptDebug && vrd == player_vr::localVrd()) {  // lab: the finder's answer once a second
         static ULONGLONG last;
@@ -413,7 +452,7 @@ void onVrdTick(void** vrdp) {
                 const core::Vec3 dr = rel[r] - st.rel[r];
                 const float rdist = std::sqrt(core::dot(dr, dr));
                 const float speed = rdist / float(dt) / scale;
-                if (speed < g_swingSpeed || !(rdist > 1e-5f)) continue;
+                if (!tracked[r] || speed < g_swingSpeed || speed > kMaxSwingSpeed || !(rdist > 1e-5f)) continue;
                 core::Vec3 dv = hand[r] - st.hand[r];
                 float dist = std::sqrt(core::dot(dv, dv));
                 if (!(dist > 1e-5f)) dv = dr, dist = rdist;
@@ -462,6 +501,7 @@ void onVrdTick(void** vrdp) {
         }
     }
     st.hand[0] = hand[0], st.hand[1] = hand[1], st.rel[0] = rel[0], st.rel[1] = rel[1], st.t = now, st.valid = true;
+    st.tracked[0] = tracked[0], st.tracked[1] = tracked[1];
 }
 
 namespace {
@@ -534,10 +574,10 @@ void installPrompted() {
         VRLOG("melee: the melee finder's VR check was not found - prompted melee stays off in VR");
         return;
     }
-    if (se4::g_vrEnabled) {
-        if (!hook(start, reinterpret_cast<void*>(hookedStart), reinterpret_cast<void**>(&realStart), "melee start")) return;
-        VRLOG("melee: prompt without a button glyph %s", patchPromptGlyph() ? "on" : "FAILED (site does not match)");
-    }
+    // The finder now answers for VR players on every machine (a desktop/guards server too), so the Use-started kill
+    // must be refused for them everywhere it can start: a server would otherwise place, lock and animate a VR client.
+    if (!hook(start, reinterpret_cast<void*>(hookedStart), reinterpret_cast<void**>(&realStart), "melee start")) return;
+    if (se4::g_vrEnabled) VRLOG("melee: prompt without a button glyph %s", patchPromptGlyph() ? "on" : "FAILED (site does not match)");
     meleeFind = reinterpret_cast<FindFn>(find);
     VRLOG("melee: prompted melee by swing on (hand speed %.1f m/s)", g_swingSpeed);
 }

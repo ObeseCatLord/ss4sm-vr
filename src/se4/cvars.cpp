@@ -1,5 +1,6 @@
 #include "se4/cvars.hpp"
 #include "se4/log.hpp"
+#include <MinHook.h>
 #include <windows.h>
 
 namespace se4 {
@@ -11,7 +12,34 @@ struct Saved {
 Saved g_saved[16];
 int g_savedCount;
 SRWLOCK g_lock = SRWLOCK_INIT;
+
+using SaveFn = void(__cdecl*)(void* file, int mode);
+SaveFn realSave;
+void __cdecl hookedSave(void* file, int mode) {
+    int32_t now[sizeof g_saved / sizeof g_saved[0]];
+    AcquireSRWLockExclusive(&g_lock);
+    const int n = g_savedCount;
+    for (int i = 0; i < n; ++i)
+        if (auto* p = build().at<int32_t>(g_saved[i].sym)) now[i] = *p, *p = g_saved[i].value;
+    realSave(file, mode);
+    for (int i = 0; i < n; ++i)
+        if (auto* p = build().at<int32_t>(g_saved[i].sym)) *p = now[i];
+    ReleaseSRWLockExclusive(&g_lock);
+    static int logged;
+    if (n && logged++ < 4) VRLOG("cvar: settings saved with the user's own values for %d overridden cvar(s)", n);
+}
 }  // namespace
+
+bool installSaveGuard() {
+    if (realSave) return true;
+    void* target = build().at<void>(gen::cvar_save);
+    if (!target || MH_CreateHook(target, reinterpret_cast<void*>(hookedSave), reinterpret_cast<void**>(&realSave)) != MH_OK ||
+        MH_EnableHook(target) != MH_OK) {
+        VRLOG("cvar: save guard FAILED - overridden cvars may reach the user's settings");
+        return false;
+    }
+    return true;
+}
 
 bool setIndex(gen::Sym s, int32_t value) {
     auto* p = build().at<int32_t>(s);

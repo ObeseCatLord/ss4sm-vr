@@ -10,8 +10,10 @@ struct Entry {
     char key[48];
     int value;
 };
-Entry g_entries[32];
+constexpr int kMaxEntries = 256;
+Entry g_entries[kMaxEntries];
 int g_count;
+char g_buf[32768];  // static: load runs early (no heap, small stack)
 }  // namespace
 
 void load(const wchar_t* inDir) {
@@ -23,12 +25,18 @@ void load(const wchar_t* inDir) {
     wcscpy(slash + 1, L"options.txt");
     HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (f == INVALID_HANDLE_VALUE) return;
-    char buf[4096];
     DWORD n = 0;
-    ReadFile(f, buf, sizeof buf - 1, &n, nullptr);
+    const BOOL ok = ReadFile(f, g_buf, sizeof g_buf - 1, &n, nullptr);
+    DWORD more = 0;
+    char probe;
+    const bool truncated = ok && n == sizeof g_buf - 1 && ReadFile(f, &probe, 1, &more, nullptr) && more;
     CloseHandle(f);
-    buf[n] = 0;
-    for (char* line = strtok(buf, "\r\n"); line && g_count < 32; line = strtok(nullptr, "\r\n")) {
+    g_buf[ok ? n : 0] = 0;
+    char* text = g_buf;
+    if (static_cast<unsigned char>(text[0]) == 0xEF && static_cast<unsigned char>(text[1]) == 0xBB && static_cast<unsigned char>(text[2]) == 0xBF)
+        text += 3;  // UTF-8 byte order mark (Notepad)
+    int dropped = 0;
+    for (char* line = strtok(text, "\r\n"); line; line = strtok(nullptr, "\r\n")) {
         if (char* hash = strchr(line, '#')) *hash = 0;
         char* eq = strchr(line, '=');
         if (!eq) continue;
@@ -38,11 +46,21 @@ void load(const wchar_t* inDir) {
         char* end = eq;
         while (end > k && (end[-1] == ' ' || end[-1] == '\t')) *--end = 0;
         if (!*k || strlen(k) >= sizeof g_entries[0].key) continue;
-        strcpy(g_entries[g_count].key, k);
-        g_entries[g_count].value = int(strtol(eq + 1, nullptr, 0));
-        VRLOG("option %s = %d", k, g_entries[g_count].value);
-        ++g_count;
+        const int value = int(strtol(eq + 1, nullptr, 0));
+        int i = 0;
+        while (i < g_count && strcmp(g_entries[i].key, k)) ++i;  // a repeated key: the last one wins
+        if (i == g_count) {
+            if (g_count == kMaxEntries) {
+                ++dropped;
+                continue;
+            }
+            strcpy(g_entries[g_count++].key, k);
+        }
+        g_entries[i].value = value;
+        VRLOG("option %s = %d", k, value);
     }
+    if (dropped || truncated) VRLOG("options: %d entries ignored%s (limit %d entries, %u bytes)", dropped, truncated ? ", file truncated" : "",
+                                    kMaxEntries, unsigned(sizeof g_buf - 1));
 }
 
 int get(const char* key, int fallback) {

@@ -4,6 +4,7 @@
 #include "se4/log.hpp"
 #include "se4/options.hpp"
 #include "up/ngx_shim.hpp"
+#include "vk/queue_lock.hpp"
 #include <ffx_api/ffx_api.h>
 #include <ffx_api/ffx_api_loader.h>
 #include <ffx_api/ffx_upscale.h>
@@ -30,6 +31,7 @@ VkInstance g_inst;
 VkPhysicalDevice g_pd;
 VkDevice g_dev;
 PFN_vkGetDeviceProcAddr g_gdpa;
+VkQueue g_queue;
 // Per view slot: 0 the flat (desktop) main view, 1 and 2 the VR eyes (src/up/integrate.cpp).
 constexpr int kSlots = 3;
 const char* slotName(int slot) { return slot == 0 ? "flat" : slot == 1 ? "eye 1" : "eye 2"; }
@@ -111,7 +113,7 @@ bool dlssEvaluate(int slot, const Frame& f) {
     const bool resize = g_dlss.rw[e] != inW || g_dlss.rh[e] != inH || g_dlss.ow[e] != f.output.width ||
                         g_dlss.oh[e] != f.output.height || g_dlss.flags[e] != flags;
     if (!g_dlss.feature[e] || resize) {
-        if (g_dlss.feature[e]) NVSDK_NGX_VULKAN_ReleaseFeature(g_dlss.feature[e]), g_dlss.feature[e] = nullptr;
+        if (g_dlss.feature[e]) waitGpuIdle(), NVSDK_NGX_VULKAN_ReleaseFeature(g_dlss.feature[e]), g_dlss.feature[e] = nullptr;
         // Transformer model (preset K) for every mode: best temporal stability, which matters most in VR. Lab option
         // dlss_preset (the SDK's enum value: 5 E, 6 F, 10 J, 11 K, 12 L, 13 M) compares others.
         const unsigned preset = unsigned(std::clamp(se4::options::get("dlss_preset", NVSDK_NGX_DLSS_Hint_Render_Preset_K), 0, 15));
@@ -214,7 +216,7 @@ bool fsrEvaluate(int slot, const Frame& f) {
     if (g_fsrDepth == 2) flags |= FFX_UPSCALE_ENABLE_DEPTH_INFINITE;
     if (!g_fsr.ctx[e] || g_fsr.maxRender[e][0] < inW || g_fsr.maxRender[e][1] < inH ||
         g_fsr.maxOut[e][0] != f.output.width || g_fsr.maxOut[e][1] != f.output.height || g_fsr.flags[e] != flags) {
-        if (g_fsr.ctx[e]) g_fsr.fn.DestroyContext(&g_fsr.ctx[e], nullptr), g_fsr.ctx[e] = nullptr;
+        if (g_fsr.ctx[e]) waitGpuIdle(), g_fsr.fn.DestroyContext(&g_fsr.ctx[e], nullptr), g_fsr.ctx[e] = nullptr;
         ffxCreateBackendVKDesc be{};
         be.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_VK;
         be.vkDevice = g_dev;
@@ -327,9 +329,9 @@ void deviceExtensions(VkInstance, VkPhysicalDevice, const char** names, uint32_t
     for (unsigned i = 0; i < dc && count < max; ++i) names[count++] = de[i];
 }
 
-bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProcAddr gdpa, VkQueue,
+bool init(VkInstance inst, VkPhysicalDevice pd, VkDevice dev, PFN_vkGetInstanceProcAddr gipa, PFN_vkGetDeviceProcAddr gdpa, VkQueue queue,
           uint32_t, const wchar_t* dir) {
-    g_inst = inst, g_pd = pd, g_dev = dev, g_gdpa = gdpa;
+    g_inst = inst, g_pd = pd, g_dev = dev, g_gdpa = gdpa, g_queue = queue;
     int opt = se4::options::get("upscaler", 0);  // off until validated in the lab; auto = -1
     g_quality = std::clamp(se4::options::get("upscale_quality", 0), 0, 3);
     if (!g_sharpnessSet) g_sharpness = std::clamp(se4::options::get("upscale_sharpness", 25), 0, 100) / 100.0f;
@@ -392,4 +394,12 @@ void setSharpness(float s) {
 }
 
 void resetHistory() { g_reset[0] = g_reset[1] = g_reset[2] = true; }
+
+void waitGpuIdle() {
+    static PFN_vkQueueWaitIdle wait;
+    if (!wait && g_gdpa && g_dev) wait = reinterpret_cast<PFN_vkQueueWaitIdle>(g_gdpa(g_dev, "vkQueueWaitIdle"));
+    if (!wait || !g_queue) return;
+    vkq::Guard lock;
+    wait(g_queue);
+}
 }  // namespace up

@@ -56,11 +56,11 @@ public:
     const char* profileName(XrInstance instance, int h) const;
     bool ready() const { return set_ != XR_NULL_HANDLE; }
     // Eye gaze (XR_EXT_eye_gaze_interaction), in VIEW space: valid only when the runtime tracks the eyes.
-    bool gaze(XrPosef& inView) const {
-        if (!gazeValid_) return false;
-        inView = gaze_;
-        return true;
-    }
+    // Read on render threads, written at present: guarded so a pose is never torn.
+    bool gaze(XrPosef& inView) const;
+    // Releases every button, trigger, squeeze and stick (poses kept): when actions cannot be synced, a held input
+    // must not stay held.
+    void neutral();
 
 private:
     XrActionSet set_ = XR_NULL_HANDLE;
@@ -72,6 +72,7 @@ private:
     XrSpace gazeSpace_{};
     XrPosef gaze_{};
     bool gazeValid_ = false;
+    mutable void* gazeLock_ = nullptr;  // SRWLOCK (zero-initialised = SRWLOCK_INIT)
     HandState hands_[2];
     XrInstance instance_ = XR_NULL_HANDLE;
 };

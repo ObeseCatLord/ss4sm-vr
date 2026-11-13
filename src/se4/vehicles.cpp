@@ -54,6 +54,28 @@ std::atomic<float> g_steer{0}, g_angle{0};
 core::Pose fromP7(const float* p) { return {{p[0], p[1], p[2], p[3]}, {p[4], p[5], p[6]}}; }
 template <class T> T& at(void* base, uint32_t off) { return *reinterpret_cast<T*>(static_cast<uint8_t*>(base) + off); }
 
+// en_henRide may be any rideable (R7 s3): only a CVehicleEntity has the behaviour array read below. The engine's own
+// check (vehicle_isa_site) gives the class global and the is-a function: is_a(entity->vt[0](entity), *classGlobal).
+using ClassFn = void*(__cdecl*)(void*);
+using IsAFn = bool(__cdecl*)(void*, void*);
+void** g_vehicleClass;
+IsAFn g_isA;
+bool decodeVehicleCheck() {
+    auto* site = se4::build().at<uint8_t>(se4::gen::vehicle_isa_site);
+    if (!site || site[0x1f] != 0x48 || site[0x20] != 0x8B || site[0x21] != 0x15 || site[0x29] != 0xE8) return false;
+    int32_t d, r;
+    memcpy(&d, site + 0x22, 4);
+    memcpy(&r, site + 0x2a, 4);
+    g_vehicleClass = reinterpret_cast<void**>(site + 0x26 + d);
+    g_isA = reinterpret_cast<IsAFn>(site + 0x2e + r);
+    return true;
+}
+bool isVehicle(uint8_t* e) {
+    if (!e || !g_isA || !g_vehicleClass || !*g_vehicleClass) return false;
+    void* cls = reinterpret_cast<ClassFn>((*reinterpret_cast<void***>(e))[0])(e);
+    return cls && g_isA(cls, *g_vehicleClass);
+}
+
 uint8_t* wheeledBehavior(uint8_t* vehicle) {
     uint32_t off = se4::build().off(se4::gen::CVehicleEntity_en_avbBehaviors);
     uint8_t** arr = at<uint8_t**>(vehicle, off);
@@ -128,6 +150,10 @@ bool install() {
     followerSetRot = reinterpret_cast<SetRotFn>(b.at<void>(se4::gen::follower_setrot));
     eulerQuat = reinterpret_cast<EulerFn>(b.at<void>(se4::gen::euler_quat));
     g_animateFn = b.at<void>(se4::gen::wvb_animate);
+    if (!decodeVehicleCheck()) {
+        VRLOG("vehicles: the engine's vehicle class check was not found - grab steering off (a non-vehicle ride is not safe)");
+        return false;
+    }
     for (unsigned m = 0; m < se4::gen::MemCount; ++m)
         if (!b.off(se4::gen::Mem(m))) {
             VRLOG("vehicles: member %u unknown in this build - grab mode off", m);
@@ -162,7 +188,7 @@ void step(uint8_t* player, void* vrd) {
         VRLOG("vehicles: engine heading axis (%.2f %.2f %.2f)", g_localAxisQ.x, g_localAxisQ.y, g_localAxisQ.z);
     }
     auto* vehicle = static_cast<uint8_t*>(handleEntity(at<int32_t>(player, b.off(se4::gen::CPuppetEntity_en_henRide))));
-    if (!vehicle || handleEntity(at<int32_t>(vehicle, b.off(se4::gen::CPuppetEntity_en_henOperator))) != player) {
+    if (!vehicle || !isVehicle(vehicle) || handleEntity(at<int32_t>(vehicle, b.off(se4::gen::CPuppetEntity_en_henOperator))) != player) {
         if (g_driving) release();
         return;
     }

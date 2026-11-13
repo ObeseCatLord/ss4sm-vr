@@ -55,6 +55,7 @@ PFN_vkCmdBindPipeline realCmdBindPipeline;
 // which the engine records only with its own VRS on (otherwise undefined: the attachment is ignored).
 std::unordered_set<VkPipeline> g_dynFsr;
 SRWLOCK g_dynLock = SRWLOCK_INIT;
+volatile LONG g_dynCount;  // g_dynFsr.size(): binds skip the lock while no pipeline has dynamic shading rate
 thread_local VkExtent2D t_fsrSize{1, 1};  // the engine's last per-draw rate on this recording thread
 thread_local VkFragmentShadingRateCombinerOpKHR t_fsrOp0 = VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR;
 PFN_vkCmdBeginRenderPass realCmdBeginRenderPass;
@@ -300,7 +301,14 @@ VkResult createPass2(VkDevice d, const VkRenderPassCreateInfo2* ci, const VkAllo
     uint32_t mask = 0;
     for (uint32_t i = 0; i < ci->subpassCount && i < 32; ++i)
         if (isScenePass(ci->pSubpasses[i])) mask |= 1u << i;
-    if (!g_active || !mask) return realCreateRenderPass2(d, ci, a, out);
+    if (!g_active || !mask) {
+        const VkResult r = realCreateRenderPass2(d, ci, a, out);
+        if (r == VK_SUCCESS) {  // a handle reused from a destroyed scene pass must not keep its shading-rate entry
+            std::lock_guard<std::mutex> l(g_lock);
+            g_passes.erase(*out);
+        }
+        return r;
+    }
     std::vector<VkAttachmentDescription2> att(ci->pAttachments, ci->pAttachments + ci->attachmentCount);
     const uint32_t idx = uint32_t(att.size());
     VkAttachmentDescription2 fsr{VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2};
@@ -440,7 +448,11 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateFramebuffer(VkDevice d, const VkFramebu
     {
         std::lock_guard<std::mutex> l(g_lock);
         auto it = g_passes.find(ci->renderPass);
-        if (it == g_passes.end()) return realCreateFramebuffer(d, ci, a, out);
+        if (it == g_passes.end()) {
+            const VkResult r = realCreateFramebuffer(d, ci, a, out);
+            if (r == VK_SUCCESS) g_imageless.erase(*out), g_eyeFbs.erase(*out);  // a reused handle is not a scene framebuffer
+            return r;
+        }
         pi = it->second;
         view = viewFor(ci->width, ci->height);
         static int logged;
@@ -474,19 +486,26 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateFramebuffer(VkDevice d, const VkFramebu
         ai.pNext = nullptr;
         c.pNext = &ai;  // the only struct an imageless framebuffer chains
     } else {
-        if (!view) return realCreateFramebuffer(d, ci, a, out);
+        if (!view) {
+            const VkResult r = realCreateFramebuffer(d, ci, a, out);
+            if (r == VK_SUCCESS) {
+                std::lock_guard<std::mutex> l(g_lock);
+                g_imageless.erase(*out), g_eyeFbs.erase(*out);
+            }
+            return r;
+        }
         views.assign(ci->pAttachments, ci->pAttachments + ci->attachmentCount);
         views.push_back(view);
         c.pAttachments = views.data();
     }
     c.attachmentCount = ci->attachmentCount + 1;
     VkResult r = realCreateFramebuffer(d, &c, a, out);
-    if (r == VK_SUCCESS && imageless) {
+    if (r == VK_SUCCESS) {  // record exactly what this handle is now (it may be a reused one)
         std::lock_guard<std::mutex> l(g_lock);
-        g_imageless.insert(*out);
-    } else if (r == VK_SUCCESS && view && view == g_eye.view) {
-        std::lock_guard<std::mutex> l(g_lock);
-        g_eyeFbs.insert(*out);
+        if (imageless) g_imageless.insert(*out);
+        else g_imageless.erase(*out);
+        if (!imageless && view && view == g_eye.view) g_eyeFbs.insert(*out);
+        else g_eyeFbs.erase(*out);
     }
     return r;
 }
@@ -592,11 +611,15 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateGraphicsPipelines(VkDevice d, VkPipelin
         uint32_t dyn = 0;
         AcquireSRWLockExclusive(&g_dynLock);
         for (uint32_t i = 0; i < n; ++i) {
+            if (!out[i]) continue;
+            bool isDyn = false;
             const VkPipelineDynamicStateCreateInfo* ds = ci[i].pDynamicState;
-            for (uint32_t k = 0; ds && k < ds->dynamicStateCount; ++k)
-                if (ds->pDynamicStates[k] == VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR && out[i]) g_dynFsr.insert(out[i]), ++dyn;
+            for (uint32_t k = 0; ds && k < ds->dynamicStateCount; ++k) isDyn |= ds->pDynamicStates[k] == VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
+            if (isDyn) g_dynFsr.insert(out[i]), ++dyn;
+            else g_dynFsr.erase(out[i]);  // a handle reused from a destroyed dynamic-rate pipeline
         }
         const size_t total = g_dynFsr.size();
+        InterlockedExchange(&g_dynCount, LONG(total));
         ReleaseSRWLockExclusive(&g_dynLock);
         static size_t logged;
         if (dyn && total >= logged * 2 + 16) logged = total, VRLOG("fov: %zu pipelines take the shading rate as dynamic state (set at bind)", total);
@@ -606,7 +629,7 @@ VKAPI_ATTR VkResult VKAPI_CALL hookCreateGraphicsPipelines(VkDevice d, VkPipelin
 
 VKAPI_ATTR void VKAPI_CALL hookCmdBindPipeline(VkCommandBuffer cb, VkPipelineBindPoint bp, VkPipeline p) {
     realCmdBindPipeline(cb, bp, p);
-    if (bp != VK_PIPELINE_BIND_POINT_GRAPHICS || !realCmdSetFsr) return;
+    if (bp != VK_PIPELINE_BIND_POINT_GRAPHICS || !realCmdSetFsr || !g_dynCount) return;
     AcquireSRWLockShared(&g_dynLock);
     const bool dyn = g_dynFsr.count(p) != 0;
     ReleaseSRWLockShared(&g_dynLock);

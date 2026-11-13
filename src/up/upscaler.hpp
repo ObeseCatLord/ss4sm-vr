@@ -87,4 +87,7 @@ float sharpness();
 void setSharpness(float s);
 // Drop all histories (level load, recentre); the next evaluate per slot starts fresh.
 void resetHistory();
+// Waits until the shared graphics queue has finished (under the queue lock): call before destroying an object an
+// earlier frame's command buffer may still use (a resize, a backend switch). Rare; never per frame.
+void waitGpuIdle();
 }  // namespace up

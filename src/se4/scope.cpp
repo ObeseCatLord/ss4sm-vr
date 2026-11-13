@@ -68,6 +68,7 @@ struct Frame {
     void* gfx = nullptr;
     void* rt = nullptr;    // slot 0x028(3) result
     int32_t savedMr = 0, savedSkip = 0;
+    int32_t savedVideo = 0;
 } g_frame;
 
 // For the layer (present thread).
@@ -141,7 +142,14 @@ void setCvar(se4::gen::Sym s, int32_t v, int32_t* saved) {
 }
 }  // namespace
 
+void restoreFrameCvars() {
+    setCvar(se4::gen::vr_iMixedRealityOutput, g_frame.savedMr, nullptr);
+    setCvar(se4::gen::vr_bSkipMixedRealityWeaponRendering, g_frame.savedSkip, nullptr);
+    setCvar(se4::gen::vr_iRenderMixedRealityVideo, g_frame.savedVideo, nullptr);
+}
+
 void beginFrame() {
+    if (g_frame.live) restoreFrameCvars();  // the previous frame's endFrame did not run: put the user's values back first
     g_frame.live = false;
     g_frame.rt = nullptr;
     if (!g_mode || !realStep) return;
@@ -188,14 +196,13 @@ void beginFrame() {
     g_frame.live = true;
     setCvar(se4::gen::vr_iMixedRealityOutput, 1, &g_frame.savedMr);
     setCvar(se4::gen::vr_bSkipMixedRealityWeaponRendering, 1, &g_frame.savedSkip);
-    setCvar(se4::gen::vr_iRenderMixedRealityVideo, 0, nullptr);
+    setCvar(se4::gen::vr_iRenderMixedRealityVideo, 0, &g_frame.savedVideo);
 }
 
 void endFrame() {
     if (!g_frame.live) return;
     g_frame.live = false;
-    setCvar(se4::gen::vr_iMixedRealityOutput, g_frame.savedMr, nullptr);
-    setCvar(se4::gen::vr_bSkipMixedRealityWeaponRendering, g_frame.savedSkip, nullptr);
+    restoreFrameCvars();
     if (!g_frame.rt || !g_frame.gfx) return;
     // Hand the image over like the engine does for eyes 1/2 before SubmitEye: gfx vt+0x288(tex, 3) records the
     // transition to TRANSFER_SRC_OPTIMAL in the engine's command buffer (docs/re/EYE_TARGETS.md; lab 2026-10-24: passing the

@@ -1320,5 +1320,30 @@
   "src": "0x1408efcaf",
   "len": 24,
   "_note": "mov ecx,[rip+vr_iRotationMethod] (8B 0D disp32, 6 bytes, disp at +2) in the VR Controls screen step: enables Rotation Sensitivity (smooth) or Rotation Angle (snap); retarget to the mod's turn method (R33)"
+ },
+ "vr_rot_sens_read": {
+  "src": "0x14044eac8",
+  "len": 24,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x14044ec0f",
+   "len": 24
+  },
+  "_note": "movss xmm1,[rip+vr_fRotationSensitivity] (F3 0F 10 0D disp32, 8 bytes, disp at +4) in vr_rotation, the smooth-turn rate's only reader (the second cvar_readers hit 0x14044eb9f is vr_fRotationAngle); retarget to the mod's turn speed (review 2026-11-12); SM compiles it as mulss xmm0,[rip+cvar] (F3 0F 59 05 disp32, same length and disp offset)"
+ },
+ "cvar_save": {
+  "src": "0x1410d7ee0",
+  "len": 48,
+  "alt": {
+   "build": "SamSM",
+   "src": "0x1410d86f0",
+   "len": 48
+  },
+  "_note": "core of saving persistent cvars to a file (logs 'Saving cvars to %1.'); called by cvarSave 0x1410d4dd0, prjSaveCVars (via 0x1410dbad0) and two more paths (Ghidra callers). The mod restores the values it overrides around it (review 2026-11-12); SM 0x1410d86f0 is the call at cvarSave+0x4d, as in Sam4"
+ },
+ "vehicle_isa_site": {
+  "src": "0x14023d9b5",
+  "len": 48,
+  "_note": "the engine's own CVehicleEntity check of en_henRide (R7 s3): mov ecx,[rax+0x75c]; call handle; ...; mov rdx,[rax]; mov rcx,rax; call [rdx] (entity class); +0x1f mov rdx,[rip+CVehicleEntity class global] (disp at +0x22); +0x29 call is-a (rel32 at +0x2a). Decoded at runtime (review 2026-11-12)"
  }
 }

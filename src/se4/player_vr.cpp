@@ -25,6 +25,8 @@ namespace {
 uint8_t* g_bindRet;     // return address of bind_local_user_psd's call to set_playing_in_vr
 unsigned g_vrdOff;      // player -> CPlayerVRData*
 void* volatile g_localVrd;
+volatile ULONGLONG g_localTick, g_checkedAt;  // localVrd(): its last tick, its last check
+volatile bool g_localOk = true;
 
 int32_t rel32(const uint8_t* p) {
     int32_t v;
@@ -52,7 +54,7 @@ void hookedVrdInit(void* vrd, void* player) {
     VRLOG("player_vr: CPlayerVRData %p initialised for player %p (local %d)", vrd, player, local);
     if (auto* layout = se4::build().at<int32_t>(se4::gen::prj_iGamepadButtonLayout))
         VRLOG("player_vr: gamepad button layout %d (the virtual pad assumes GBL_STANDARD 12)", *layout);
-    if (local) g_localVrd = vrd;
+    if (local) g_localVrd = vrd, g_localTick = GetTickCount64(), g_localOk = true;
     {
         const int32_t* b = reinterpret_cast<const int32_t*>(static_cast<uint8_t*>(vrd) + 0x288);
         VRLOG("player_vr: vrd button indices +0x288..+0x2a4: %d %d %d %d %d %d %d %d", b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
@@ -370,6 +372,7 @@ void __cdecl hookedVrdTick(void** vrd) {
     realVrdTick(vrd);
     body::onVrdTick(vrd);
     melee::onVrdTick(vrd);
+    if (vrd && vrd == g_localVrd) g_localTick = GetTickCount64(), g_localOk = true;
     net::tick(vrd, vrd && vrd == g_localVrd);
     if (vrd && vrd == g_localVrd) {
         gadgets::onTick(static_cast<uint8_t*>(vrd[0]));  // vrd+0 = player (vrd_init)
@@ -395,8 +398,31 @@ void useHand(int hand) {
     if (realHandUse && g_localVrd) realHandUse(g_localVrd, hand);
     else VRLOG("player_vr: no VR use path (hook %p, vrd %p)", reinterpret_cast<void*>(realHandUse), g_localVrd);
 }
-bool nativeTurn() { return g_nativeTurn || net::clientSession(); }
-void* localVrd() { return g_localVrd; }
+bool nativeTurn() { return (g_nativeTurn || net::clientSession()) && turn::installed(); }  // else the pad's stick turns
+// The local VR data is freed with its world (level change, return to the menu) and no destructor is hooked: while it
+// ticks it is trusted; when it has not ticked for 2 s (paused, loading, gone) it is checked at most every 0.5 s - still
+// readable and its player still pointing back at it - and treated as absent otherwise.
+bool readableMem(const void* p, size_t n) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!p || reinterpret_cast<uintptr_t>(p) < 0x10000 || !VirtualQuery(p, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return false;
+    return static_cast<const uint8_t*>(p) + n <= static_cast<const uint8_t*>(mbi.BaseAddress) + mbi.RegionSize;
+}
+void* localVrd() {
+    void* v = g_localVrd;
+    if (!v) return nullptr;
+    const ULONGLONG now = GetTickCount64();
+    if (now - g_localTick < 2000) return v;
+    if (now - g_checkedAt >= 500) {
+        bool ok = readableMem(v, 0x330) && g_vrdOff;
+        auto* player = ok ? *static_cast<uint8_t**>(v) : nullptr;
+        ok = ok && readableMem(player, g_vrdOff + 8) && *reinterpret_cast<void**>(player + g_vrdOff) == v;
+        if (!ok && g_localOk) VRLOG("player_vr: the local VR data %p is gone (its world ended)", v);
+        g_localOk = ok, g_checkedAt = now;
+    }
+    return g_localOk ? v : nullptr;
+}
 
 bool install(bool localVr) {
     const auto& b = se4::build();
@@ -437,7 +463,9 @@ bool install(bool localVr) {
     if (!localVr) return ok;
     g_eulerQuat = reinterpret_cast<EulerFn>(b.at<void>(se4::gen::euler_quat));
     g_nativeAction = se4::options::get("native_vr_action", 0) != 0;
-    g_nativeTurn = se4::options::get("native_turn", g_nativeAction) != 0;
+    // Native turning (R26) is the default: the VR Controls rows (method, stick, speed, comfort) act on it, in single
+    // player and as a client alike. native_turn=0 turns with the virtual pad's right stick instead.
+    g_nativeTurn = se4::options::get("native_turn", 1) != 0;
     if (auto* ca = b.at<uint8_t>(se4::gen::client_action))
         ok &= hook(ca, reinterpret_cast<void*>(hookedCa), reinterpret_cast<void**>(&realCa), "ClientAction");
     else ok &= !g_nativeAction;

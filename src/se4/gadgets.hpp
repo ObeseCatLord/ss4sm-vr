@@ -17,6 +17,8 @@
 // hand's own velocity, scaled by throw_gain percent, default 200).
 namespace gadgets {
 bool install();
+// Desktop (mp_guards) server: only the hooks that aim remote VR players' throws by their hands.
+bool installAuthority();
 // Simulation thread, once per tick of the local VR player (from its weapon steps).
 void onTick(uint8_t* player);
 // Present thread: the gadget in this XR hand (0 left, 1 right) takes its trigger.

@@ -478,7 +478,9 @@ struct Projection {
     VkFormat srcFormat = VK_FORMAT_UNDEFINED;
     uint32_t w = 0, h = 0;
     bool blit = false;  // format conversion needed (float/other -> sRGB)
-    bool failed = false;
+    bool failed = false;  // creation failed for failedW x failedH in failedFormat (another size or format is tried again)
+    uint32_t failedW = 0, failedH = 0;
+    VkFormat failedFormat = VK_FORMAT_UNDEFINED;
 } pj;
 
 // Lab: lab_eye_dump=<s> writes the left eye image once, <s> seconds after the first stereo frame, to
@@ -551,6 +553,8 @@ bool isUnorm8(VkFormat f) { return f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORM
 
 bool setupProjection(const eyes::Frame& f) {
     if (pj.sc.handle && pj.srcFormat == f.format && pj.w == f.width && pj.h == f.height) return true;
+    if (pj.failed && pj.failedW == f.width && pj.failedH == f.height && pj.failedFormat == f.format) return false;
+    pj.failed = false;
     if (pj.sc.handle) {
         vkq::Guard g;
         xrDestroySwapchain(pj.sc.handle);
@@ -566,7 +570,8 @@ bool setupProjection(const eyes::Frame& f) {
     pj.blit = fmt != twin;
     if (!rt.createSwapchain(pj.sc, fmt, f.width, f.height, 2, XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT |
                                                                  XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT)) {
-        pj.failed = true;
+        pj.failed = true, pj.failedW = f.width, pj.failedH = f.height, pj.failedFormat = f.format;
+        pj.w = pj.h = 0;
         return false;
     }
     pj.srcFormat = f.format, pj.w = f.width, pj.h = f.height;
@@ -603,6 +608,7 @@ void imageBarrier(VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImageLa
 }
 
 VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi);
+bool g_inputReleased;  // input already neutral while the session is not running (re-armed when it runs)
 VKAPI_ATTR VkResult VKAPI_CALL hookQueuePresent(VkQueue q, const VkPresentInfoKHR* pi) {
     gputime::presentEntry();
     const VkResult r = presentFrame(q, pi);
@@ -624,6 +630,9 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         if (it != g_swapchains.end()) sw = it->second;
     }
     if (!rt.running() || sw.images.empty() || m.failed || q != g.xrQueue) {
+        if (!rt.running() && xr::input().ready()) {  // no frames, no input: release whatever was held
+            if (!g_inputReleased) g_inputReleased = true, xr::input().neutral(), gamepad::publishFromXr(), vrdev::updateFromInput();
+        }
         static unsigned reported;
         unsigned why = (!rt.running()) | (sw.images.empty() << 1) | (m.failed << 2) | ((q != g.xrQueue) << 3);
         if ((why & ~reported) && rt.running()) {
@@ -650,6 +659,9 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
     TRACE("mirror: present begin, waitFrame");
     XrFrameState fs;
     if (!rt.waitBeginFrame(fs)) {
+        xr::input().neutral();
+        gamepad::publishFromXr();
+        vrdev::updateFromInput();
         vkq::Guard lock;
         return realQueuePresent(q, pi);
     }
@@ -665,8 +677,15 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
     // The eye images submitted below were rendered with the views located at the previous present;
     // keep those for the projection layer before locating views for the next game frame.
     const xr::Views renderedWith = rt.views();
-    rt.updateViews(fs.predictedDisplayTime);
-    xr::input().sync(rt.session(), rt.playSpace(), fs.predictedDisplayTime);
+    // The hands the shown frame's guns were drawn with (the scope and ammo quads must sit on those guns).
+    const XrPosef renderedGrip[2] = {xr::input().hand(0).grip, xr::input().hand(1).grip};
+    // Poses located now render the NEXT game frame, which is displayed one period after this one: predict for that.
+    const XrDuration period = fs.predictedDisplayPeriod > 0 && fs.predictedDisplayPeriod < 50000000 ? fs.predictedDisplayPeriod : 11111111;
+    const XrTime nextDisplay = fs.predictedDisplayTime + period;
+    rt.updateViews(nextDisplay);
+    xr::input().sync(rt.session(), rt.playSpace(), nextDisplay);
+    xr::input().locateGaze(rt.viewSpace(), nextDisplay);
+    g_inputReleased = false;
     gamepad::publishFromXr();
     vrdev::updateFromInput();
     {
@@ -681,22 +700,23 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         }
     }
     eyes::Frame ef = eyes::take();
-    bool stereo = ef.ready && !pj.failed && fs.shouldRender && renderedWith.valid && setupProjection(ef);
+    bool stereo = ef.ready && fs.shouldRender && renderedWith.valid && setupProjection(ef);
     uint32_t pidx = 0;
     if (stereo) stereo = rt.acquire(pj.sc, pidx);
     VkImage src = sw.images[pi->pImageIndices[0]];
     uint32_t idx = 0;
-    bool haveImage = !stereo && rt.acquire(m.sc, idx);
+    bool haveImage = !stereo && fs.shouldRender && rt.acquire(m.sc, idx);
     // Scope view (engine eye 3) as a quad layer at the eyepiece of the weapon's hand.
     const eyes::ScopeFrame scopeFrame = eyes::takeScope();
-    const scope::Layer scopeLayer = scope::layer(xr::input().hand(1).grip, xr::input().hand(0).grip);
+    const scope::Layer scopeLayer = scope::layer(renderedGrip[1], renderedGrip[0]);
     const bool scopeOn = stereo && scopeLayer.visible && scopelayer::begin(scopeFrame);
     const bool ammoOn = stereo && ammolayer::begin() > 0;
     TRACE("mirror: acquired %d idx %u, submit", haveImage, idx);
     VkSemaphore waitOn = VK_NULL_HANDLE;
     VkResult result;
     {
-        vkq::Guard lock;
+        // Recording needs no queue lock (and fov::record takes foveation's lock, which is held while foveation
+        // itself submits under the queue lock: taking them in the other order here could deadlock).
         int s = m.slot;
         m.slot = (m.slot + 1) % Mirror::kRing;
         DFN(vkWaitForFences)(g.device, 1, &m.fence[s], VK_TRUE, UINT64_MAX);
@@ -770,16 +790,24 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         if (scopeOn) scopelayer::record(cb, scopeFrame, scopeLayer.reticle);
         if (ammoOn) ammolayer::record(cb, s);
         DFN(vkEndCommandBuffer)(cb);
-        std::vector<VkPipelineStageFlags> stages(pi->waitSemaphoreCount, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkPipelineStageFlags stagesFixed[8];
+        std::vector<VkPipelineStageFlags> stagesMore;
+        VkPipelineStageFlags* stages = stagesFixed;
+        if (pi->waitSemaphoreCount > 8) stagesMore.resize(pi->waitSemaphoreCount), stages = stagesMore.data();
+        for (uint32_t i = 0; i < pi->waitSemaphoreCount; ++i) stages[i] = VK_PIPELINE_STAGE_TRANSFER_BIT;
         VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
         si.waitSemaphoreCount = pi->waitSemaphoreCount;
         si.pWaitSemaphores = pi->pWaitSemaphores;
-        si.pWaitDstStageMask = stages.data();
+        si.pWaitDstStageMask = stages;
         si.commandBufferCount = 1;
         si.pCommandBuffers = &cb;
         si.signalSemaphoreCount = 1;
         si.pSignalSemaphores = &m.done[s];
-        realQueueSubmit(q, 1, &si, m.fence[s]);
+        vkq::Guard lock;
+        if (const VkResult sr = realQueueSubmit(q, 1, &si, m.fence[s]); sr != VK_SUCCESS) {
+            static int logged;
+            if (logged++ < 3) VRLOG("mirror: queue submit failed (%d)", int(sr));
+        }
         dumpWrite(m.fence[s]);
         waitOn = m.done[s];
         // No CPU wait: the blit is submitted on the session's queue before xrReleaseSwapchainImage, and the
@@ -852,7 +880,7 @@ VkResult presentFrame(VkQueue q, const VkPresentInfoKHR* pi) {
         }
     }
     XrCompositionLayerQuad ammoQuads[2];
-    const int ammoN = ammoOn ? ammolayer::layers(rt.playSpace(), ammoQuads) : 0;
+    const int ammoN = ammoOn ? ammolayer::layers(rt.playSpace(), ammoQuads, renderedGrip) : 0;
     const XrCompositionLayerBaseHeader* layers[4] = {stereo ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&proj)
                                                             : reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)};
     uint32_t layerCount = 1;

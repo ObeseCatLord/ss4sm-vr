@@ -8,6 +8,8 @@
 #include "se4/player_vr.hpp"
 #include "se4/arms.hpp"
 #include "se4/gadgets.hpp"
+#include "se4/net.hpp"
+#include "core/wire.hpp"
 #include "xr/input.hpp"
 #include <windows.h>
 #include <MinHook.h>
@@ -55,6 +57,7 @@ struct OffHand {
 };
 OffHand g_off[2];  // by XR hand
 volatile LONG g_taken[2];
+volatile ULONGLONG g_takenTick[2];  // when the latch was last set: it lapses when no two-hand step renews it
 
 // ---- lab probe (option hands_probe): the first-person arms skeleton and the held weapon's grip parameters ----
 const char* const kArmsBones[] = {"Root", "ViewMover", "L_UpperArm", "R_UpperArm", "L_LowerArm", "R_LowerArm", "L_Hand", "R_Hand",
@@ -138,13 +141,24 @@ struct TwoHandable {
 TwoHandable g_two[16];
 bool g_gripAll = true;
 
+// Keyed by the weapon's params (one per weapon type): an entity address can be reused by another weapon.
 int& twoHandState(uint8_t* weapon) {
+    uint8_t* key = at<uint8_t*>(weapon, kParams);
+    if (!key) key = weapon;
     for (auto& t : g_two)
-        if (t.weapon == weapon) return t.state;
+        if (t.weapon == key) return t.state;
     static int next;
     TwoHandable& t = g_two[next++ % 16];
-    t = {weapon, 0};
+    t = {key, 0};
     return t.state;
+}
+
+bool oneHandedByName(const char* file) {
+    static const char* const oneHanded[] = {"Pistol", "Revolver", "Knife", "Machete", "GenericMelee", "Gadget", "Hands", "Injector",
+                                            "Sign", "Melee"};
+    for (const char* k : oneHanded)
+        if (file && strstr(file, k)) return true;
+    return false;
 }
 
 bool decideTwoHandable(uint8_t* weapon, int mainRole) {
@@ -161,11 +175,7 @@ bool decideTwoHandable(uint8_t* weapon, int mainRole) {
     // Two-handable by weapon (lab 2026-10-26: the grip attachment's distance does not tell, e.g. the assault rifle's sits
     // 0.11 m from the hand, the knife reports 0.50, the minigun has none; wp_bTwoHanded is 0 on every SS4 weapon).
     const char* file = se4::names::weaponFile(weapon);
-    static const char* const oneHanded[] = {"Pistol", "Revolver", "Knife", "Machete", "GenericMelee", "Gadget", "Hands", "Injector",
-                                            "Sign", "Melee"};
-    bool one = false;
-    for (const char* k : oneHanded) one |= file && strstr(file, k) != nullptr;
-    st = file ? (one ? 2 : 1) : (dist >= 0.12f ? 1 : 2);
+    st = file ? (oneHandedByName(file) ? 2 : 1) : (dist >= 0.12f ? 1 : 2);
     const core::Vec3 local = core::rotate(core::inverse(core::normalize({hand7[0], hand7[1], hand7[2], hand7[3]})), d) * ws;
     const char* base = file ? strrchr(file, '/') : nullptr;
     uint8_t* params = at<uint8_t*>(weapon, kParams);
@@ -191,6 +201,61 @@ struct TwoHandScope {
     }
 };
 
+bool g_authority;  // remote VR players' two-hand grips are applied here (host, server, single player; never a client)
+
+// A remote VR player's two-handed hold on the authority (review 2026-11-12): the client grips locally, but the weapon
+// placement that aims its shots is built here. Same rules as the local hold: a right-hand two-handable weapon, the off
+// hand free and at the foregrip, its squeeze (the relayed LeftGrip flag) held.
+bool remoteTwoHand(uint8_t* weapon, void* arg) {
+    if (!g_authority || net::clientSession() || !weapon) return false;
+    const auto& b = se4::build();
+    const unsigned vrdOff = player_vr::vrdOffset();
+    uint8_t* owner = vrdOff ? handleEntity(at<int32_t>(weapon, b.off(se4::gen::CWeaponEntity_en_henOwner))) : nullptr;
+    void* vrd = owner ? at<void*>(owner, vrdOff) : nullptr;
+    uint8_t* params = at<uint8_t*>(weapon, kParams);
+    if (!vrd || vrd == player_vr::localVrd() || !params || !at<int32_t>(weapon, b.off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) ||
+        !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire))
+        return false;
+    const size_t leftOff = b.off(se4::gen::CPlayerActorPuppetEntity_en_henCurrentLeftHandWeapon);
+    const size_t idxOff = b.off(se4::gen::CPlayerActorPuppetEntity_en_iPlayerIndex);
+    if (!leftOff || !idxOff || at<int32_t>(owner, leftOff) != 0) return false;
+    const bool native = at<int32_t>(params, kTwoHanded) != 0;
+    const char* file = se4::names::weaponFile(weapon);
+    if (!native && (!g_gripAll || !file || oneHandedByName(file))) return false;
+    core::wire::PosePacket pkt;
+    const bool squeeze = net::remotePose(at<int32_t>(owner, idxOff), pkt) && (pkt.flags & core::wire::LeftGrip);
+    float off7[7] = {}, main7[7] = {};
+    player_vr::controllerWorld(vrd, 1, off7);
+    player_vr::controllerWorld(vrd, 0, main7);
+    if (!(main7[0] || main7[1] || main7[2] || main7[3]) || !(off7[0] || off7[1] || off7[2] || off7[3])) return false;
+    float wsc = 1.0f;
+    if (auto* sc = b.at<float>(se4::gen::vr_fWorldScale); sc && *sc > 0.01f) wsc = *sc;
+    const core::Vec3 gripP = core::Vec3{main7[4], main7[5], main7[6]} +
+                             core::rotate(core::normalize({main7[0], main7[1], main7[2], main7[3]}), {0, 0, -kForegripAhead / wsc});
+    const core::Vec3 d = gripP - core::Vec3{off7[4], off7[5], off7[6]};
+    float snap = at<float>(params, kSnapDistance);
+    if (!(snap >= 0.0f && snap < 2.0f)) snap = kDefaultSnap;
+    snap = std::fmax(snap, kForegripReach / wsc);
+    const bool engaged = squeeze && core::dot(d, d) <= snap * snap;
+    uint8_t& bits = at<uint8_t>(owner, g_fireBits);
+    const uint8_t mask = 2;  // a right-hand weapon: the left hand's fire bit (R15 s4.2)
+    const uint8_t saved = bits;
+    bits = engaged ? uint8_t(saved | mask) : uint8_t(saved & ~mask);
+    {
+        TwoHandScope th;
+        if (!native) th.raise(params);
+        realStep(weapon, arg);
+    }
+    bits = uint8_t((bits & ~mask) | (saved & mask));
+    if (engaged && !(at<uint32_t>(weapon, kFlags) & kGripped) && entityTime) {  // as the local grab does
+        memcpy(static_cast<uint8_t*>(weapon) + 0x26c, main7, sizeof main7);
+        uint64_t t = 0;
+        if (auto* pt = static_cast<uint64_t*>(entityTime(weapon, &t))) at<uint64_t>(weapon, 0x288) = *pt;
+        at<uint32_t>(weapon, kFlags) |= kGripped;
+    }
+    return true;
+}
+
 void hookedStep(uint8_t* weapon, void* arg) {
     if (!g_identReady) {
         g_identReady = true;
@@ -200,6 +265,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
             for (int i = 0; i < kArmsBoneCount; ++i) g_identCtor(&g_armsIdent[i], kArmsBones[i]);
     }
     uint8_t* player = weapon ? localOwner(weapon) : nullptr;
+    if (!player && remoteTwoHand(weapon, arg)) return;
     uint8_t* params = player ? at<uint8_t*>(weapon, kParams) : nullptr;
     if (player) gadgets::onTick(player);  // once per tick (it keeps its own tick stamp)
     static uint8_t* lastProbed;
@@ -233,6 +299,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
         }
     }
     if (!params || !twoHand || !(at<uint32_t>(weapon, kFlags) & kCheckedInitialFire)) {
+        if (params && rightHand) InterlockedExchange(&g_taken[0], 0);  // the left hand is not on this weapon
         realStep(weapon, arg);
         if (params) arms::onWeaponStep(weapon, at<int32_t>(weapon, se4::build().off(se4::gen::CWeaponEntity_en_bRightHandWeapon)) != 0, false);
         return;
@@ -285,7 +352,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
         if (!native) th.raise(params);
         realStep(weapon, arg);
     }
-    bits = saved;
+    bits = uint8_t((bits & ~mask) | (saved & mask));  // only the bit raised here; keep what the step changed
 
     bool gripping = (at<uint32_t>(weapon, kFlags) & kGripped) != 0;
     if (o.engaged && !gripping && o.inReach && entityTime) {
@@ -304,6 +371,7 @@ void hookedStep(uint8_t* weapon, void* arg) {
     if (gripping != o.gripping) VRLOG("hands: %s hand %s the two-handed weapon %p", offXr ? "right" : "left", gripping ? "grips" : "releases", weapon);
     o.gripping = gripping;
     InterlockedExchange(&g_taken[offXr], (o.inReach || gripping) ? 1 : 0);
+    g_takenTick[offXr] = GetTickCount64();
     arms::onWeaponStep(weapon, right, gripping);
 }
 }  // namespace
@@ -318,10 +386,12 @@ void restoreTwoHanded(uint8_t* params, int32_t savedFlag, float savedSnap) {
     at<int32_t>(params, kTwoHanded) = savedFlag, at<float>(params, kSnapDistance) = savedSnap;
 }
 
-bool squeezeTaken(int hand) { return (hand == 0 || hand == 1) && g_taken[hand] != 0; }
+// Lapses 250 ms after the last two-hand step (weapon switched, holstered, dual wield, vehicle: no step renews it).
+bool squeezeTaken(int hand) { return (hand == 0 || hand == 1) && g_taken[hand] != 0 && GetTickCount64() - g_takenTick[hand] < 250; }
 
-bool install() {
+bool install(bool localVr) {
     if (!se4::options::get("grip_squeeze", 1)) return false;
+    g_authority = se4::options::get("mp_two_hand", 1) != 0;
     const auto& b = se4::build();
     auto* step = b.at<uint8_t>(se4::gen::weapon_step);
     handleEntity = reinterpret_cast<HandleFn>(b.at<void>(se4::gen::handle_entity));
@@ -345,7 +415,8 @@ bool install() {
         VRLOG("hands: weapon step hook FAILED");
         return false;
     }
-    VRLOG("hands: squeeze grips two-handed weapons (fire bits at player+0x%x)", g_fireBits);
+    VRLOG("hands: squeeze grips two-handed weapons (fire bits at player+0x%x)%s%s", g_fireBits, localVr ? "" : " - remote VR players only",
+          g_authority ? ", remote VR players' grips applied where this machine is the authority" : "");
     return true;
 }
 }  // namespace hands
